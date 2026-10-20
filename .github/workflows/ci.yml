@@ -1,0 +1,54 @@
+name: CI
+
+# 最小回归门禁：
+#   - frontend：类型检查（vue-tsc）+ 生产构建（vite build）
+#   - backend ：全量语法编译门禁 + 离线路径契约脚本（不加载模型、不联网）
+#
+# 说明：需要 MySQL / Redis / Ollama / 本地权重 的端到端脚本
+# （docs/_src/test_audit_e2e.py、test_batch12_e2e.py、test_async_chain.py、
+#  test_local_sd_e2e.py）依赖真实服务与 2GB 权重，无法在 CI 里跑，
+# 请在本地环境执行（见 docs/第7批-*.md）。
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    name: 前端类型检查与构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - name: 安装依赖
+        run: npm ci
+      - name: 类型检查 + 构建
+        run: npm run build
+
+  backend:
+    name: 后端语法与路径契约
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装最小依赖
+        # 完整 requirements.txt 含 torch / diffusers / faiss 等本地权重相关重型依赖，
+        # 且部分条目是机器本地 file:// 路径，CI 只装导入契约脚本所需的轻量包。
+        run: |
+          python -m pip install --upgrade pip
+          pip install flask flask-sqlalchemy pyjwt python-dotenv redis requests pillow
+      - name: 语法门禁（编译全部后端源码）
+        run: python -m compileall -q back/app back/config.py back/celery_app.py back/manage.py
+      - name: 音乐 / 配音路径契约（离线）
+        run: python docs/_src/test_music_voice_paths.py

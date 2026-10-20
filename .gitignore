@@ -1,0 +1,64 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ===== 环境变量（含密钥，禁止提交）=====
+.env
+.env.*
+!.env.example
+
+# 数据库 dump 含真实用户邮箱/手机号/密码哈希，不入公开库
+back/aigc.sql
+
+# ===== 日志与临时文件 =====
+*.log
+logs/
+celerybeat-schedule*
+*.pid
+*.bak
+
+# ===== 上传/生成的静态资源（体积大）=====
+back/app/static/uploads/
+back/app/static/images/
+back/app/static/music/
+back/app/static/voice/
+back/app/static/avatar/
+
+# ===== 本地 AI 模型权重 =====
+models/
+.models/
+*.safetensors
+*.ckpt
+*.gguf
+
+# ===== 本地生成的索引 / 临时目录 =====
+back/.rag_index/
+back/.piptmp/
+
+# ===== 前端 =====
+node_modules/
+front/dist/
+front/.vite/
+*.local
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ===== 运行时用户媒体（演示项目的音频/图片等，非代码）=====
+back/app/static/project/
+back/app/static/resources/
+back/app/static/temp/
+back/app/static/backs/
+
+# ===== 编辑器/分析产物 =====
+front/.VSCodeCounter/
+*.tsbuildinfo

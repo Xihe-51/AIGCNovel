@@ -1,0 +1,1851 @@
+     文生图                        
+                  1:1      9:16          16:9              
+                生成图像      
+import { ref } from 'vue'import { MagicStick, Picture } from '@element-plus/icons-vue'import { ElMessage } from 'element-plus'
+const emit = defineEmits(['generate'])defineProps({  loading: Boolean,  history: Array})
+const prompt = ref('')const size = ref('512x512')
+const handleGenerate = () => {  if (!prompt.value.trim()) {    ElMessage.warning('请输入提示词')    return  }    emit('generate', prompt.value, {    size: size.value  })}   .generator-card {  padding: 20px;  background-color: #fff5f7;  border-radius: 12px;  border: 1px dashed #ffb6c1;} .generate-btn {  background-color: #ff69b4;  border-color: #ff69b4;  width: 100%;  margin-top: 10px;} .generate-btn:hover {  background-color: #ff85a2;  border-color: #ff85a2;} h3 {  color: #ff69b4;  margin-bottom: 20px;  display: flex;  align-items: center;  gap: 8px;} 
+<audio 
+ref="backgroundMusic"
+:src="currentScene.music_url ? BASE_URL + currentScene.music_url : ''" 
+loop
+class="hidden-audio"
+>你的浏览器不支持音频播放
+<img 
+:src="currentScene.background_url ? BASE_URL + currentScene.background_url : defaultBackground" 
+alt="场景背景" 
+class="background-image"
+/>
+<img 
+:src="getAvatarUrl(currentDialogue.avatar_id)" 
+alt="角色立绘" 
+class="character-image"
+/>
+加载项目中...
+错误: {{ error }}
+<div 
+v-if="showHistoryDialogue" 
+class="history-dialogue-container"
+@click="toggleHistoryDialogue"
+>
+历史对话
+<div 
+v-for="(dialogue, index) in filteredHistoryDialogues" 
+:key="index" 
+class="history-item"
+>
+{{ getCharacterName(dialogue.character_id) }}
+{{ dialogue.content_text }}
+<div 
+v-if="currentDialogueIndex < currentSceneDialogues.length"
+:class="['dialogue-box', `box-${currentDialogue?.content_type}`]"
+@click="nextDialogue"
+>
+{{ getCharacterName(currentDialogue.character_id) }}
+{{ judge(currentDialogue.content_text) || '' }}
+你的浏览器不支持音频播放
+= currentSceneDialogues.length && currentSceneDialogues.length > 0" class="dialogue-end">
+import {
+defineProps,
+ref,
+onMounted,
+computed,
+nextTick,
+watch,
+onUnmounted,
+getCurrentInstance
+} from 'vue'
+import {
+getDialoguesBySceneId,
+getCharactersByProjectId,
+getCharacterAvatars as getCharacterAvatarsApi,
+} from '@/api/dialogue'
+import {
+getScenes as getProjectScenes
+} from '@/api/scenes'
+import {
+BASE_URL
+} from '@/utils/request'
+import { 
+WarningFilled,
+View,
+Hide,
+DArrowRight,
+VideoPlay,
+DocumentAdd,
+CloseBold,
+SwitchButton,
+Search  // 新增引入搜索图标
+} from '@element-plus/icons-vue'
+import { ElMessage, ElLoading, ElIcon, ElMessageBox } from 'element-plus'
+// 获取路由实例
+const { proxy } = getCurrentInstance();
+// 定义接收的属性
+const props = defineProps({
+projectId: {
+type: String,
+required: true
+}
+})
+// 定义emit事件
+const emit = defineEmits(['close'])
+// 状态管理
+const scenes = ref([]); // 所有场景
+const allDialogues = ref({}); // 按场景ID存储的所有对话 {sceneId: [dialogues]}
+const characters = ref([]); // 所有角色
+const loading = ref(true);
+const error = ref('');
+const isPlaying = ref(true); // 默认自动播放
+const autoPlay = ref(false); // 始终自动播放
+const defaultBackground = ''; // 默认背景图
+const backgroundMusic = ref(null);
+const showDialogueBox = ref(true); // 控制对话框显示/隐藏
+const showHistoryDialogue = ref(false); // 控制历史对话显示/隐藏
+const historyDialogues = ref([]); // 存储历史对话记录
+// 当前预览状态
+const currentSceneIndex = ref(0);
+const currentDialogueIndex = ref(0);
+// 计算属性
+const currentScene = computed;
+const currentSceneDialogues = comp;
+const currentDialogue = computed;
+// 过滤出当前场景的历史对话（不包含当前对话）
+const filteredHistoryDialogues = comp;
+// 获取项目数据
+const fetchProjectData = async () => {
+try {
+loading.value = true;
+const projectIdNum = Number(props.projectId);
+if (isNaN(projectIdNum)) {
+throw new Error('无效的项目ID');
+}
+// 尝试从本地存储加载进度
+loadProgress();
+// 获取项目下的所有场景（按顺序排列）
+const scenesData = await getProjectScenes(projectIdNum);
+scenes.value = scenesData.;
+if (scenes.value.length === 0) {
+throw new Error('该项目下没有场景数据');
+}
+// 获取所有场景的对话
+for (const scene of scenes.value) {
+const dialoguesData = await getDialoguesBySceneId(scene.scene_id);
+// 为每个对话添加场景ID，方便后续过滤
+const dialoguesWithSceneId = dialoguesData.;
+allDialogues.value[scene.scene_id] = dialoguesWithSceneId.;
+}
+// 获取角色列表及对应的头像
+const chars = await getCharactersByProjectId(projectIdNum);
+// 为每个角色查询并关联自己的头像
+const charactersWithAvatars = await Promise.all(
+chars.map(async (char) => {
+const avatars = await getCharacterAvatar;
+return {
+...char,
+avatars: avatars || []
+};
+})
+);characters.value = charactersWithAvatars;
+} catch (err) {
+console.error('获取项目数据失败:', err);
+error.value = err.message || '获取数据失败，请稍后重试';
+ElMessage.error(error.value);
+} finally {
+loading.value = false;
+// 数据加载完成后自动开始播放
+if (!error.value) {
+startPreview();
+// 初始化历史对话
+initHistoryDialogues();
+}
+}
+}
+// 初始化历史对话（根据当前进度）
+const initHistoryDialogues = () => {
+historyDialogues.value = [];
+// 添加之前场景的所有对话
+for (let i = 0; i < currentSceneIndex.value; i++) {
+const sceneId = scenes.value[i].scene_id;
+if (allDialogues.value[sceneId]) {
+historyDialogues.value.push(...allDialogues.value[sceneId]);
+}
+}
+// 添加当前场景的历史对话（不包含当前对话）
+if (currentScene.value.scene_id && allDialogues.value[currentScene.value.scene_id]) {
+historyDialogues.value.push(
+...allDialogues.value[currentScene.value.scene_id].slice(0, currentDialogueIndex.value)
+);
+}
+};
+// 开始预览
+const startPreview = () => {
+isPlaying.value = true;
+playBackgroundMusic();
+// 自动播放模式，设置定时器自动切换对话
+if (autoPlay.value) {
+autoAdvanceDialogue();
+}
+};
+// 播放背景音乐
+const playBackgroundMusic = () => {
+if (backgroundMusic.value && currentScene.value.music_url) {
+backgroundMusic.value.play().catch;
+}
+};
+// 停止背景音乐
+const stopBackgroundMusic = () => {
+if (backgroundMusic.value) {
+backgroundMusic.value.pause();
+backgroundMusic.value.currentTime = 0;
+}
+};
+// 下一个对话
+const nextDialogue = () => {
+if (currentDialogueIndex.value < currentSceneDialogues.value.length) {
+// 将当前对话添加到历史记录中
+if (currentDialogue.value) {
+historyDialogues.value.;
+}
+currentDialogueIndex.value++;
+// 如果是最后一个对话且开启自动播放，自动进入下一场景
+if (currentDialogueIndex.value >= currentSceneDialogues.value.length) {
+nextScene();
+}
+}
+showDialogueBox.value = true;
+};
+// 自动前进对话
+const autoAdvanceDialogue = () => {
+if (!isPlaying.value || currentDialogueIndex.value >= currentSceneDialogues.value.length) {
+return;
+}
+// 根据对话长度设置不同的自动播放时间
+const dialogueLength = currentDialogue.value?.content_text?.length || 0;
+const delay = Math.max(3000, dialogueLength * 100); // 基础3秒，每100字增加1秒
+setTimeout(() => {
+nextDialogue();
+if (autoPlay.value) {
+autoAdvanceDialogue();
+}
+}, delay);
+};
+// 下一个场景
+const nextScene = () => {
+// 停止当前场景音乐
+stopBackgroundMusic();
+if (currentSceneIndex.value < scenes.value.length - 1) {
+// 切换到下一场景（无场景提示）
+currentSceneIndex.value++;
+currentDialogueIndex.value = 0
+// 播放新场景音乐
+nextTick(() => {
+if (isPlaying.value) {
+playBackgroundMusic();
+// 自动播放，继续自动前进
+if (autoPlay.value) {
+setTimeout(autoAdvanceDialogue, 1000);
+}
+}
+});
+} else {
+// 所有场景预览结束，弹出游戏结束提示
+isPlaying.value = false;
+ElMessageBox.alert('游戏结束', '提示', {
+confirmButtonText: '确定',
+callback: () => {
+proxy.$router.push('/home');
+}
+});
+}
+};
+// 快进至下一场景
+const skipToNextScene = () => {
+nextScene();
+};
+// 重新开始游戏
+const restartGame = () => {
+ElMessageBox.confirm(
+'确定要重新开始游戏吗？当前进度将会丢失。',
+'重新开始',
+{
+confirmButtonText: '确定',
+cancelButtonText: '取消',
+type: 'info',
+}
+)
+.then(() => {
+// 停止当前音乐
+stopBackgroundMusic();
+// 重置进度和历史对话
+currentSceneIndex.value = 0;
+currentDialogueIndex.value = 0;
+historyDialogues.value = [];
+// 重新开始
+nextTickElMessage.success('游戏已重新开始');
+})
+.catch(() => {
+// 用户取消重新开始
+});
+};
+// 切换对话框显示/隐藏
+const toggleDialogueBox = () => {
+showDialogueBox.value = !showDialogueBox.value;
+};
+// 切换历史对话显示/隐藏
+const toggleHistoryDialogue = () => {
+showHistoryDialogue.value = !showHistoryDialogue.value;
+};
+// 切换自动播放状态
+const toggleAutoPlay = () => {
+autoPlay.value = !autoPlay.value;
+if (autoPlay.value) {
+autoAdvanceDialogue();
+}
+};
+// 保存当前进度到本地存储
+const saveProgress = () => {
+try {
+const progressData = {
+projectId: props.projectId,
+currentSceneIndex: currentSceneIndex.value,
+currentDialogueIndex: currentDialogueIndex.value,
+historyDialogues: historyDialogues.value, // 保存历史对话
+saveTime: new Date().toISOString()
+};
+localStorage.setItem(`gameProgress_${props.projectId}`, JSON.stringify(progressData));
+ElMessage.success('进度已保存');
+} catch (error) {
+console.error('保存进度失败:', error);
+ElMessage.error('保存进度失败，请重试');
+}
+};
+// 从本地存储加载进度
+const loadProgress = () => {
+try {
+const progressData = localStorage.getItem(`gameProgress_${props.projectId}`);
+if (progressData) {
+const { 
+currentSceneIndex: sceneIdx, 
+currentDialogueIndex: dialogueIdx,
+historyDialogues: savedHistory 
+} = JSON.parse(progressData);
+currentSceneIndex.value = sceneIdx;
+currentDialogueIndex.value = dialogueIdx;
+historyDialogues.value = savedHistory || [];
+ElMessage.success('已加载上次保存的进度');
+}
+} catch (error) {
+console.error('加载进度失败:', error);
+// 加载失败不提示，使用默认进度
+}
+};
+// 退出游戏
+const exitGame = () => {
+ElMessageBox.confirm(
+'确定要退出游戏吗？建议先保存当前进度。',
+'退出游戏',
+{
+confirmButtonText: '退出',
+cancelButtonText: '取消',
+type: 'warning',
+}
+import os
+from datetime import datetime, timedelta
+import jwt
+from flask import jsonify, request
+from werkzeug.exceptions import Unauthorized, BadRequest, NotFound
+from werkzeug.security import check_password_hash, generate_password_hash
+from sqlalchemy.exc import IntegrityError
+from werkzeug.utils import secure_filename
+from . import user
+from .services import get_ai_generations_by_user, get_ai_model_by_user, delete_ai_generation_by_id, get_user_statistics, \
+get_user_projects, get_user_models, update_avatar, update_user_info, get_user_info, delete_ai_model, \
+update_ai_model, create_ai_model, get_model_detail, get_market_resources, get_market_resource_detail, \
+create_market_resource, update_market_resource, delete_market_resource, search_market_resources, \
+ensure_upload_folders_exist, allowed_file, ALLOWED_EXTENSIONS, MAX_CONTENT_LENGTH, get_upload_folder, \
+increment_download_count
+from .. import db
+from ..models import User
+'''
+1.登录注册
+'''
+@user.route('/register', methods=['POST'])
+def register():
+data = request.get_json()
+# 验证输入数据
+email = data.get('email')
+phone = data.get('phone')
+password = data.get('password')
+username = data.get('username')
+if not all([email, password, username]):  # 检查必要字段是否存在
+return jsonify({'error': '请填写全部信息'}), 405
+# 创建用户对象
+user = User(
+email=email,
+phone=phone,
+password_hash=generate_password_hash(password),  # 生成密码哈希
+username=username,
+created_at=datetime.now()
+)
+# 尝试将用户添加到数据库
+try:
+db.session.add(user)
+db.session.commit()
+except IntegrityError:
+db.session.rollback()  # 回滚事务以处理完整性错误
+return jsonify({'error': '用户已存在'}), 400
+return jsonify({'message': '注册成功'}), 200
+@user.route('/login', methods=['POST'])
+def login():
+# 获取请求的数据
+data = request.get_json()
+username = data.get('username')
+password = data.get('password')
+# 验证用户
+user = User.query.filter_by(username=username).first()
+if user is None or not check_password_hash(user.password_hash, password):
+return jsonify({"msg": "账号或密码错误"}), 401
+# 生成 JWT token，有效期为 24 小时
+access_token = jwt.encode({
+'identity': user.user_id,
+'role': 'STUDENT',  # 假设所有注册用户的角色为学生
+'userName': user.username,
+'exp': datetime.now() + timedelta(hours=24)
+}, 'ailab', algorithm='HS256')
+# 更新用户的最后登录时间
+user.last_login = datetime.now()
+db.session.commit()
+return jso, 200
+'''
+2.ai生成控制台
+'''
+@user.route('/ai_model', methods=['GET'])
+def api_get_ai_model_by_user():
+try:
+user_id = request.headers.get
+models = get_ai_model_by_user(db.session, user_id)
+# 格式化数据，转换成字典列表
+result = []
+for m in models:
+result.aprn jsonify({'data': result}), 200
+except Exception as e:
+return jsonify({'error': str(e)}), 500
+@user.route('/ai_history', methods=['GET'])
+def api_get_ai_generations_by_user():
+try:
+user_id = request.headers.get
+generations = get_ai_generations_by_user(db.session, user_id)
+# 格式化数据，转换成字典列表
+result = []
+for gen in generations:
+result.aprn jsonify({'data': result, 'count': len(result)}), 200
+except Exception as e:
+return jsonify({'error': str(e)}), 500
+@user.route('/ai_history/', methods=['DELETE'])
+def api_delete_ai_genera:
+try:
+user_id = request.headers.get
+if not user_id:
+return jsonify({'error': 'User ID missing'}), 400
+# 删除记录
+delete_ai_generation_by_id(db.session, generation_id)
+return jsonify({'message': '删除成功'}), 200
+except Exception as e:
+return jsonify({'error': str(e)}), 500
+'''
+3.个人中心
+'''
+@user.route('/profile', methods=['GET'])
+def user_profile():
+"""
+获取当前用户个人信息
+"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+user_info = get_user_:
+raise NotFound('用户不存在')
+return jso
+@user.route('/profile', methods=['PUT'])
+def update_profile():
+"""
+更新用户个人信息
+"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+data = request.get_json()
+if not data:
+raise BadRequest('无效的请求数据')
+success = update_user_ess:
+raise NotFound('用户不存在')
+return jsonify({
+'code': 200,
+'message': '用户信息更新成功'
+})
+@user.route('/avatar', methods=['POST'])
+def upload_avatar():
+"""
+上传用户头像
+"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+if 'avatar' not in request.files:
+raise BadRequest('未上传头像文件')
+avatar_file = request.files['avatar']
+if avatar_file.filename == '':
+raise BadRequest('未选择文件')
+# 检查文件扩展名
+allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+if '.' not in avatar_file.filename or \
+avatar_file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+raise BadRequest('不允许的文件类型')
+avatar_url = update_avar_url:
+raise NotFound('用户不存在')
+return jso
+@user.route('/models', methods=['GET'])
+def user_models():
+"""
+获取用户创建的AI模型列表（不分页）
+"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+try:
+models_data = get_user_morn jsopt Exception as e:
+print(e)
+return jsonify({
+'code': 500,
+'message': '获取模型列表失败'
+}), 500
+@user.route('/projects', methods=['GET'])
+def user_projects():
+"""
+获取用户创建的项目列表
+"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+page = request.args.get
+per_page = request.args.ects_data = get_user_projrn jso
+@user.route('/statistics', methods=['GET'])
+def user_statistics():
+"""
+获取用户统计数据
+"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+stats = get_user_statisrn jsonify({
+'code': 200,
+'message': 'success',
+'data': stats
+})
+@user.route('/models', methods=['POST'])
+def create_model():
+"""创建AI模型"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+data = request.get_json()
+required_fields =d in data for field in required_fields):
+return jsonify({'code': 400, 'message': '缺少必要参数'}), 400
+try:
+model = create_ai_mrn jsopt Exception as e:
+db.session.rollback()
+print(e)
+return jsonify({'code': 500, 'message': '创建模型失败'}), 500
+@user.route('/models/', methods=['PATCH'])
+def update_m:
+"""更新AI模型"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+data = request.get_json()
+if not data:
+return jsonify({'code': 400, 'message': '无更新数据'}), 400
+try:
+model = update_ai_ml:
+return jsonify({'code': 404, 'message': '模型不存在或无权访问'}), 404
+return jsopt Exception as e:
+db.session.rollback()
+print(e)
+return jsonify({'code': 500, 'message': '更新模型失败'}), 500
+@user.route('/models/', methods=['DELETE'])
+def delete_m:
+"""删除AI模型"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+try:
+success = delete_ai_mess:
+return jsonify({'code': 404, 'message': '模型不存在或无权访问'}), 404
+return jsonify({'code': 200, 'message': '删除成功'})
+except Exception as e:
+db.session.rollback()
+print(e)
+return jsonify({'code': 500, 'message': '删除模型失败'}), 500
+@user.route('/models/', methods=['GET'])
+def get_m:
+"""获取单个模型详情"""
+user_id = request.headers.get
+if not user_id:
+raise Unauthorized('用户未登录')
+try:
+model_detail = get_model_del_detail:
+return jsonify({'code': 404, 'message': '模型不存在或无权访问'}), 404
+return jsopt Exception as e:
+print(e)
+return jsonify({'code': 500, 'message': '获取模型详情失败'}), 500
+'''
+4.资源市场
+'''
+@user.route('/resources', methods=['GET'])
+def list_resources():
+page = request.args.get
+per_page = request.args.rn jso
+@user.route('/resources/', methods=['GET'])
+def resource_de:
+return jso
+@user.route('/resources', methods=['POST'])
+def create_resource():
+data = request.get_json()
+uploader_id = request.headers.get
+if not uploader_id:
+return jsonify({'code': 401, 'message': '未授权'}), 401
+return jso
+@user.route('/resources/', methods=['PUT'])
+def update_reso:
+data = request.get_json()
+uploader_id = request.headers.get
+if not uploader_id:
+return jsonify({'code': 401, 'message': '未授权'}), 401
+return jso
+@user.route('/resources/', methods=['DELETE'])
+def delete_reso:
+uploader_id = request.headers.get
+if not uploader_id:
+return jsonify({'code': 401, 'message': '未授权'}), 401
+return jso
+@user.route('/download/', methods=['POST'])
+def download_reso:
+return jso
+@user.route('/resources/search', methods=['GET'])
+def search_resources():
+keyword = request.args.get('keyword', '')
+resource_type = request.args.get('type')
+min_price = request.args.get('min_price', type=float)
+max_price = request.args.get('max_price', type=float)
+page = request.args.get
+per_page = request.args.rn jsonify(search_market_resources(
+keyword=keyword,
+resource_type=resource_type,
+min_price=min_price,
+max_price=max_price,
+page=page,
+per_page=per_page
+))
+@user.route('/api/upload', methods=['POST'])
+def upload_file():
+"""文件上传接口"""
+# 确保上传目录存在
+ensure_upload_folders_exist()
+# 检查是否有文件被上传
+if 'file' not in request.files:
+return jsonify({'code': 400, 'message': '没有选择文件'}), 400
+file = request.files['file']
+# 检查文件名是否为空
+if file.filename == '':
+return jsonify({'code': 400, 'message': '没有选择文件'}), 400
+# 检查文件扩展名
+file_type = allowed_file(file.filename)
+if not file_type:
+return jso, 400
+# 检查文件大小
+if request.content_length > MAX_CONTENT_LENGTH:
+return jso, 400
+try:
+# 安全化文件名并添加时间戳防止重名
+filename = secure_filename(file.filename)
+timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+filename = f"{timestamp}_{filename}"
+# 确定保存路径
+upload_folder = get_upload_fopath = os.path.join(upload_folder, filename)
+# 保存文件
+file.save(filepath)
+# 返回相对URL路径
+relative_path = os.path.join('/static', 'uploads', file_type + 's', filename).replace
+# prn jsopt Exception as e:
+return jsonify({
+'code': 500,
+'message': f'文件上传失败: {str(e)}'
+}), 500
+import reimport torchfrom diffusers import StableDiffusionPipeline, DPMSolverSinglestepSchedulerimport timeimport requestsfrom typing import Tuple, List, Dictfrom .. import dbfrom ..models import AIGenerationimport scipyimport osfrom datetime import datetimefrom transformers import AutoProcessor, MusicgenForConditionalGeneration
+'''文本生成'''
+SILICONFLOW_API_KEY = "sk-****（已脱敏）"  # API密钥SILICONFLOW_API_URL = "https://api.siliconflow.cn/v1/chat/completions"
+def remove_think_tags(text: str) -> str:"""使用正则表达式去除标签及其内容"""cleaned_text = re.sub(r'.*?', '', text, flags=re.DOTALL)return cleaned_text
+def generate_and_save_text(model: str,prompt: str,length: int,forbidden_words: List[str],user_id: int,generation_type: str = "text") -> Tuple[bool, Dict]:
+"""生成AI文本并保存到数据库（业务函数）返回: (成功状态, 结果字典/错误信息)"""
+try:# 1. 调用硅基流动API生成文本headers = {"Authorization": f"Bearer {SILICONFLOW_API_KEY}","Content-Type": "application/json"}
+payload = {"model": model,  # 例如："Qwen/Qwen2.5-7B-Instruct""messages": [{"role": "user","content": prompt}],"max_tokens": length,"temperature": 0.7,"stream": False}
+response = requests.post(SILICONFLOW_API_URL,headers=headers,json=payload,timeout=30)
+response.raise_for_status()# 2. 解析硅基流动API响应response_data = response.json()generated_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+if not generated_text:raise ValueError("API返回的生成文本为空")
+generated_text = remove_think_
+# 3. 过滤违禁词
+if forbidden_words:for word in forbidden_words:generated_text = generated_text.replace(word, "[已过滤]")
+# 4. 保存到数据库
+generation_record = AIGeneration(user_id=user_id,prompt_text=prompt,generated_text=generated_text,le,type=generation_type,forbidden_words=','.idden_words else None)
+db.session..session.commit()
+# 5. 返回成功结果
+return True, {"generation_id": generation_record.generation_id,"generated_text": generated_text,"model": model,"length":,"forbidden_words": forbidden_words,"created_at": generation_record.created_at.isoformat()}
+except requests.exceptions.RequestException as e:db.session.rollback()print(f"硅基流动API请求错误: {str(e)}")return False, {"message": f"AI服务连接错误: {str(e)}"}
+except KeyError as e:db.session.rollback()print(f"API响应格式错误: {str(e)}")return False, {"message": f"API响应解析错误: {str(e)}"}
+except ValueError as e:db.session.rollback()print(f"生成文本错误: {str(e)}")return False, {"message": str(e)}
+except Exception as e:db.session.rollback()print(f"生成或保存文本错误: {str(e)}")return False, {"message": f"处理错误: {str(e)}"}
+'''
+文生图
+'''
+def initialize_pipe:"""初始化Stable Diffusion管道参数:model_id (str): 模型路径或HuggingFace模型ID返回:StableDiffusionPipeline: 初始化的管道对象"""
+import osimport torchfrom diffusers import StableDiffusionPipeline, DPMSolverSinglestepScheduler
+# 1. 安全设置设备try:# 测试GPU是否可用且兼容if torch.cuda.is_available():# 尝试小规模计算测试test = torch.randn(2, 2).cuda()_ = test + test# GPU可用device = torch.device("cuda")torch.backends.cuda.matmul.allow_tf32 = Truetorch.backends.cudnn.benchmark = Truedtype = torch.float16print(f"使用GPU模式: {torch.cuda.get_device_name(0)}")else:raise RuntimeError("CUDA不可用")
+except Exception as e:# GPU不可用或出错，使用CPUos.env# 彻底禁用GPUdevice = torch.device("cpu")dtype = torch.float32  # CPU必须用float32print(f"使用CPU模式: {e}")
+# 2. 初始化管道print(f"加载模型: {model_id}")print(f"设备: {device}, 数据类型: {dtype}")
+pipe = StableDiffusionPipeline.from_pretrained(model_id,torch_dtype=dtype,  # 根据设备选择正确类型safety_checker=None,requires_safety_checker=False).to(device)
+# 3. 配置调度器pipe.scheduler = DPMSolverSinglestepScheduler.from_config(pipe.scheduler.config)
+# 4. 优化设置（根据设备不同）if device.type == "cpu":# CPU优化pipe.enable_attention_slicing()  # 注意力切片pipe.enable_vae_slicing()  # VAE切片print("已启用CPU优化 (注意力切片 + VAE切片)")
+else:# GPU优化try:pipe.enable_model_cpu_offload()  # 尝试模型CPU卸载print("已启用模型CPU卸载")except:# 如果enble_model_cpu_offload失败，用简单的内存优化pipe.enable_attention_slicing()print("已启用注意力切片")
+return pipe
+def generate_anime_image(user_id, prompt, model_id, width=768, height=768):"""生成高清动漫图像并保存到指定目录参数:user_id(int): 用户idprompt (str): 生成图像的提示词model_id (str): 模型路径width (int): 图像宽度(默认为768)height (int): 图像高度(默认为768)返回:str: 生成的图像文件路径，失败时返回None"""
+# 负面提示词negative_prompt = "(low quality, worst quality:1.4), (bad anatomy), " \"blurry, (extra limbs), cropped, (poorly drawn hands), " \"mutation, deformed, (ugly), (text, signature, watermark:1.3)"
+# 确保尺寸是64的倍数width = max(512, (width // 64) * 64)height = max(512, (height // 64) * 64)
+# 初始化管道if not hasrate_anime_image.current_model != model_id:generate_anime_image.pipe = initialize_piperate_anime_image.current_model = model_id
+# 生成参数device = torch.device("cpu")generator = torch.Generator(device).manual_seed(int(time.time()))
+try:with torch.inference_mode():torch.cuda.empty_cache()result = generate_anime_image.pipe(prompt=prompt,negative_prompt=negative_prompt,num_inference_steps=30,guidance_scale=8.0,width=width,height=height,generator=generator)
+directory = f"app/static/images/{user_id}"if not os.path.exists(directory):os.makedirs(directory)  # 递归创建目录
+timestamp = int(time.time())filename = f"{directory}/{timestamp}.png"result.images[0].save(filename, quality=95)
+generation_record = AIGeneration(user_id=user_id,prompt_text=prompt,generated_text=filename.replace("app", "", 1),length=1,type="image",forbidden_words="default")
+db.session..session.commit()return True
+except Exception as e:print(f"生成图像时出错: {str(e)}")torch.cuda.empty_cache()return None
+finally:
+torch.cuda.empty_cache()
+'''
+音乐合成
+'''
+def generate_music_wav(user_id: int, prompt: str, duration: int, model_path: str) -> bool:"""生成音乐并保存为wav文件。参数:prompt (str): 音乐描述提示词。duration (int): 音频时长（秒）。model_path (str): 模型路径。返回:str: 生成的音频文件路径。"""
+# 加载模型和处理器
+processor = AutoProcessor.from_pretral = MusicgenForConditionalGeneration.from_pretra
+# 计算 max_new_tokens
+max_new_tokens = duration * 50  # 每秒50 tokens
+# 处理输入inputs = processor(text=[prompt],padding=True,return_tensors="pt",)
+# 生成音频audio_values = model.generate(**inputs,max_new_tokens=max_new_tokens,do_sample=True,temperature=0.9,top_k=250,top_p=0.95,guidance_scale=7,)
+# 获取当前系统时间作为文件名current_time = datetime.now().strfo_path = f"music_{current_time}.wav"
+output_music = f"app/static/music/{user_id}"# 确保输出目录存在os.make.path.
+# 保存音频
+sampling_rate = model.config.audio_encoder.sampling_ratescipy.io.wavfile.write(full_path,rate=sampling_rate,data=audio_values[0, 0].numpy())
+generation_record = AIGeneration(user_id=user_id,prompt_text=prompt,generated_text=full_path.replace("app", "", 1),length=duration,type="voice",forbidden_words="default")
+db.session..session.commit()return True
+from flask import request, jsonify
+from . import ai
+from .services import generate_and_save_text, generate_anime_image, generate_music_wav
+'''
+    1.文本生成
+'''
+@ai.route('/generate/text', methods=['POST'])
+def generate_text():
+    """视图函数：只处理HTTP请求和响应"""
+    try:
+        data = request.get_json()
+        # 参数解析
+        model = data.get('model', 'deepseek-r1:1.5b')
+        prompt = data.get('prompt')
+        length = data.get('length', 100)
+        forbidden_words = data.
+ration_type = data.get('type', 'text')
+        user_id = request.headers.get
+        # 参数预处理
+        if isinst:
+            forbidden_words = [word.strip() for word in forbidden_words.split('，') if word.strip()]
+        # 参数验证
+        if not all([prompt, user_id]):
+            return jso
+, 400
+        if not isinstance(length, int) or length <= 0:
+            return jsonify({
+                "status": "error",
+                "message": "length必须是正整数"
+            }), 400
+        # 调用业务函数
+        success, result = generate_and_save_text(
+            model=model,
+            prompt=prompt,
+            length=length,
+            forbidden_words=forbidden_words,
+            user_id=user_id,
+            generation_type=generation_type
+        )
+        # 处理结果
+        if success:
+            return jsonify({
+                "status": "success",
+                "data": result
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result.get("message", "生成失败")
+            }), 500
+    except Exception as e:
+        print(f"视图函数错误: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Internal server error"
+        }), 500
+'''
+    2.文生图
+'''
+@ai.route('/generate/image', methods=['POST'])
+def generate_image():
+    """视图函数：只处理HTTP请求和响应"""
+    try:
+        data = request.get_json()
+        # 参数解析
+        model_id = data.get('model')
+        prompt = data.get('prompt')
+        size = data.get('size')
+        user_id = request.headers.get
+        width, height = map(int, size.split('x'))
+        success = generate_anime_image(
+            user_id=user_id,
+            prompt=prompt,
+            model_id=model_id,
+            width=width,
+            height=height
+        )
+        return jsonify({
+            "status": success,
+            "message": "生成完成"
+        }), 200
+    except Exception as e:
+        print(f"视图函数错误: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Internal server error"
+        }), 500
+'''
+    3.音乐合成
+'''
+@ai.route('/generate/music', methods=['POST'])
+def generate_music():
+    """视图函数：只处理HTTP请求和响应"""
+    try:
+        data = request.get_json()
+        # 参数解析
+        model_path = data.get('model')
+        prompt = data.get('prompt')
+        duration = data.get('duration')
+        user_id = request.headers.get
+        success = generate_music_wav(user_id, prompt, duration, model_path)
+        return jsonify({
+            "status": success,
+            "message": "生成完成"
+        }), 200
+    except Exception as e:
+        print(f"视图函数错误: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Internal server error"
+        }), 500
+import os
+from datetime import datetime
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.utils import secure_filename
+from .. import db
+from ..models import Project, Character, CharacterAvatar, Scene, ScriptContent, BranchPath
+# 允许的文件扩展名S
+ALLOWED_EXTENSIONS = {
+    'image': ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+    'audio': ['mp3', 'wav', 'ogg'],
+    'video': ['mp4', 'avi']
+}
+def save_uploaded_:
+    """
+    保存上传的文件到指定目录
+    参数:
+        file: Werkzeug FileStorage 对象 (Flask接收的上传文件对象)
+        project_id: 项目ID，用于创建目录结构
+    返回:
+        成功时返回文件保存的相对路径，失败时返回None
+    """
+    # 检查文件是否有合法的扩展名
+    filename = secure_filename(file.filename)
+    if '.' not in filename:
+        return None  # 无扩展名
+    ext = filename.rsplit('.', 1)[1].lower()
+    file_type = None
+    # 确定文件类型
+    for category, extensions in ALLOWED_EXTENSIONS.items():
+        if ext in extensions:
+            file_type = category
+            break
+    if not file_type:
+        return None  # 不支持的文件类型
+    # 生成新的文件名 (使用当前系统时间)
+    now = datetime.now()
+    timestamp = now.strf[:-3]
+    new_filename = f"{timestamp}.{ext}"
+    upload_dir = os.path.join('app', 'static', 'project',, file_type)
+    try:
+        os.make
+pt OSError as e:
+        print(f"无法创建目录 {upload_dir}: {e}")
+        return None
+    # 保存文件
+    file_path = os.path.
+:
+        file.
+pt Exception as e:
+        print(f"保存文件失败: {e}")
+        return None
+    relative_path = file_path.replace('app', '', 1)
+    return relative_path
+'''
+    项目管理
+'''
+def create_project(user_id, title, genre, cover_url=None):
+    """
+    创建新项目
+    :param user_id: 用户ID
+    :param title: 项目标题
+    :param genre: 项目类型
+    :param cover_url: 封面URL(可选)
+    :return: (成功状态, 项目对象或错误消息)
+    """
+    if not title or not genre:
+        return False, "标题、类型不能为空"
+    try:
+        project = Project(
+            user_id=user_id,
+            title=title,
+            genre=genre,
+            cover_url=cover_url
+        )
+        db.session.add(project)
+        db.session.commit()
+        return True, project
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        return False, "创建项目失败"
+def update_project_word_c:
+    # 计算总字符数
+    total_chars = db.session.query(
+        func.sum(func.char_length(ScriptContent.content_text))
+    ).filter(
+        ScriptContent.project_id == project_id
+    ).scalar()
+    total_chars = total_chars or 0
+    # 查询项目
+    project = db.session.query(Project).filter(Project.project_id == project_id).first()
+    if not project:
+        return False  # 项目不存在
+    # 如果不一致，更新word_count
+    if project.word_count != total_chars:
+        project.word_count = total_chars
+        db.session.commit()
+    return True
+def get_project_by_:
+    """
+    获取用户指定的项目
+    :param project_id: 项目ID
+    :param user_id: 用户ID(用于验证权限)
+    :return: (成功状态, 项目对象或错误消息)
+    """
+    update_project_word_c
+ect = Project.query.filter_.first()
+    if not project:
+        return False, "项目不存在或无权访问"
+    return True, project
+import os
+from datetime import datetime
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.utils import secure_filename
+from .. import db
+from ..models import Project, Character, CharacterAvatar, Scene, ScriptContent, BranchPath
+# 允许的文件扩展名S
+ALLOWED_EXTENSIONS = {
+'image': ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+'audio': ['mp3', 'wav', 'ogg'],
+'video': ['mp4', 'avi']
+}
+def save_uploaded_:
+"""
+保存上传的文件到指定目录
+参数:
+file: Werkzeug FileStorage 对象 (Flask接收的上传文件对象)
+project_id: 项目ID，用于创建目录结构
+返回:
+成功时返回文件保存的相对路径，失败时返回None
+"""
+# 检查文件是否有合法的扩展名
+filename = secure_filename(file.filename)
+if '.' not in filename:
+return None  # 无扩展名
+ext = filename.rsplit('.', 1)[1].lower()
+file_type = None
+# 确定文件类型
+for category, extensions in ALLOWED_EXTENSIONS.items():
+if ext in extensions:
+file_type = category
+break
+if not file_type:
+return None  # 不支持的文件类型
+# 生成新的文件名 (使用当前系统时间)
+now = datetime.now()
+timestamp = now.strf[:-3]
+new_filename = f"{timestamp}.{ext}"
+upload_dir = os.path.join('app', 'static', 'project',, file_type)
+try:
+os.makept OSError as e:
+print(f"无法创建目录 {upload_dir}: {e}")
+return None
+# 保存文件
+file_path = os.path.:
+file.pt Exception as e:
+print(f"保存文件失败: {e}")
+return None
+relative_path = file_path.replace('app', '', 1)
+return relative_path
+'''
+项目管理
+'''
+def create_project(user_id, title, genre, cover_url=None):
+"""
+创建新项目
+:param user_id: 用户ID
+:param title: 项目标题
+:param genre: 项目类型
+:param cover_url: 封面URL(可选)
+:return: (成功状态, 项目对象或错误消息)
+"""
+if not title or not genre:
+return False, "标题、类型不能为空"
+try:
+project = Project(
+user_id=user_id,
+title=title,
+genre=genre,
+cover_url=cover_url
+)
+db.session.add(project)
+db.session.commit()
+return True, project
+except Exception as e:
+db.session.rollback()
+print(e)
+return False, "创建项目失败"
+def update_project_word_c:
+# 计算总字符数
+total_chars = db.session.query(
+func.sum(func.char_length(ScriptContent.content_text))
+).filter(
+ScriptContent.project_id == project_id
+).scalar()
+total_chars = total_chars or 0
+# 查询项目
+project = db.session.query(Project).filter(Project.project_id == project_id).first()
+if not project:
+return False  # 项目不存在
+# 如果不一致，更新word_count
+if project.word_count != total_chars:
+project.word_count = total_chars
+db.session.commit()
+return True
+def get_project_by_:
+"""
+获取用户指定的项目
+:param project_id: 项目ID
+:param user_id: 用户ID(用于验证权限)
+:return: (成功状态, 项目对象或错误消息)
+"""
+update_project_word_cect = Project.query.filter_.first()
+if not project:
+return False, "项目不存在或无权访问"
+return True, project
+def get_public_projects():
+"""
+获取所有公开的项目
+:return: 公开项目列表
+"""
+return Project.query.filter_.order_by(Project.updated_at.desc()).all()
+def get_user_proj:
+"""
+获取用户所有项目
+:param user_id: 用户ID
+:return: 项目列表
+"""
+return Project.query.filter_.order_by(Project.updated_at.desc()).all()
+def export_pro:
+project = Project.query.filter_.first()
+project.is_public = True
+db.session.commit()
+return True
+def update_project(project_id, user_id, **kwargs):
+"""
+更新项目信息
+:param project_id: 项目ID
+:param user_id: 用户ID(用于验证权限)
+:param kwargs: 更新字段(title, genre, template_type, cover_url等)
+:return: (成功状态, 更新后的项目或错误消息)
+"""
+project = Project.query.filter_.first()
+if not project:
+return False, "项目不存在或无权访问"
+try:
+for key, value in kwargs.items():
+if hasattr(project, key) and value is not None:
+setattr(project, key, value)
+db.session.commit()
+return True, project
+except Exception as e:
+db.session.rollback()
+print(e)
+return False, "更新项目失败"
+def delete_pro:
+"""
+删除项目
+:param project_id: 项目ID
+:param user_id: 用户ID(用于验证权限)
+:return: (成功状态, 成功消息或错误消息)
+"""
+project = Project.query.filter_.first()
+if not project:
+return False, "项目不存在或无权访问"
+try:
+db.session.delete(project)
+db.session.commit()
+return True, "项目删除成功"
+except Exception as e:
+db.session.rollback()
+print(e)
+return False, "删除项目失败"
+def allowed_file(filename, file_type='image'):
+"""
+检查文件扩展名是否允许
+:param filename: 文件名
+:param file_type: 文件类型(image/audio)
+:return: 是否允许
+"""
+return '.' in filename and \
+filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS., sub_folder='covers'):
+"""
+保存上传的文件
+:param file: 文件对象
+:param sub_folder: 子文件夹
+:return: (成功状态, 文件URL或错误消息)
+"""
+if not file or file.filename == '':
+return False, "未选择文件"
+if not allowed_file(file.filename):
+return False, "文件类型不允许"
+try:
+# 安全文件名
+filename = secure_filename(file.filename)
+# 生成唯一文件名
+unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
+# 保存路径
+save_path = os.path.join('app/static/uploads', sub_folder)
+os.make.path..
+# 返回相对URL
+file_url = f"/static/uploads/{sub_folder}/{unique_filename}"
+return True, file_url
+except Exception as e:
+print(e)
+return False, "文件保存失败"
+'''
+角色管理
+'''
+def get_characters_by_project_:
+"""
+根据项目ID获取所有角色
+:param project_id: 项目ID
+:return: 角色列表
+"""
+return Character.query.filter_.all()
+def get_character_ava:
+"""
+根据角色ID获取该角色的所有头像
+:param character_id: 角色ID
+:return: 头像列表
+"""
+return CharacterAvatar.query.filter_.all()
+def get_project_charac:
+"""
+获取项目所有角色
+:param project_id:
+:return: 角色列表
+"""
+return Character.query.filter_.all()
+def get_characterAvatar_by_:
+"""
+根据id查询角色立绘
+:param avatar_id: 角色立绘ID
+:return: CharacterAvatar对象或None
+"""
+avatar = CharacterAvatar.query.filter_.first()
+return avatar
+def get_character_by_:
+"""
+根据character_id查询角色数据
+:param character_id: 角色ID
+:return: Character对象或None
+"""
+character = Character.query.filter_.first()
+return character
+# 业务逻辑函数，传入角色ID列表，返回对应立绘数据列表
+def fetch_character_avatars_b:
+avatars = CharacterAvatar.query.filter(
+CharacterAvatar.character_id.in_.order_by(
+CharacterAvatar.character_id,
+CharacterAvatar.is_default.desc(),  # 默认立绘排前
+CharacterAvatar.created_at.desc()  # 新的排前
+).all()
+# 构建字典列表返回
+return [{
+'avatar_id': a.avatar_id,
+'character_id': a.character_id,
+'image_url': a.image_url,
+'avatar_type': a.avatar_type,
+'costume': a.costume,
+'is_default': a.is_default,
+'created_at': a.created_at.isoformat() if a.created_at else None
+} for a in avatars]
+def get_project_dialogue_c:
+"""
+获取项目所有对话的数量
+:param project_id:
+:return: 对话记录数（整数）
+"""
+return ScriptContent.query.filter_.count()
+def create_character(data):
+"""
+创建角色
+:param data: 包含角色数据的字典
+:return: 创建的资源或错误
+"""
+required_fields = ['project_id', 'name', 'is_main', 'description', 'age']
+if not all(field in data for field in required_fields):
+return {'code': 400, 'message': '缺少必要参数'}, 400
+try:
+new_character = Character(
+project_,
+name=data['name'],
+age=data['age'],
+description=data['description'],
+is_.session..session.commit()
+return {
+'code': 200,
+'message': '创建成功',
+}
+except Exception as e:
+print(e)
+db.session.rollback()
+return {'code': 500, 'message': f'创建失败: {str(e)}'}, 500
+def update_chara:
+"""
+更新角色信息
+:param character_id: 角色的唯一标识符
+:param data: 包含要更新的角色数据的字典
+:return: 更新的结果或错误
+"""
+try:
+# 查找要更新的角色
+character = Character.query.acter:
+return {'code': 404, 'message': '角色未找到'}, 404
+# 更新角色属性，如果数据中有新值则更新，否则保持原值
+character.project_id = data.get('project_id', character.project_id)
+character.name = data.get('name', character.name)
+character.age = data.get('age', character.age)  # 如果没有提供age，则保持原值
+character.description = data.get('description', character.description)
+character.is_main = data.get('is_main', character.is_main)
+db.session.commit()
+return {
+'code': 200,
+'message': '更新成功',
+}
+except Exception as e:
+print(e)
+db.session.rollback()
+return {'code': 500, 'message': f'更新失败: {str(e)}'}, 500
+def delete_character_with_relat:
+"""
+删除角色及其所有关联数据的业务函数
+参数:
+character_id: 要删除的角色ID
+返回:
+tuple: (success: bool, message: str, status_code: int)
+"""
+try:
+# 开始事务
+db.session.begin()
+# 1. 查询要删除的角色
+character = Character.query.acter:
+return False, "角色不存在", 404
+project_id = character.project_id
+# 2. 处理脚本内容中的角色引用
+# 2.1 查找所有引用该角色的脚本内容
+related_script_contents = ScriptContent.query.filter_.all()
+# 2.2 收集这些内容的ID，用于后续处理分支路径
+related_content_ids = [content.content_id for content in related_script_contents]
+# 2.3 将这些脚本内容的character_id和avatar_id设为NULL
+for content in related_script_contents:
+content.character_id = None
+content.avatar_id = None
+db.session.add(content)
+# 3. 处理分支路径中的角色相关条件
+# 3.1 查找所有条件中包含该角色的分支路径
+all_branch_paths = BranchPath.query.filter_.all()
+for path in all_branch_paths:
+if path.conditions and isinstance(path.conditions, dict):
+# 检查条件中是否引用了该角色
+if path.conditions.acter_id:
+# 删除或修改条件
+path.conditions = None  # 或者设置为其他默认值
+db.session.add(path)
+# 4. 删除角色的所有头像
+CharacterAvatar.query.filter_.delete()
+# 5. 删除角色本身
+db.session.delete(character)
+# 提交事务
+db.session.commit()
+return True, "角色及其关联数据已成功清理", 200
+except SQLAlchemyError as e:
+db.session.rollback()
+return False, f"数据库错误: {str(e)}", 500
+except Exception as e:
+db.session.rollback()
+return False, f"服务器错误: {str(e)}", 500
+def add_character_avatar(file, project_id, character_id, avatar_type, costume, is_main=0):
+"""
+处理头像的保存和数据库的添加操作
+参数:
+file: 上传的图片文件
+project_id: 项目ID
+character_id: 角色ID
+avatar_type: 头像类型
+costume: 服装描述
+is_main: 是否为默认头像 (0 or 1)
+返回:
+成功时返回头像ID，失败时返回None
+"""
+# 保存上传的文件
+image_url = save_uploaded_e_url:
+return None  # 文件保存失败
+# 如果 is_main 为 1，则更新数据库中所有的 is_default 为 1 的记录为 0
+if is_main == 1:
+try:
+db.session.query(CharacterAvatar).filter_.up.session.commit()
+except Exception as e:
+print(f"更新默认头像失败: {e}")
+db.session.rollback()  # 回滚事务
+return None
+# 创建新角色头像对象
+new_avatar = CharacterAvatar(
+character_id=character_id,
+image_url=image_url,
+avatar_type=avatar_type,
+costume=costume,
+is_def# 如果 is_main 为 1，则设置为默认头像
+)
+# 添加到数据库
+try:
+db.session..session.commit()
+return new_avatar.avatar_id  # 返回新头像的ID
+except Exception as e:
+print(f"数据库操作失败: {e}")
+db.session.rollback()  # 回滚事务
+return None
+def delete_character_av:
+"""
+根据avatar_id删除角色立绘记录及对应的图片文件
+:param avatar_id: 要删除的立绘ID
+:return: 成功返回True，失败返回False
+"""
+avatar = CharacterAvatar.query.ar:
+return False
+try:
+# 构建图片文件路径
+image_path = f"app/{avatar.image_url}"
+# 删除数据库记录
+db.session.delete(avatar)
+db.session.commit()
+# 删除图片文件
+if os.path.ex:
+os.rern True
+except Exception as e:
+db.session.rollback()
+# 这里可以添加日志记录
+print(f"删除立绘失败: {str(e)}")
+return False
+def update_character_av:
+"""
+更新角色立绘信息（仅更新is_default字段）
+:param avatar_id: 要更新的角色立绘ID
+:return: 更新的结果或错误
+"""
+try:
+# 先获取要更新的头像记录
+avatar = CharacterAvatar.query.ar:
+return {'code': 404, 'message': '角色立绘未找到'}, 404
+# 获取该头像对应的角色ID
+character_id = avatar.character_id
+# 将该角色下的所有头像的is_default设为False
+db.session.query(CharacterAvatar) \
+.filter(CharacterAvatar.character_id == character_id) \
+.up
+# 然后更新指定头像的is_default为True
+avatar.is_default = True
+db.session.commit()
+return {
+'code': 200,
+'message': '更新成功',
+}
+except Exception as e:
+print(e)
+db.session.rollback()
+return {'code': 500, 'message': f'更新失败: {str(e)}'}, 500
+'''
+场景管理业务逻辑
+'''
+def get_project_sc:
+"""
+获取项目所有场景，并确保order_num是连续的1,2,3,...n
+:param project_id: 项目ID
+:return: 场景列表（已按order_num排序）
+"""
+# 获取该项目所有场景并按当前order_num排序
+scenes = Scene.query.filter_.order_by(Scene.order_num).all()
+if not scenes:  # 没有场景时直接返回空列表
+return scenes
+# 检查order_num是否连续
+is_continuous = True
+for i in range(len(scenes)):
+# 正常连续的情况下，第i个场景的order_num应该是i+1
+if scenes[i].order_num != i + 1:
+is_continuous = False
+break
+# 如果不连续，则修正为连续的1,2,3,...n
+if not is_continuous:
+try:
+# 逐个更新场景的order_num
+for new_order, scene in enumerate(scenes, start=1):
+scene.order_num = new_order
+# 提交数据库事务
+db.session.commit()
+except Exception as e:
+# 发生错误时回滚
+db.session.rollback()
+print(f"修正项目ID {project_id} 的场景order_num时出错: {str(e)}")
+return scenes
+def get_scene_by_:
+"""
+根据ID获取场景
+:param scene_id: 场景ID
+:return: 场景对象或None
+"""
+return Scene.query.te_scene(scene_id, **kwargs):
+"""
+更新场景信息
+:param scene_id: 场景ID
+:param kwargs: 要更新的字段（title, description, background_url, music_url）
+:return: 元组 (更新后的场景对象, 错误信息)，成功时错误信息为None
+"""
+scene = Scene.query.e:
+return None, '场景不存在'
+# 更新字段
+if 'title' in kwargs:
+scene.title = kwargs['title']
+if 'description' in kwargs:
+scene.description = kwargs['description']
+if 'background_url' in kwargs:
+scene.background_url = kwc_url' in kwargs:
+scene.music_url = kw:
+db.session.commit()
+return scene, None
+except Exception as e:
+db.session.rollback()
+return None, f'更新场景失败: {str(e)}'
+def create_new_scene(project_id, title, order_num,
+background_url='', music_url='', description=''):
+"""
+创建新场景
+:param project_id: 项目ID
+:param title: 场景标题
+:param order_num: 排序号
+:param background_url: 背景图片URL
+:param music_url: 音乐URL
+:param description: 场景描述
+:return: 新创建的场景对象
+"""
+try:
+new_scene = Scene(
+project_id=project_id,
+title=title,
+background_url=background_url,
+music_url=music_url,
+description=description,
+order_num=order_num
+)
+db.session..session.commit()
+return new_scene
+except SQLAlchemyError as e:
+db.session.rollback()
+raise e
+def update_existing_scene(scene_id, title, order_num,
+background_url='', music_url='', description=''):
+"""
+更新场景信息
+:param scene_id: 场景ID
+:param title: 场景标题
+:param order_num: 排序号
+:param background_url: 背景图片URL
+:param music_url: 音乐URL
+:param description: 场景描述
+:return: 更新后的场景对象
+"""
+try:
+scene = Scene.query.e:
+return None
+scene.title = title
+scene.background_url = background_url
+scene.music_url = music_url
+scene.description = description
+scene.order_num = order_num
+db.session.commit()
+return scene
+except SQLAlchemyError as e:
+db.session.rollback()
+raise e
+def delete_scene_by_:
+"""
+删除场景
+:param scene_id: 场景ID
+:return: 是否删除成功
+"""
+try:
+scene = Scene.query.e:
+return False
+db.session.delete(scene)
+db.session.commit()
+return True
+except SQLAlchemyError as e:
+db.session.rollback()
+raise e
+'''
+对话管理
+'''
+def get_dialogue_by_sce:
+"""
+根据场景ID获取所有对话
+:param scene_id: 场景ID
+:return: 对话列表
+"""
+return ScriptContent.query.filter_.order_by(ScriptContent.order_num).all()
+def save_dial:
+"""
+保存对话（新增或更新）
+:param data: 对话数据
+:param content_id: 对话ID（更新时需要）
+:return: 元组 (保存后的对话对象, 错误信息)，成功时错误信息为None
+"""
+required_fields =d in required_fields:
+if field not in data:
+return None, f'缺少必要字段: {field}'
+if content_id:
+# 更新现有对话
+dialogue = ScriptContent.query.ogue:
+return None, '对话不存在'
+else:
+# 创建新对话
+dialogue = ScriptContent()
+dialogue.created_at = datetime.now()
+db.session.add(dialogue)
+# 处理角色ID和头像ID：非"对话"类型时将空值转换为None
+if对话':
+# 对于非对话类型，强制设为None（数据库NULL）
+character_id = None
+avatar_id = None
+else:
+# 对于对话类型，处理可能的空字符串
+character_id = data.ar_id = data.
+# 确保数值类型（如果需要整数类型）
+if character_id is not None:
+try:
+character_pt (ValueError, TypeError):
+character_id = None
+if avatar_id is not None:
+try:
+avatar_pt (ValueError, TypeError):
+avatar_id = None
+# 更新字段
+dialogue.project_id =ogue.scene_id =ogue.character_id = character_id
+dialogue.avatar_id = avatar_id
+dialogue.content_type =ogue.content_text =ogue.voice_url = data.ogue.order_num =:
+db.session.commit()
+return dialogue, None
+except Exception as e:
+db.session.rollback()
+print(e)
+return None, f'保存对话失败: {str(e)}'
+def delete_dial:
+"""
+删除对话
+:param content_id: 对话ID
+:return: 元组 (是否成功, 错误信息)，成功时错误信息为None
+"""
+dialogue = ScriptContent.query.ogue:
+return False, '对话不存在'
+try:
+db.session.delete(dialogue)
+db.session.commit()
+return True, None
+except Exception as e:
+db.session.rollback()
+return False, f'删除对话失败: {str(e)}'
+def reorder_dialo:
+"""
+重新排序指定场景下的对话
+:param scene_id: 场景ID
+:param ordered_content_ids: 按新顺序排列的对话ID列表
+:return: 元组 (是否成功, 错误信息)，成功时错误信息为None
+"""
+try:
+# 获取该场景下的所有对话
+dialogues = ScriptContent.query.filter_.all()
+if not dialogues:
+return False, "该场景下没有对话"
+# 创建对话ID到对话对象的映射
+dialogue_map = {d.content_id: d for d in dialogues}
+# 验证所有提供的对话ID都属于该场景
+for content_id in ordered_content_ids:
+if content_id not in dialogue_map:
+return False, f"对话ID {content_id} 不属于该场景或不存在"
+# 按新顺序更新order_num
+for new_order, content_id in enume:
+dialogue = dialogue_ogue.order_num = new_order
+db.session.commit()
+return True, None
+except Exception as e:
+db.session.rollback()
+return False, f"重新排序失败: {str(e)}"
+from collections import defaultdict
+from . import project
+from flask import request, jsonify
+from .services import get_user_projects, get_project_by_id, create_project, update_project, delete_project, \
+save_upload_file, get_project_characters, fetch_character_avatars_batch, get_project_scenes, \
+get_project_dialogue_count, get_dialogue_by_sceneId, get_character_by_id, create_character, \
+delete_character_with_relations, update_character, add_character_avatar, delete_character_avatar, \
+update_character_avatar, get_scene_by_id, delete_scene_by_id, update_existing_scene, create_new_scene, \
+save_uploaded_file, save_dialogue, delete_dialogue, get_character_avatars, get_characters_by_project_id, \
+reorder_dialogues, get_characterAvatar_by_id, export_project, get_public_projects
+from .. import db
+from ..models import Project, CharacterAvatar
+'''
+1.项目管理
+'''
+@project.route('/projectAll', methods=['GET'])
+def get_public_projects_view():
+"""
+获取所有公开的项目
+"""
+projects = get_public_projects()
+return jso
+@project.route('/projects', methods=['GET'])
+def get_projects():
+"""
+获取当前用户的所有项目
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+projects = get_user_projrn jso
+@project.route('/project/', methods=['GET'])
+def get_pro:
+"""
+获取单个项目详情
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+success, result = get_project_by_ess:
+return jsonify({'success': False, 'message': result}), 404
+project = result
+return jso
+@project.route('/project', methods=['POST'])
+def add_project():
+"""
+创建新项目
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+data = request.get_json()
+if not data:
+return jsonify({'success': False, 'message': '无效的请求数据'}), 400
+title = data.get('title')
+genre = data.get('genre')
+success, result = create_project(user_id, title, genre)
+if not success:
+return jsonify({'success': False, 'message': result}), 400
+project = result
+return jso, 201
+@project.route('/project/public/', methods=['PUT'])
+def public_pro:
+"""
+公开项目
+:param project_id:
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+success = export_proess:
+return jsonify({'success': False}), 400
+return jsonify({
+'success': True,
+'message': '项目公开成功'
+})
+@project.route('/project/', methods=['PUT'])
+def modify_pro:
+"""
+更新项目信息
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+data = request.get_json()
+if not data:
+return jsonify({'success': False, 'message': '无效的请求数据'}), 400
+success, result = update_project(
+project_id,
+user_id,
+title=data.get('title'),
+genre=data.get('genre')
+)
+if not success:
+return jsonify({'success': False, 'message': result}), 400
+project = result
+return jso
+@project.route('/project/', methods=['DELETE'])
+def remove_pro:
+"""
+删除项目
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+success, result = delete_proess:
+return jsonify({'success': False, 'message': result}), 400
+return jsonify({
+'success': True,
+'message': result
+})
+@project.route('/project//cover', methods=['POST'])
+def upload_project_c:
+"""
+上传项目封面图片
+"""
+user_id = request.headers.get
+if not user_id:
+return jsonify({'success': False, 'message': '未提供用户ID'}), 401
+# 检查项目是否存在
+project = Project.query.filter_.first()
+if not project:
+return jsonify({'success': False, 'message': '项目不存在或无权访问'}), 404
+# 检查是否有文件上传
+if 'file' not in request.files:
+return jsonify({'success': False, 'message': '未上传文件'}), 400
+file = request.files['file']
+# 保存文件
+success, result = save_upload_file(file)
+if not success:
+return jsonify({'success': False, 'message': result}), 400
+# 更新项目封面URL
+project.cover_url = result
+try:
+db.session.commit()
+return jsopt Exception as e:
+db.session.rollback()
+print(e)
+return jsonify({'success': False, 'message': '更新封面URL失败'}), 500
+'''
+2.角色管理
+'''
+@project.route('/character_avatar/', methods=['GET'])
+def get_characterAva:
+"""
+通过角色ID获取角色立绘
+"""
+avatar = get_characterAvatar_by_
+# 返回JSON数据
+return jso
+@project.route('/characters/', methods=['GET'])
+def get_charac:
+"""
+获取当前项目的所有角色，头像优先返回is_default=1的
+"""
+try:
+# 关键修复：确保获取的是角色列表而不是Response对象
+# 注意：这里应调用返回角色列表的业务函数，而非返回响应的视图函数
+characters = get_characters_by_project_
+# 验证返回的是可迭代的角色列表
+if not isinstance(characters, list):
+return jsonify({
+'success': False,
+'message': '获取角色数据格式错误，预期列表类型'
+}), 500
+# 提取角色ID列表
+character_ids = [c.character_id for c in characters]
+# 批量查询所有角色的头像
+avatars = CharacterAvatar.query.filter(CharacterAvatar.character_id.in_.all()
+# 按character_id分组头像
+avatar_map = defaultdict(list)
+for avatar in avatars:
+avatar_map[avatar.character_id].append(avatar)
+# 构造character_id -> avatar_url映射，优先选择is_default=1的
+character_avatar_url = {}
+for cid, avatar_list in avatar_map.items():
+# 查找默认头像
+default_avatars =ult_avatars:
+character_avatar_url[cid] = default_avatars[0].image_url
+# 如果没有默认头像且有其他头像，取第一个
+elif avatar_list:
+character_avatar_url[cid] = avatar_list[0].image_url
+# 没有头像时不设置键，后续使用get方法会返回None
+# 构造响应数据，保持原有格式
+return jsopt TypeError as e:
+return jsonify({
+'success': False,
+'message': f'处理角色数据时发生类型错误: {str(e)}'
+}), 500
+except Exception as e:
+return jsonify({
+'success': False,
+'message': f'获取角色失败: {str(e)}'
+}), 500
+@project.route('/character/', methods=['GET'])
+def character_de:
+"""
+通过角色ID获取角色详情接口
+"""
+character = get_character_by_
+# 返回JSON数据
+return jso
+@project.route('/characters/', methods=['GET'])
+def get_project_charac:
+"""
+根据项目ID获取所有角色
+:param project_id: 项目ID
+:return: JSON响应，包含角色列表
