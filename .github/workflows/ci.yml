@@ -45,9 +45,11 @@ jobs:
       - name: 安装最小依赖
         # 完整 requirements.txt 含 torch / diffusers / faiss 等本地权重相关重型依赖，
         # 且部分条目是机器本地 file:// 路径，CI 只装导入契约脚本所需的轻量包。
+        # psutil 必须装：缺少它时内存守卫拿不到可用内存，会退化成「永远放行」，
+        # 导致 test_music_voice_paths.py 的内存守卫用例误报。
         run: |
           python -m pip install --upgrade pip
-          pip install flask flask-sqlalchemy pyjwt python-dotenv redis requests pillow
+          pip install flask flask-sqlalchemy pyjwt python-dotenv redis requests pillow psutil
       - name: 语法门禁（编译全部后端源码）
         run: python -m compileall -q back/app back/config.py back/celery_app.py back/manage.py
       - name: 音乐 / 配音路径契约（离线）
