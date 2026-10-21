@@ -147,6 +147,9 @@ def main():
 
     # ---------- 6. 对话 CRUD + 排序 ----------
     if pid and sid:
+        # 模板脚手架会预置占位对话，所以先取基线，再断言「新增 2 条 = 基线 + 2」
+        st, body = api('GET', f'/project/dialogue_count/{pid}')
+        base_count = (body or {}).get('length') or 0
         ids = []
         for i, t in enumerate(['第一句', '第二句']):
             st, body = api('POST', '/project/dialogues', json={
@@ -163,7 +166,9 @@ def main():
             order = [x['content_id'] for x in (body.get('data') or [])]
             check('对话重排序', st == 200 and order[:2] == list(reversed(ids)), f'{st} {order}')
         st, body = api('GET', f'/project/dialogue_count/{pid}')
-        check('P1-8 对话计数返回 length', st == 200 and body.get('length') == 2, f'{st} {body}')
+        check('P1-8 对话计数返回 length',
+              st == 200 and body.get('length') == base_count + 2,
+              f'{st} base={base_count} now={body.get("length")}')
 
     # ---------- 7. 分支 / 剧情图 ----------
     if pid and sid:

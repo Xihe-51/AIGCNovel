@@ -102,7 +102,15 @@ def main():
     check('模板自动铺场景骨架', len(scenes) >= 2, f'场景数={len(scenes)}')
 
     r, body = api('GET', f'/project/dialogue_count/{pid}')
-    check('模板不产生任何对话', body.get('length') == 0, f'{body}')
+    tpl_count = (body or {}).get('length')
+    check('模板预置占位对话（第 11 批新契约）', r.status_code == 200 and (tpl_count or 0) >= 4, f'{body}')
+
+    r, body = api('GET', f'/project/story_graph/{pid}')
+    tpl_nodes = (body.get('data') or {}).get('nodes') or []
+    tpl_texts = [n.get('content_text') or '' for n in tpl_nodes]
+    check('占位对话统一是「【在此填写：…】」',
+          bool(tpl_texts) and all(t.startswith('【在此填写') for t in tpl_texts),
+          tpl_texts[:2])
 
     # ================= ③ 素材引用计数 =================
     r, body = api('GET', '/user/resources')

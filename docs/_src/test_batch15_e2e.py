@@ -135,6 +135,21 @@ def main():
     if not sid:
         return finish()
 
+    # 第 11 批起模板脚手架会预置「场景 + 占位对话 + 占位分支」；
+    # 本脚本要自己造 5 个 content-level 节点，先把模板骨架清空（分支先删，再删节点）。
+    st, body = api('GET', f'/project/branches/{pid}')
+    for b in (body.get('data') or []):
+        api('DELETE', f"/project/branches/detail/{b.get('path_id')}")
+    cleared = 0
+    for s in scenes:
+        st2, dl = api('GET', f"/project/dialogues/{s['scene_id']}")
+        for c in (dl.get('data') or []):
+            api('DELETE', f"/project/dialogues/{c.get('content_id')}")
+            cleared += 1
+    check('清空模板占位节点', cleared >= 0, f'删除 {cleared} 条占位对话')
+    st, body = api('GET', f'/project/dialogue_count/{pid}')
+    check('清空后项目对话数为 0', (body or {}).get('length') == 0, body)
+
     # 节点顺序：1 对话 → 2 选择(C1) → 3 对话 → 4 选择(C2) → 5 对话
     spec = [('对话', '开场白'), ('选择', '要告白吗？'), ('对话', '路过'), ('选择', '结局选择'), ('对话', '收尾')]
     cid = {}
@@ -149,7 +164,14 @@ def main():
     st, body = api('POST', f'/project/variables/{pid}', json={
         'name': 'affection', 'label': '好感度', 'initial_value': 0,
     })
-    check('创建变量 affection', st in (200, 201), f'{st} {str(body)[:120]}')
+    if st in (200, 201):
+        check('创建变量 affection', True, f'{st}')
+    else:
+        # 分支叙事模板已预置 affection（唯一约束 project_id+name），直接复用
+        st2, vb = api('GET', f'/project/variables/{pid}')
+        reused = [v for v in (vb.get('data') or []) if v.get('name') == 'affection']
+        check('创建变量 affection（模板已预置则复用）', bool(reused),
+              f'{st} {str(body)[:80]}')
 
     # ---------- ① content-level 剧情图 ----------
     st, body = api('GET', f'/project/story_graph/{pid}')
