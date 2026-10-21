@@ -7,5 +7,6 @@ import app.project.branch_views
 import app.project.save_views
 import app.project.read_views
 import app.project.variable_views
+import app.project.directive_views
 import app.project.ending_views
 import app.project.cg_views

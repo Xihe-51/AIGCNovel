@@ -204,6 +204,28 @@ class ContentEffect(db.Model):
     )
 
 
+class ContentDirective(db.Model):
+    """节点演出指令：播放到某条 script_content 时执行的舞台动作。
+
+    directive_type 取值：
+      avatar     立绘：payload = {character_id, avatar_id, position(left/center/right),
+                                action(show/hide/move), fade_ms}
+      background 背景：payload = {url, transition(fade/none), duration_ms}
+      music      BGM：payload = {url, action(play/stop), loop}
+      sound      音效：payload = {url, volume}
+      wait       停顿：payload = {ms}
+    """
+    __tablename__ = 'content_directives'
+
+    directive_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False)
+    content_id = Column(BigInteger, ForeignKey('script_contents.content_id'), nullable=False)
+    directive_type = Column(String(32), nullable=False)
+    payload = Column(JSON)
+    order_num = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
 class Ending(db.Model):
     """结局定义：到达 content_id 时，若 conditions 全部成立则触发。"""
     __tablename__ = 'endings'

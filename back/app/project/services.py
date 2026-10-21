@@ -7,7 +7,7 @@ from werkzeug.utils import secure_filename
 from .. import db
 from ..models import Project, Character, CharacterAvatar, Scene, ScriptContent, BranchPath, \
     ContentEffect, ProjectVariable, SaveSlot, ReadRecord, Ending, EndingUnlock, ResourceReference, \
-    ProjectCG
+    ProjectCG, ContentDirective
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {
@@ -397,6 +397,11 @@ def delete_project(project_id, user_id):
                 ContentEffect.content_id.in_(content_ids)
             ).delete(synchronize_session=False)
             print(f"  删除 {effect_count} 条数值变化")
+
+        # 2.1.1 删除节点演出指令（content_directives 引用 script_contents 与 project）
+        directive_count = ContentDirective.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
+        print(f"  删除 {directive_count} 条演出指令")
 
         # 2.2 删除玩家已读与存档（read_records 外键引用 script_contents；save_slots 引用 project）
         read_count = ReadRecord.query.filter_by(project_id=project_id).delete(
