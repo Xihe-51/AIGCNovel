@@ -534,11 +534,19 @@ def delete_market_resource(resource_id, uploader_id):
         return {'code': 404, 'message': '资源不存在或无权删除'}, 404
 
     try:
-        # 引用计数记录外键引用该素材，先清理再删素材（否则外键约束报错）
-        ResourceReference.query.filter_by(resource_id=resource_id).delete(synchronize_session=False)
+        # 仍被项目引用的素材不允许直接删：删掉会让引用方指向不存在的文件。
+        # 把引用数回给前端，作者可以先在项目里移除引用（或用「素材体检」定位）。
+        ref_count = ResourceReference.query.filter_by(resource_id=resource_id).count()
+        if ref_count:
+            return {
+                'code': 409,
+                'message': f'该素材仍被 {ref_count} 处引用，请先在对应项目中移除引用后再删除',
+                'data': {'resource_id': resource_id, 'reference_count': ref_count},
+            }, 409
+
         db.session.delete(resource)
         db.session.commit()
-        return {'code': 200, 'message': '资源删除成功'}
+        return {'code': 200, 'message': '资源删除成功'}, 200
     except Exception as e:
         db.session.rollback()
         return {'code': 500, 'message': f'删除资源失败: {str(e)}'}, 500

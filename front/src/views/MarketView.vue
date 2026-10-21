@@ -854,7 +854,11 @@ const confirmDelete = (resource) => {
       ElMessage.success('删除成功')
       fetchResources()
     } catch (error) {
-      ElMessage.error('删除失败')
+      // 后端会说明「仍被 N 处引用」，这里原样展示，别吞成笼统的「删除失败」
+      const msg = (error && error.response && error.response.data && error.response.data.message)
+        || (error && error.message)
+        || '删除失败'
+      ElMessage.error(msg)
     }
   }).catch(() => {})
 }

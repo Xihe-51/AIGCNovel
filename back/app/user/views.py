@@ -26,6 +26,15 @@ from ..security import current_user_id
 '''
 
 
+def _service_json(result):
+    """服务层有时返回 (payload, status)。直接 jsonify 元组会变成数组且状态码丢失，
+    这里统一拆包，保证 4xx/5xx 真的以对应状态码返回。"""
+    if isinstance(result, tuple) and len(result) == 2:
+        payload, status = result
+        return jsonify(payload), status
+    return jsonify(result)
+
+
 @user.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -534,12 +543,12 @@ def get_model(model_id):
 def list_resources():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
-    return jsonify(get_market_resources(page, per_page))
+    return _service_json(get_market_resources(page, per_page))
 
 
 @user.route('/resources/<int:resource_id>', methods=['GET'])
 def resource_detail(resource_id):
-    return jsonify(get_market_resource_detail(resource_id))
+    return _service_json(get_market_resource_detail(resource_id))
 
 
 @user.route('/resources', methods=['POST'])
@@ -548,7 +557,7 @@ def create_resource():
     uploader_id = current_user_id()
     if not uploader_id:
         return jsonify({'code': 401, 'message': '未授权'}), 401
-    return jsonify(create_market_resource(uploader_id, data))
+    return _service_json(create_market_resource(uploader_id, data))
 
 
 @user.route('/resources/<int:resource_id>', methods=['PUT'])
@@ -557,7 +566,7 @@ def update_resource(resource_id):
     uploader_id = current_user_id()
     if not uploader_id:
         return jsonify({'code': 401, 'message': '未授权'}), 401
-    return jsonify(update_market_resource(resource_id, uploader_id, data))
+    return _service_json(update_market_resource(resource_id, uploader_id, data))
 
 
 @user.route('/resources/<int:resource_id>', methods=['DELETE'])
@@ -565,7 +574,8 @@ def delete_resource(resource_id):
     uploader_id = current_user_id()
     if not uploader_id:
         return jsonify({'code': 401, 'message': '未授权'}), 401
-    return jsonify(delete_market_resource(resource_id, uploader_id))
+    # 服务层返回 (payload, status)：统一拆包，避免 jsonify 元组导致状态码丢失
+    return _service_json(delete_market_resource(resource_id, uploader_id))
 
 
 @user.route('/download/<int:resource_id>', methods=['POST'])
@@ -581,6 +591,9 @@ def reference_resource_view(resource_id):
         return jsonify({'code': 401, 'message': '未授权'}), 401
     data = request.get_json(silent=True) or {}
     project_id = data.get('project_id')
+    if project_id is None:
+        # 与 DELETE 侧保持一致：也允许 ?project_id= 形式，方便脚本/接口调用
+        project_id = request.args.get('project_id', type=int)
     if project_id is None:
         return jsonify({'code': 400, 'message': '缺少 project_id'}), 400
     payload, status = reference_resource(resource_id, uid, project_id)
