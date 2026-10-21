@@ -209,6 +209,8 @@
 </template>
 
 <script setup lang="ts">
+	// @deprecated 第 11 批：场景编辑已迁到独立创作工作台（CreateView + SceneListPanel），
+	// 本组件目前无任何引用。拖拽排序、预览、公开项目三块逻辑待第二步搬迁后删除。
 	import {
 		defineProps,
 		ref,

@@ -44,6 +44,11 @@ const router = createRouter({
 	    name: 'View',
 	    component: () => import('../views/ExportProject.vue'),
 	    props: true // 允许将路由参数作为组件的 props 传递
+	},
+	{
+	    path: '/create/:projectId',
+	    name: 'CreateView',
+	    component: () => import('../views/CreateView.vue')
 	}
   ]
 })

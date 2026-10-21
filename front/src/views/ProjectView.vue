@@ -18,28 +18,42 @@
           <!-- 项目概览 -->
           <el-tab-pane label="项目概览" name="overview">
             <div v-if="project" class="overview-panel">
-              <!-- 基本信息卡片 -->
-              <div class="info-card">
-                <div class="card-header">
-                  <el-icon><InfoFilled /></el-icon>
-                  <span>基本信息</span>
+              <!-- 作品头卡 -->
+              <div class="hero-card">
+                <div class="hero-cover">
+                  <img v-if="project.cover_url" :src="BASE_URL + project.cover_url" alt="" />
+                  <span v-else>{{ project.title.slice(0, 1) }}</span>
                 </div>
-                <div class="info-grid">
-                  <div class="info-row">
-                    <span class="label">项目ID</span>
-                    <span class="value">{{ project.project_id }}</span>
+                <div class="hero-main">
+                  <div class="hero-title-row">
+                    <h2 class="hero-title">{{ project.title }}</h2>
+                    <span class="hero-tag">{{ project.genre }}</span>
+                    <span :class="['hero-tag', project.is_public ? 'is-public' : 'is-private']">
+                      {{ project.is_public ? '已公开' : '未公开' }}
+                    </span>
                   </div>
-                  <div class="info-row">
-                    <span class="label">总字数</span>
-                    <span class="value">{{ project.word_count }}</span>
+                  <div class="hero-meta">
+                    <span>{{ project.word_count }} 字</span>
+                    <span class="dot">·</span>
+                    <span>{{ scenes.length }} 个场景</span>
+                    <span class="dot">·</span>
+                    <span>{{ characters.length }} 个角色</span>
+                    <span class="dot">·</span>
+                    <span>更新于 {{ formatTime(project.updated_at) }}</span>
                   </div>
-                  <div class="info-row">
-                    <span class="label">创建时间</span>
-                    <span class="value">{{ formatTime(project.created_at) }}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="label">更新时间</span>
-                    <span class="value">{{ formatTime(project.updated_at) }}</span>
+                  <div class="hero-actions">
+                    <button class="hero-primary" @click="goCreate">
+                      <el-icon><Edit /></el-icon>
+                      <span>开始创作</span>
+                    </button>
+                    <button class="hero-ghost" @click="openPlayer">
+                      <el-icon><VideoPlay /></el-icon>
+                      <span>试玩</span>
+                    </button>
+                    <button class="hero-ghost" @click="openFeaturePreview">
+                      <el-icon><View /></el-icon>
+                      <span>剧情树预览</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -85,18 +99,6 @@
                     <span class="stat-label">对话数量</span>
                   </div>
                 </div>
-              </div>
-
-              <!-- 高级功能预览 -->
-              <div class="preview-section">
-                <button class="preview-btn" @click="openFeaturePreview">
-                  <el-icon><View /></el-icon>
-                  <span>高级功能预览</span>
-                </button>
-              </div>
-
-              <div class="greeting-message">
-                <p class="gradient-text">项目概览</p>
               </div>
 
               <!-- 功能预览弹窗 -->
@@ -618,11 +620,6 @@
               <div v-else class="variables-empty">还没有 CG，先添加一张试试。</div>
             </div>
           </el-tab-pane>
-          
-          <!-- 场景编辑 -->
-          <el-tab-pane label="场景编辑" name="scenes">
-            <ScenesManage :projectId="projectId.toString()"/>
-          </el-tab-pane>
         </el-tabs>
 
         <!-- 变量编辑 -->
@@ -771,6 +768,7 @@
 
 <script lang="ts">
 import { ref, defineComponent, onMounted, computed, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { 
   DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture, 
   Film, ChatLineRound, Loading, Plus, Search, Sort, Close, Refresh,
@@ -788,7 +786,6 @@ import { listEndings, createEnding, updateEnding, deleteEnding } from '@/api/end
 import { listCGs, createCG, updateCG, deleteCG } from '@/api/cg'
 import { searchResources, getResourceDetail } from '@/api/market'
 import { BASE_URL } from '@/utils/request'
-import ScenesManage from '@/components/ScenesManage.vue'
 import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
 import TechNavCircle from '@/components/TechNavCircle.vue'
 
@@ -802,6 +799,7 @@ interface Project {
   template_type: string
   word_count: number
   description?: string
+  is_public?: boolean
   created_at: string
   updated_at: string
 }
@@ -871,12 +869,13 @@ export default defineComponent({
     DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture,
     Film, ChatLineRound, Loading, Plus, Search, Sort, Close, Refresh,
     ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled,
-    ScenesManage, TechNavCircle
+    TechNavCircle
   },
   props: {
     projectId: { type: Number, required: true }
   },
   setup(props) {
+    const router = useRouter()
     // 原有状态
     const project = ref<Project | null>(null)
     const editingDescription = ref(false)
@@ -1198,6 +1197,16 @@ export default defineComponent({
         await fetchScenes(props.projectId)
       }
       await generateFlowFromScenes()
+    }
+
+    // 进入独立的创作工作台（场景列表 + 对话编辑 + 工具面板）
+    const goCreate = () => {
+      router.push(`/create/${props.projectId}`)
+    }
+
+    // 新窗口打开播放器试玩
+    const openPlayer = () => {
+      window.open(router.resolve(`/view/${props.projectId}`).href, '_blank')
     }
 
     // 第 10 批：节点级剧情图编辑器（content-level 节点 + 拖拽连线 + 条件编辑）
@@ -1859,7 +1868,7 @@ export default defineComponent({
       storyGraph, storyValidation, graphSource,
       zoomIn, zoomOut, resetCanvas, refreshCanvas,
       handleWheel, startPan, onPan, endPan, startDragNode, selectNode,
-      openFeaturePreview, openNodeEditor, generateFlowFromScenes,
+      openFeaturePreview, openNodeEditor, generateFlowFromScenes, goCreate, openPlayer,
       // 补充原有方法的引用
       fetchCharacters, fetchProjectDetails, fetchCharacterAvatars
     }
@@ -1963,6 +1972,158 @@ $cg-text-light: #999999;
 
 // 概览页面
 .overview-panel {
+  // 作品头卡：封面 + 标题/元信息 + 主操作
+  .hero-card {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border-radius: 18px;
+    border: 1px solid $cg-border;
+    background: linear-gradient(135deg, #fff6f9 0%, #fdf9ff 100%);
+
+    .hero-cover {
+      width: 132px;
+      height: 176px;
+      flex-shrink: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      background: linear-gradient(135deg, #fde3eb, #efe2fb);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+      font-weight: 700;
+      color: #e8467c;
+      box-shadow: 0 6px 18px rgba(232, 70, 124, 0.16);
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+    }
+
+    .hero-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .hero-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .hero-title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: $cg-text;
+      letter-spacing: 0.5px;
+    }
+
+    .hero-tag {
+      font-size: 11px;
+      padding: 2px 9px;
+      border-radius: 20px;
+      background: #ffffff;
+      border: 1px solid $cg-border;
+      color: $cg-text-light;
+
+      &.is-public {
+        color: #1f9d76;
+        background: #eafaf3;
+        border-color: #c6f0e0;
+      }
+
+      &.is-private {
+        color: #b3788e;
+        background: #fdf1f5;
+        border-color: #f6d6e2;
+      }
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 12.5px;
+      color: $cg-text-light;
+
+      .dot {
+        color: #dcc2cc;
+      }
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .hero-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 22px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #e8467c, #c81f4a);
+      color: #ffffff;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(200, 31, 74, 0.24);
+      transition: all 0.2s;
+
+      &:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(200, 31, 74, 0.3);
+      }
+    }
+
+    .hero-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border: 1px solid $cg-border;
+      border-radius: 10px;
+      background: #ffffff;
+      color: $cg-text;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+
+      &:hover {
+        border-color: $cg-light-pink;
+        color: $cg-pink;
+      }
+    }
+  }
+
+  @media (max-width: 760px) {
+    .hero-card {
+      flex-direction: column;
+
+      .hero-cover {
+        width: 100%;
+        height: 150px;
+      }
+    }
+  }
+
   .info-card {
     background: linear-gradient(135deg, #fff5f8 0%, #fef8ff 100%);
     border: 1px solid $cg-border;
@@ -2077,7 +2238,31 @@ $cg-text-light: #999999;
   .preview-section {
     display: flex;
     justify-content: center;
+    align-items: center;
+    gap: 14px;
     margin-bottom: 16px;
+
+    // 开始创作：主入口，实心按钮
+    .start-create-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 30px;
+      background: linear-gradient(135deg, #e8467c, #c81f4a);
+      border: none;
+      border-radius: 30px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 14px rgba(200, 31, 74, 0.24);
+
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(200, 31, 74, 0.32);
+      }
+    }
 
     .preview-btn {
       display: flex;

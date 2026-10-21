@@ -1552,20 +1552,20 @@ $transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   .template-card {
     padding: 12px 14px;
     border-radius: 14px;
-    border: 1px solid $border-light;
-    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid #f0d4de;
+    background: #ffffff;
     cursor: pointer;
     transition: $transition-smooth;
     
     &:hover {
-      border-color: rgba(255, 183, 197, 0.5);
-      background: rgba(255, 255, 255, 0.08);
+      border-color: #f3a8bf;
+      background: #fffafc;
     }
     
     &.active {
-      border-color: $pink;
-      background: linear-gradient(135deg, rgba(255, 183, 197, 0.15), rgba(201, 169, 232, 0.15));
-      box-shadow: 0 4px 16px rgba(255, 183, 197, 0.2);
+      border-color: #e8467c;
+      background: #fdeef3;
+      box-shadow: 0 4px 14px rgba(232, 70, 124, 0.14);
     }
     
     .template-card-head {
@@ -1574,20 +1574,20 @@ $transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       justify-content: space-between;
       
       .template-name {
-        color: white;
+        color: #3d2b32;
         font-size: 15px;
         font-weight: 600;
       }
       
       .template-check {
-        color: $pink;
+        color: #e8467c;
         font-size: 16px;
       }
     }
     
     .template-desc {
       margin: 6px 0 8px;
-      color: #9ca3af;
+      color: #8a6a76;
       font-size: 12px;
       line-height: 1.5;
     }
@@ -1601,9 +1601,9 @@ $transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         padding: 2px 10px;
         border-radius: 20px;
         font-size: 11px;
-        color: $mint;
-        background: rgba(168, 230, 207, 0.15);
-        border: 1px solid rgba(168, 230, 207, 0.3);
+        color: #b4446a;
+        background: #fdeef3;
+        border: 1px solid #f6d6e2;
       }
     }
   }

@@ -14,46 +14,100 @@
 			<div class="panel-section">
 				<h3 class="section-title">场景设置</h3>
 				
-				<el-form :model="scene" label-width="80px" size="small">
-					<el-form-item label="场景标题">
-						<el-input v-model="scene.title" placeholder="输入场景标题" />
-					</el-form-item>
+				<el-form :model="scene" size="small" class="scene-form">
+					<div class="field-block">
+						<div class="field-label">场景标题</div>
+						<el-input v-model="scene.title" placeholder="例如：雨夜相遇" />
+					</div>
 					
-					<el-form-item label="场景描述">
-						<el-input type="textarea" v-model="scene.description" placeholder="输入场景描述" rows="3" />
-					</el-form-item>
+					<div class="field-block">
+						<div class="field-label">场景描述</div>
+						<el-input
+							v-model="scene.description"
+							type="textarea"
+							placeholder="一句话说明这个场景要发生什么"
+							:rows="3"
+							resize="none"
+						/>
+					</div>
 					
-					<el-form-item label="背景图片">
+					<div class="field-block">
+						<div class="field-label">背景图片</div>
+						<div v-if="scene.background_url" class="bg-card">
+							<img :src="BASE_URL + scene.background_url" alt="背景预览" />
+							<el-upload
+								class="bg-card-upload"
+								action="#"
+								:http-request="handleBackgroundUpload"
+								accept="image/*"
+								:show-file-list="false">
+								<button type="button" class="bg-card-btn">更换</button>
+							</el-upload>
+						</div>
 						<el-upload
-							class="upload-demo"
+							v-else
+							class="bg-empty-upload"
 							action="#"
 							:http-request="handleBackgroundUpload"
 							accept="image/*"
-							list-type="picture">
-							<el-button size="small" type="primary">上传背景图</el-button>
+							:show-file-list="false">
+							<button type="button" class="bg-empty">
+								<span class="bg-empty-icon">＋</span>
+								<span>上传背景图</span>
+							</button>
 						</el-upload>
-						<div v-if="scene.background_url" class="preview-image">
-							<img :src="BASE_URL + scene.background_url" alt="背景预览" />
-						</div>
-					</el-form-item>
+					</div>
 					
-					<el-form-item label="背景音乐">
+					<div class="field-block">
+						<div class="field-label">背景音乐</div>
+						<div v-if="scene.music_url" class="music-card">
+							<button type="button" class="music-play" @click="toggleMusic">
+								{{ musicPlaying ? '❚❚' : '▶' }}
+							</button>
+							<div class="music-main">
+								<input
+									class="music-progress"
+									type="range"
+									min="0"
+									:max="musicDuration || 0"
+									step="0.1"
+									:value="musicProgress"
+									@input="seekMusic"
+								/>
+								<div class="music-time">{{ fmtTime(musicProgress) }} / {{ fmtTime(musicDuration) }}</div>
+							</div>
+							<el-upload
+								class="music-replace"
+								action="#"
+								:http-request="handleMusicUpload"
+								accept="audio/*"
+								:show-file-list="false">
+								<button type="button" class="music-link">更换</button>
+							</el-upload>
+							<audio
+								ref="settingsAudio"
+								:src="BASE_URL + scene.music_url"
+								loop
+								@timeupdate="onMusicTime"
+								@loadedmetadata="onMusicMeta"
+								@ended="musicPlaying = false">
+							</audio>
+						</div>
 						<el-upload
-							class="upload-demo"
+							v-else
+							class="bg-empty-upload"
 							action="#"
 							:http-request="handleMusicUpload"
 							accept="audio/*"
-							list-type="text">
-							<el-button size="small" type="primary">上传背景音乐</el-button>
+							:show-file-list="false">
+							<button type="button" class="bg-empty">
+								<span class="bg-empty-icon">♪</span>
+								<span>上传背景音乐</span>
+							</button>
 						</el-upload>
-						<div v-if="scene.music_url" class="audio-preview">
-							<audio :src="BASE_URL + scene.music_url" controls loop>你的浏览器不支持音频播放</audio>
-						</div>
-					</el-form-item>
+					</div>
 					
-					<el-form-item>
-						<el-button size="large" type="success" @click="saveSceneSettings">保存场景设置</el-button>
-					</el-form-item>
+					<button type="button" class="save-scene-btn" @click="saveSceneSettings">保存场景设置</button>
 				</el-form>
 			</div>
 			
@@ -94,6 +148,12 @@
 							</div>
 							
 							<div class="dialogue-actions">
+								<el-button
+									size="mini"
+									@click="openDirectiveDialog(index)"
+									class="directive-btn"
+									title="演出指令：立绘位置、背景切换、音效"
+								>演出</el-button>
 								<el-button 
 									size="mini" 
 									icon="Delete" 
@@ -492,9 +552,85 @@
 			</div>
 		</template>
 	</el-dialog>
+
+		<!-- 演出指令弹窗 -->
+		<el-dialog
+			v-model="directiveDialogVisible"
+			title="演出指令"
+			width="520px"
+			append-to-body
+			class="directive-dialog"
+		>
+			<div class="dir-target">当前节点：{{ directiveTarget }}</div>
+
+			<div v-if="!directives.length" class="dir-empty">
+				还没有指令。立绘位置、背景切换、音效都可以在这里加。
+			</div>
+			<div v-else class="dir-list">
+				<div v-for="d in directives" :key="d.directive_id" class="dir-row">
+					<span class="dir-type">{{ directiveTypeLabel(d.directive_type) }}</span>
+					<span class="dir-summary">{{ directiveSummary(d) }}</span>
+					<button type="button" class="dir-del" @click="removeDirective(d)">删除</button>
+				</div>
+			</div>
+
+			<div class="dir-add-title">新增指令</div>
+			<div class="dir-add">
+				<el-select v-model="newDirectiveType" size="small" class="dir-select-type">
+					<el-option label="立绘" value="avatar" />
+					<el-option label="背景" value="background" />
+					<el-option label="音乐" value="music" />
+					<el-option label="音效" value="sound" />
+					<el-option label="停顿" value="wait" />
+				</el-select>
+
+				<template v-if="newDirectiveType === 'avatar'">
+					<el-select v-model="dirForm.character_id" size="small" placeholder="角色" class="dir-field">
+						<el-option v-for="c in characters" :key="c.character_id" :label="c.name" :value="c.character_id" />
+					</el-select>
+					<el-select v-model="dirForm.position" size="small" class="dir-field-sm">
+						<el-option label="左侧" value="left" />
+						<el-option label="中间" value="center" />
+						<el-option label="右侧" value="right" />
+					</el-select>
+					<el-select v-model="dirForm.action" size="small" class="dir-field-sm">
+						<el-option label="显示" value="show" />
+						<el-option label="隐藏" value="hide" />
+					</el-select>
+				</template>
+
+				<template v-else-if="newDirectiveType === 'background'">
+					<el-input v-model="dirForm.url" size="small" placeholder="/static/... 背景图地址" class="dir-field-wide" />
+				</template>
+
+				<template v-else-if="newDirectiveType === 'music'">
+					<el-input v-model="dirForm.url" size="small" placeholder="音乐地址" class="dir-field-wide" />
+					<el-select v-model="dirForm.action" size="small" class="dir-field-sm">
+						<el-option label="播放" value="play" />
+						<el-option label="停止" value="stop" />
+					</el-select>
+				</template>
+
+				<template v-else-if="newDirectiveType === 'sound'">
+					<el-input v-model="dirForm.url" size="small" placeholder="音效地址" class="dir-field-wide" />
+				</template>
+
+				<template v-else>
+					<el-input v-model.number="dirForm.ms" size="small" placeholder="毫秒" class="dir-field-sm" />
+				</template>
+
+				<el-button size="small" type="primary" @click="addDirective">添加</el-button>
+			</div>
+
+			<template #footer>
+				<el-button @click="directiveDialogVisible = false">关闭</el-button>
+			</template>
+		</el-dialog>
 </template>
 
 <script setup>
+// @ts-nocheck
+// 本组件是从纯 JS 演进而来的大文件，暂不做类型检查；如需启用请逐段补类型后再删掉本行。
 import {
 	defineProps,
 	ref,
@@ -517,6 +653,7 @@ import {
 import { generateText, continueStory } from '@/api/ai'  
 import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/branch'
 import { listVariables, listEffects, saveContentEffects } from '@/api/variable'
+import { listNodeDirectives, createDirective, deleteDirective } from '@/api/directive'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -553,9 +690,164 @@ const effectsMap = ref({});
 const characters = ref([]);
 const loading = ref(true);
 const error = ref('');
-const isPanelOpen = ref(false);
+const isPanelOpen = ref(true);
 const currentDialogueIndex = ref(0);
 const defaultBackground = '';
+
+// 场景设置里的背景音乐迷你播放器
+const settingsAudio = ref<HTMLAudioElement | null>(null);
+const musicPlaying = ref(false);
+const musicProgress = ref(0);
+const musicDuration = ref(0);
+
+const fmtTime = (s) => {
+	if (!s || Number.isNaN(s)) return '0:00';
+	const m = Math.floor(s / 60);
+	const sec = Math.floor(s % 60);
+	return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+};
+
+const toggleMusic = () => {
+	const el = settingsAudio.value;
+	if (!el) return;
+	if (el.paused) {
+		el.play().then(() => { musicPlaying.value = true; }).catch(() => {});
+	} else {
+		el.pause();
+		musicPlaying.value = false;
+	}
+};
+
+const onMusicTime = () => {
+	if (settingsAudio.value) musicProgress.value = settingsAudio.value.currentTime;
+};
+
+const onMusicMeta = () => {
+	if (settingsAudio.value) musicDuration.value = settingsAudio.value.duration || 0;
+};
+
+const seekMusic = (e) => {
+	const v = Number(e.target.value);
+	if (settingsAudio.value) settingsAudio.value.currentTime = v;
+	musicProgress.value = v;
+};
+
+/* ===== 演出指令（节点级）===== */
+const directiveDialogVisible = ref(false);
+const directives = ref([]);
+const directiveContentId = ref(null);
+const directiveTarget = ref('');
+const newDirectiveType = ref('avatar');
+const dirForm = ref({
+	character_id: null,
+	position: 'center',
+	action: 'show',
+	url: '',
+	ms: 500
+});
+
+const directiveTypeLabel = (t) => ({
+	avatar: '立绘',
+	background: '背景',
+	music: '音乐',
+	sound: '音效',
+	wait: '停顿'
+}[t] || t);
+
+const directiveSummary = (d) => {
+	const p = d.payload || {};
+	if (d.directive_type === 'avatar') {
+		const c = characters.value.find(x => x.character_id === p.character_id);
+		const posMap = { left: '左侧', center: '中间', right: '右侧' };
+		return `${c ? c.name : '角色'} · ${posMap[p.position] || '中间'} · ${p.action === 'hide' ? '隐藏' : '显示'}`;
+	}
+	if (d.directive_type === 'background') return p.url || '（未填地址）';
+	if (d.directive_type === 'music') return `${p.action === 'stop' ? '停止' : '播放'} · ${p.url || '（未填）'}`;
+	if (d.directive_type === 'sound') return p.url || '（未填地址）';
+	if (d.directive_type === 'wait') return `${p.ms || 0} 毫秒`;
+	return '';
+};
+
+const loadDirectives = async (contentId) => {
+	directives.value = await listNodeDirectives(Number(projectId.value), Number(contentId));
+};
+
+const openDirectiveDialog = async (index) => {
+	const d = dialogues.value[index];
+	if (!d || !d.content_id) {
+		ElMessage.warning('先保存这条对话，再配置演出');
+		return;
+	}
+	directiveContentId.value = d.content_id;
+	const kind = d.content_type === '描述' ? '旁白' : (d.content_type || '对话');
+	directiveTarget.value = `${kind}：${(d.content_text || '').slice(0, 18) || '（空）'}`;
+	newDirectiveType.value = 'avatar';
+	dirForm.value = { character_id: null, position: 'center', action: 'show', url: '', ms: 500 };
+	directiveDialogVisible.value = true;
+	try {
+		await loadDirectives(d.content_id);
+	} catch (e) {
+		ElMessage.error('读取演出指令失败');
+	}
+};
+
+const addDirective = async () => {
+	if (!directiveContentId.value) return;
+	const t = newDirectiveType.value;
+	let payload = {};
+	if (t === 'avatar') {
+		if (!dirForm.value.character_id) {
+			ElMessage.warning('请选择角色');
+			return;
+		}
+		payload = {
+			character_id: dirForm.value.character_id,
+			position: dirForm.value.position,
+			action: dirForm.value.action
+		};
+	} else if (t === 'background') {
+		if (!dirForm.value.url) {
+			ElMessage.warning('请填写背景图地址');
+			return;
+		}
+		payload = { url: dirForm.value.url, transition: 'fade', duration_ms: 400 };
+	} else if (t === 'music') {
+		if (!dirForm.value.url) {
+			ElMessage.warning('请填写音乐地址');
+			return;
+		}
+		payload = { url: dirForm.value.url, action: dirForm.value.action, loop: true };
+	} else if (t === 'sound') {
+		if (!dirForm.value.url) {
+			ElMessage.warning('请填写音效地址');
+			return;
+		}
+		payload = { url: dirForm.value.url };
+	} else {
+		payload = { ms: Number(dirForm.value.ms) || 500 };
+	}
+
+	try {
+		await createDirective(Number(projectId.value), {
+			content_id: directiveContentId.value,
+			directive_type: t,
+			payload
+		});
+		await loadDirectives(directiveContentId.value);
+		ElMessage.success('已添加');
+	} catch (e) {
+		ElMessage.error('添加失败');
+	}
+};
+
+const removeDirective = async (d) => {
+	try {
+		await deleteDirective(Number(projectId.value), d.directive_id);
+		await loadDirectives(directiveContentId.value);
+	} catch (e) {
+		ElMessage.error('删除失败');
+	}
+};
 const backgroundMusic = ref(null);
 
 const aiDialogVisible = ref(false);
@@ -1180,20 +1472,21 @@ onMounted(() => {
 /* 主容器 */
 .scene-editor-container {
   position: relative;
-  /* 不能写 100vw：组件嵌在项目页 tab 里，100vw 会比父容器宽 98px，导致横向滚动/裁切 */
+  /* 不能写 100vw：100vw 会比父容器宽 98px，导致横向滚动/裁切 */
   width: 100%;
-  height: 85vh;
+  /* 创作工作台里由中栏容器给定高度，不再写死 85vh */
+  height: 100%;
   overflow: hidden;
   background: linear-gradient(135deg, #fdf2f8 0%, #fef7ff 100%);
 }
 
 /* 编辑面板 */
 .editor-panel {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
-  width: 50%;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background: #ffffff;
   box-shadow: 3px 0 20px rgba(0, 0, 0, 0.08);
   transition: transform 0.32s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -1209,20 +1502,20 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 18px 24px;
-  background: linear-gradient(90deg, #ffc0d0 0%, #ffd6e0 100%);
-  border-bottom: 1px solid #ffb6c1;
+  padding: 13px 18px;
+  background: #ffffff;
+  border-bottom: 1px solid #f2e3e9;
   position: sticky;
-  margin-top: 40px;
+  top: 0;
   z-index: 101;
 }
 
 .panel-title {
   margin: 0;
-  color: #c81f4a;
-  font-size: 19px;
+  color: #3d2b32;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 
 .toggle-btn {
@@ -1244,28 +1537,233 @@ onMounted(() => {
   transform: scale(1.08);
 }
 
-.panel-section { padding: 24px; border-bottom: 1px solid #f8e1e8; }
+.panel-section { padding: 16px 18px; border-bottom: 1px solid #f7e6ec; }
 
 .section-title {
   margin-top: 0;
-  color: #c81f4a;
-  font-size: 17px;
-  border-left: 4px solid #ff7b9c;
-  padding-left: 12px;
-  margin-bottom: 20px;
+  color: #3d2b32;
+  font-size: 14px;
+  border-left: 3px solid #e8467c;
+  padding-left: 9px;
+  margin-bottom: 14px;
   font-weight: 600;
 }
 
-.preview-image img {
-  max-width: 100%;
-  max-height: 200px;
-  margin-top: 12px;
-  border-radius: 10px;
-  border: 1px solid #f8e1e8;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+/* ===== 场景设置：字段块 ===== */
+.field-block { margin-bottom: 16px; }
+
+.field-label {
+  font-size: 12px;
+  color: #8a6a76;
+  margin-bottom: 7px;
 }
 
-.audio-preview { margin-top: 12px; width: 100%; }
+/* 输入框统一成卡片风格 */
+.scene-form :deep(.el-input__wrapper),
+.scene-form :deep(.el-textarea__inner) {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px #f2e3e9 inset;
+  background: #fffafc;
+}
+
+.scene-form :deep(.el-input__wrapper) {
+  padding: 5px 11px;
+}
+
+.scene-form :deep(.el-textarea__inner) {
+  padding: 8px 11px;
+  line-height: 1.65;
+  font-family: inherit;
+}
+
+.scene-form :deep(.el-input__wrapper:hover),
+.scene-form :deep(.el-textarea__inner:hover) {
+  box-shadow: 0 0 0 1px #f0bfd0 inset;
+}
+
+.scene-form :deep(.el-input__wrapper.is-focus),
+.scene-form :deep(.el-textarea__inner:focus) {
+  box-shadow: 0 0 0 1px #e8467c inset;
+  background: #ffffff;
+}
+
+.scene-form :deep(.el-input__inner),
+.scene-form :deep(.el-textarea__inner) {
+  font-size: 13px;
+  color: #3d2b32;
+}
+
+.scene-form :deep(.el-input__inner::placeholder),
+.scene-form :deep(.el-textarea__inner::placeholder) {
+  color: #c9aeb9;
+}
+
+.scene-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+/* 背景图卡片 */
+.bg-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #f2e3e9;
+  background: #fdf6f9;
+  line-height: 0;
+}
+
+.bg-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.bg-card-upload {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+.bg-card-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #c81f4a;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.15s;
+}
+
+.bg-card-btn:hover { background: #fff; color: #a3163c; }
+
+/* 空态上传（背景图 / 音乐共用） */
+.bg-empty-upload { width: 100%; }
+
+.bg-empty-upload :deep(.el-upload) { width: 100%; }
+
+.bg-empty {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 12px;
+  border: 1px dashed #f0c9d8;
+  border-radius: 12px;
+  background: #fffafc;
+  color: #b3788e;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bg-empty:hover { border-color: #e8467c; color: #c81f4a; background: #fdeef3; }
+
+.bg-empty-icon { font-size: 15px; line-height: 1; }
+
+/* 音乐迷你播放器 */
+.music-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f2e3e9;
+  border-radius: 12px;
+  background: #fffafc;
+}
+
+.music-play {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: #e8467c;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.music-play:hover { background: #d33a6c; }
+
+.music-main { flex: 1; min-width: 0; }
+
+.music-progress {
+  width: 100%;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #f2d9e3;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.music-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e8467c;
+  cursor: pointer;
+}
+
+.music-progress::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 50%;
+  background: #e8467c;
+  cursor: pointer;
+}
+
+.music-time {
+  font-size: 10px;
+  color: #b99aa5;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.music-link {
+  border: none;
+  background: transparent;
+  color: #c81f4a;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+
+.music-link:hover { text-decoration: underline; }
+
+/* 保存按钮 */
+.save-scene-btn {
+  width: 100%;
+  padding: 9px 0;
+  margin-top: 4px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e8467c, #c81f4a);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 3px 10px rgba(200, 31, 74, 0.2);
+}
+
+.save-scene-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(200, 31, 74, 0.28);
+}
+
 .hidden-audio { display: none; }
 
 .dialogue-controls { display: flex; gap: 12px; margin-bottom: 20px; }
@@ -1412,6 +1910,8 @@ onMounted(() => {
 .panel-toggle-btn {
   position: absolute;
   top: 50%;
+  /* 面板满宽后，圆形钮固定在中栏右侧边缘 */
+  left: calc(100% - 68px);
   transform: translateY(-50%);
   width: 44px;
   height: 44px;
@@ -1434,7 +1934,7 @@ onMounted(() => {
   box-shadow: 0 6px 20px rgba(255, 123, 156, 0.18);
 }
 
-.toggle-hidden { left: calc(50% - 34px); }
+.toggle-hidden { left: calc(100% - 68px); }
 
 .preview-container { width: 100%; height: 100%; position: relative; overflow: hidden; }
 .scene-background { width: 100%; height: 100%; position: relative; z-index: 1; }
@@ -1718,4 +2218,112 @@ onMounted(() => {
   .toggle-hidden { left: calc(100% - 68px); }
   .character-stand { left: 12px; height: 62%; }
 }
+
+/* ===== 演出指令弹窗 ===== */
+.directive-btn {
+  border-color: #f0cfdc !important;
+  color: #c81f4a !important;
+  background: #fffafc !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+}
+
+.directive-btn:hover {
+  background: #fdeef3 !important;
+  border-color: #e8467c !important;
+}
+
+.dir-target {
+  font-size: 12px;
+  color: #8a6a76;
+  background: #fffafc;
+  border: 1px solid #f5e4ea;
+  border-radius: 8px;
+  padding: 8px 11px;
+  margin-bottom: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dir-empty {
+  font-size: 12px;
+  color: #b99aa5;
+  text-align: center;
+  padding: 18px 8px;
+  background: #fffdfe;
+  border: 1px dashed #eddbe3;
+  border-radius: 10px;
+}
+
+.dir-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #f5e4ea;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.dir-type {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #c81f4a;
+  background: #fdeef3;
+  border: 1px solid #f6d6e2;
+  border-radius: 6px;
+  padding: 1px 7px;
+}
+
+.dir-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #3d2b32;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dir-del {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #c98aa0;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dir-del:hover { color: #d9534f; }
+
+.dir-add-title {
+  font-size: 12px;
+  color: #8a6a76;
+  margin: 16px 0 8px;
+}
+
+.dir-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed #eddbe3;
+  border-radius: 10px;
+  background: #fffdfe;
+}
+
+.dir-select-type { width: 96px; flex-shrink: 0; }
+.dir-field { width: 120px; }
+.dir-field-sm { width: 96px; }
+.dir-field-wide { flex: 1; min-width: 150px; }
 </style>
