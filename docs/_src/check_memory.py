@@ -34,7 +34,7 @@ CAN_CLOSE = {
 }
 
 # 不建议动
-KEEP = {'python', 'WorkBuddyAI', 'Memory Compression', 'MsMpEng', 'explorer',
+KEEP = {'python', 'Memory Compression', 'MsMpEng', 'explorer',
         'System', 'svchost.exe', 'Registry'}
 
 
