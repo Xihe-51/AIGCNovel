@@ -21,7 +21,9 @@ GENRES = ('悬疑', '恋爱', '科幻', '奇幻', '历史', '现代', '其他')
 TEMPLATE_TYPES = ('线性叙事', '分支叙事', '开放世界')
 
 # 模板中心元数据：展示用名称/描述/特性 + 建项目时自动铺的场景骨架。
-# 注意：骨架只创建 Scene，绝不创建任何 ScriptContent，否则会把「新项目对话数=0」的口径打破。
+# 骨架 = 场景 + 占位对话（统一用「【在此填写：…】」，让作者一眼知道该改哪里）
+# + 可选的占位分支 + 推荐变量。占位文本都落在描述/选择节点上，不绑定角色，
+# 作者可在工作台里直接改类型、换角色、删掉不需要的节点。
 TEMPLATES = [
     {
         'template_type': '线性叙事',
@@ -29,9 +31,31 @@ TEMPLATES = [
         'description': '单主线顺序推进，读者从头读到尾，适合短篇与明确结局的故事。',
         'features': ['单主线', '顺序阅读', '单结局'],
         'starter_scenes': [
-            {'title': '开场', 'order_num': 1,
-             'description': '故事起点，交代主角、处境与第一个冲突。'},
+            {
+                'key': 'open', 'title': '开场', 'order_num': 1,
+                'description': '故事起点，交代主角、处境与第一个冲突。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：开场画面，交代时间、地点与氛围】'},
+                    {'type': '对话', 'text': '【在此填写：主角登场的第一句台词】'},
+                ],
+            },
+            {
+                'key': 'develop', 'title': '发展', 'order_num': 2,
+                'description': '冲突升级，主角被迫做出反应。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：让冲突升级的事件】'},
+                    {'type': '对话', 'text': '【在此填写：主角面对冲突的回应】'},
+                ],
+            },
+            {
+                'key': 'ending', 'title': '结局', 'order_num': 3,
+                'description': '收束主线，写下这个故事的落点。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：收束主线的最后一幕】'},
+                ],
+            },
         ],
+        'starter_branches': [],
         'recommended_variables': [],
     },
     {
@@ -40,13 +64,47 @@ TEMPLATES = [
         'description': '关键时刻提供选择，不同选择走向不同结局，适合多线多结局剧情。',
         'features': ['多分支', '多结局', '选择驱动'],
         'starter_scenes': [
-            {'title': '开场', 'order_num': 1,
-             'description': '故事起点，铺垫可被读者影响的伏笔。'},
-            {'title': '分歧点', 'order_num': 2,
-             'description': '第一个关键选择出现的位置，用分支连接到不同走向。'},
+            {
+                'key': 'open', 'title': '开场', 'order_num': 1,
+                'description': '故事起点，铺垫可被读者影响的伏笔。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：铺垫一个会被选择改变的伏笔】'},
+                    {'type': '对话', 'text': '【在此填写：主角登场的第一句台词】'},
+                ],
+            },
+            {
+                'key': 'fork', 'title': '分歧点', 'order_num': 2,
+                'description': '第一个关键选择出现的位置，用分支连接到不同走向。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：把读者推到必须选择的那一刻】'},
+                    {'key': 'choice', 'type': '选择',
+                     'text': '【在此填写：这里要让读者选什么？】'},
+                ],
+            },
+            {
+                'key': 'ending_a', 'title': '结局·A 线', 'order_num': 3,
+                'description': '选择 A 之后的收束。',
+                'starter_contents': [
+                    {'key': 'end_a', 'type': '描述',
+                     'text': '【在此填写：A 线结局，例如接受了邀请】'},
+                ],
+            },
+            {
+                'key': 'ending_b', 'title': '结局·B 线', 'order_num': 4,
+                'description': '选择 B 之后的收束。',
+                'starter_contents': [
+                    {'key': 'end_b', 'type': '描述',
+                     'text': '【在此填写：B 线结局，例如转身离开】'},
+                ],
+            },
+        ],
+        'starter_branches': [
+            {'from': 'choice', 'to': 'end_a', 'choice_text': '【选项 A：接受邀请】'},
+            {'from': 'choice', 'to': 'end_b', 'choice_text': '【选项 B：转身离开】'},
         ],
         'recommended_variables': [
-            {'name': 'affection', 'label': '好感度', 'initial_value': 0},
+            {'name': 'affection', 'label': '好感度', 'initial_value': 0,
+             'description': '关键选择会改变它，可用来做条件分支与结局判定。'},
         ],
     },
     {
@@ -55,13 +113,39 @@ TEMPLATES = [
         'description': '多场景自由探索，用变量串联线索与状态，适合悬疑与探索类故事。',
         'features': ['多场景', '变量驱动', '自由探索'],
         'starter_scenes': [
-            {'title': '序章', 'order_num': 1,
-             'description': '世界观与探索规则的引入场景。'},
-            {'title': '探索区域', 'order_num': 2,
-             'description': '可以反复往返、按线索解锁的开放区域。'},
+            {
+                'key': 'prologue', 'title': '序章', 'order_num': 1,
+                'description': '世界观与探索规则的引入场景。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：世界观与探索规则的引入】'},
+                ],
+            },
+            {
+                'key': 'area_a', 'title': '探索区域·甲', 'order_num': 2,
+                'description': '可以反复往返、按线索解锁的开放区域。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：甲区域的第一个可交互事件，例如拾取线索】'},
+                ],
+            },
+            {
+                'key': 'area_b', 'title': '探索区域·乙', 'order_num': 3,
+                'description': '需要前置线索或变量条件才能进入的区域。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：乙区域的进入条件与事件】'},
+                ],
+            },
+            {
+                'key': 'finale', 'title': '终章', 'order_num': 4,
+                'description': '线索齐备后的收束。',
+                'starter_contents': [
+                    {'type': '描述', 'text': '【在此填写：线索齐备后的收束与真相】'},
+                ],
+            },
         ],
+        'starter_branches': [],
         'recommended_variables': [
-            {'name': 'clue', 'label': '线索数', 'initial_value': 0},
+            {'name': 'clue', 'label': '线索数', 'initial_value': 0,
+             'description': '每拾取一条线索 +1，可用来解锁区域或结局。'},
         ],
     },
 ]
@@ -221,16 +305,54 @@ def create_project(user_id, title, genre, cover_url=None, template_type='线性�
         db.session.add(project)
         db.session.flush()  # 先拿到 project_id，供模板脚手架挂载
 
-        # 模板脚手架：按模板铺起始场景骨架。只建 Scene，绝不建 ScriptContent，
-        # 保证「新建项目的对话数仍为 0」，不干扰既有对话计数口径。
+        # 模板脚手架：按模板铺场景 + 占位对话 + 占位分支 + 推荐变量。
+        # 占位文本统一用「【在此填写：…】」，作者在工作台里就地改掉即可。
         template = _template_def(template_type)
         if template:
+            content_by_key = {}
             for s in template['starter_scenes']:
-                db.session.add(Scene(
+                scene = Scene(
                     project_id=project.project_id,
                     title=s['title'],
                     description=s.get('description'),
                     order_num=s['order_num'],
+                )
+                db.session.add(scene)
+                db.session.flush()  # 拿 scene_id 给占位对话挂载
+
+                for i, c in enumerate(s.get('starter_contents') or [], start=1):
+                    content = ScriptContent(
+                        project_id=project.project_id,
+                        scene_id=scene.scene_id,
+                        content_type=c.get('type') or '描述',
+                        content_text=c['text'],
+                        order_num=i,
+                    )
+                    db.session.add(content)
+                    db.session.flush()
+                    if c.get('key'):
+                        content_by_key[c['key']] = content
+
+            for b in template.get('starter_branches') or []:
+                src = content_by_key.get(b.get('from'))
+                dst = content_by_key.get(b.get('to'))
+                if not src or not dst:
+                    continue
+                db.session.add(BranchPath(
+                    project_id=project.project_id,
+                    source_content_id=src.content_id,
+                    target_content_id=dst.content_id,
+                    choice_text=b.get('choice_text'),
+                    conditions=None,
+                ))
+
+            for v in template.get('recommended_variables') or []:
+                db.session.add(ProjectVariable(
+                    project_id=project.project_id,
+                    name=v['name'],
+                    label=v['label'],
+                    initial_value=v.get('initial_value', 0),
+                    description=v.get('description'),
                 ))
 
         db.session.commit()

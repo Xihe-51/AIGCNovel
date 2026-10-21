@@ -208,7 +208,20 @@
               <div class="template-features">
                 <span v-for="f in tpl.features" :key="f" class="feature-tag">{{ f }}</span>
               </div>
+              <div v-if="tpl.starter_scenes && tpl.starter_scenes.length" class="template-skeleton">
+                <span class="skeleton-label">预置场景</span>
+                <span class="skeleton-scenes">
+                  {{ tpl.starter_scenes.map(s => s.title).join(' → ') }}
+                </span>
+              </div>
+              <div v-if="tpl.recommended_variables && tpl.recommended_variables.length" class="template-vars">
+                <span class="skeleton-label">推荐变量</span>
+                <span v-for="v in tpl.recommended_variables" :key="v.name" class="var-chip">{{ v.label }}</span>
+              </div>
             </div>
+          </div>
+          <div class="template-tip">
+            选好模板后，会按骨架自动建好场景与「【在此填写：…】」占位文本，进工作台直接改。
           </div>
         </el-form-item>
         <el-form-item label="公开项目" v-if="isEditMode">
@@ -772,7 +785,11 @@ const submitProject = async () => {
         is_public: projectForm.value.isPublic
       })
       projects.value.unshift(newProject)
-      ElMessage.success('项目创建成功')
+      const tpl = templates.value.find(t => t.template_type === projectForm.value.template_type)
+      const sceneCount = tpl && tpl.starter_scenes ? tpl.starter_scenes.length : 0
+      ElMessage.success(sceneCount
+        ? `项目创建成功，已按模板预置 ${sceneCount} 个场景`
+        : '项目创建成功')
     }
     fetchProjects()
     dialogVisible.value = false
@@ -793,10 +810,46 @@ const loadTemplates = async () => {
   } catch (error) {
     console.warn('获取模板列表失败，使用内置模板兜底', error)
   }
+  // 兜底模板：与后端 TEMPLATES 的骨架保持一致（接口不可用时也能讲清楚会建出什么）
   templates.value = [
-    { template_type: '线性叙事', name: '线性叙事', description: '单主线顺序推进，适合短篇与明确结局的故事。', features: ['单主线', '顺序阅读'], starter_scenes: [], recommended_variables: [] },
-    { template_type: '分支叙事', name: '分支叙事', description: '关键时刻提供选择，不同选择走向不同结局。', features: ['多分支', '多结局'], starter_scenes: [], recommended_variables: [] },
-    { template_type: '开放世界', name: '开放世界', description: '多场景自由探索，用变量串联线索与状态。', features: ['多场景', '变量驱动'], starter_scenes: [], recommended_variables: [] }
+    {
+      template_type: '线性叙事',
+      name: '线性叙事',
+      description: '单主线顺序推进，读者从头读到尾，适合短篇与明确结局的故事。',
+      features: ['单主线', '顺序阅读', '单结局'],
+      starter_scenes: [
+        { title: '开场', order_num: 1 },
+        { title: '发展', order_num: 2 },
+        { title: '结局', order_num: 3 }
+      ],
+      recommended_variables: []
+    },
+    {
+      template_type: '分支叙事',
+      name: '分支叙事',
+      description: '关键时刻提供选择，不同选择走向不同结局，适合多线多结局剧情。',
+      features: ['多分支', '多结局', '选择驱动'],
+      starter_scenes: [
+        { title: '开场', order_num: 1 },
+        { title: '分歧点', order_num: 2 },
+        { title: '结局·A 线', order_num: 3 },
+        { title: '结局·B 线', order_num: 4 }
+      ],
+      recommended_variables: [{ name: 'affection', label: '好感度', initial_value: 0 }]
+    },
+    {
+      template_type: '开放世界',
+      name: '开放世界',
+      description: '多场景自由探索，用变量串联线索与状态，适合悬疑与探索类故事。',
+      features: ['多场景', '变量驱动', '自由探索'],
+      starter_scenes: [
+        { title: '序章', order_num: 1 },
+        { title: '探索区域·甲', order_num: 2 },
+        { title: '探索区域·乙', order_num: 3 },
+        { title: '终章', order_num: 4 }
+      ],
+      recommended_variables: [{ name: 'clue', label: '线索数', initial_value: 0 }]
+    }
   ]
 }
 
@@ -1606,6 +1659,41 @@ $transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         border: 1px solid #f6d6e2;
       }
     }
+
+    .template-skeleton,
+    .template-vars {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+      line-height: 1.6;
+
+      .skeleton-label {
+        flex-shrink: 0;
+        color: #b99aa5;
+      }
+
+      .skeleton-scenes {
+        color: #5d4550;
+        word-break: break-all;
+      }
+
+      .var-chip {
+        padding: 0 8px;
+        border-radius: 10px;
+        color: #7a4a5c;
+        background: #fff5f8;
+        border: 1px solid #f6e2ea;
+      }
+    }
+  }
+
+  .template-tip {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #b99aa5;
+    line-height: 1.6;
   }
   
   :deep(.el-upload__tip) {
