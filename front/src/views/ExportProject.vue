@@ -30,12 +30,13 @@
 			
 			<!-- 预览容器 -->
 			<div class="preview-container" @wheel.prevent="handleWheel">
-				<!-- 背景图 -->
+				<!-- 背景图（切图时先淡出、换图后再淡入） -->
 				<div class="scene-background" @click="onDialogueClick">
 					<img 
-						:src="stageBackground" 
+						:src="bgShown" 
 						alt="场景背景" 
 						class="background-image"
+						:class="{ 'bg-fading': bgFading }"
 						decoding="async"
 					/>
 				</div>
@@ -63,6 +64,11 @@
 					/>
 				</div>
 				
+				<!-- 演出「停顿」指令生效时的提示 -->
+				<div v-if="isWaiting && !loading && !error" class="wait-hint">
+					<span></span><span></span><span></span>
+				</div>
+
 				<!-- 加载状态 -->
 				<div v-if="loading" class="loading-indicator">
 					<el-loading-spinner size="50" />
@@ -782,7 +788,7 @@ const scheduleAutoAdvance = () => {
 		clearTimeout(autoTimer);
 		autoTimer = null;
 	}
-	if (!autoPlay.value || !isPlaying.value || isTyping.value || currentChoices.value.length) return;
+	if (!autoPlay.value || !isPlaying.value || isTyping.value || isWaiting.value || currentChoices.value.length) return;
 	autoTimer = setTimeout(() => {
 		autoTimer = null;
 		nextDialogue();
@@ -1162,7 +1168,67 @@ const loadDirectiveData = async () => {
 const resetStage = () => {
 	stageAvatars.value = { left: '', center: '', right: '' };
 	bgFromDirective.value = '';
+	clearWait();
 };
+
+/* ===== 演出「停顿」（wait）===== */
+const isWaiting = ref(false);
+let waitTimer = null;
+
+const clearWait = () => {
+	if (waitTimer) {
+		clearTimeout(waitTimer);
+		waitTimer = null;
+	}
+	isWaiting.value = false;
+};
+
+/** 按毫秒数阻塞推进：停顿期间点击/自动播放都不生效，结束后恢复自动节奏 */
+const scheduleWait = (ms) => {
+	clearWait();
+	const delay = Math.max(0, Number(ms) || 0);
+	if (!delay) return;
+	isWaiting.value = true;
+	waitTimer = setTimeout(() => {
+		waitTimer = null;
+		isWaiting.value = false;
+		scheduleAutoAdvance();
+	}, delay);
+};
+
+/* ===== 背景淡入淡出 ===== */
+const bgShown = ref('');
+const bgFading = ref(false);
+let bgSwapTimer = null;
+
+const swapBackground = (url) => {
+	if (bgSwapTimer) {
+		clearTimeout(bgSwapTimer);
+		bgSwapTimer = null;
+	}
+	if (!url || url === bgShown.value) return;
+	// 先淡出旧图，换完图并解码成功后再淡入，避免白闪
+	bgFading.value = true;
+	bgSwapTimer = setTimeout(() => {
+		bgShown.value = url;
+		const img = new Image();
+		const done = () => {
+			bgFading.value = false;
+			bgSwapTimer = null;
+		};
+		img.onload = done;
+		img.onerror = done;
+		img.src = url;
+	}, 260);
+};
+
+watch(stageBackground, (url) => {
+	if (!bgShown.value) {
+		bgShown.value = url;
+		return;
+	}
+	swapBackground(url);
+}, { immediate: true });
 
 const applyDirectives = (dialogue) => {
 	if (!dialogue) return;
@@ -1170,6 +1236,7 @@ const applyDirectives = (dialogue) => {
 	if (!list.length) return;
 
 	const next = { ...stageAvatars.value };
+	let waitMs = 0;
 	for (const d of list) {
 		const p = d.payload || {};
 		if (d.directive_type === 'avatar') {
@@ -1194,9 +1261,12 @@ const applyDirectives = (dialogue) => {
 			const a = new Audio(BASE_URL + p.url);
 			a.volume = 1;
 			a.play().catch(() => {});
+		} else if (d.directive_type === 'wait') {
+			waitMs += Math.max(0, Number(p.ms) || 0);
 		}
 	}
 	stageAvatars.value = next;
+	if (waitMs) scheduleWait(waitMs);
 };
 
 // 应用到新对话时，若还在加载或指令尚未拉回，等完成后自动重试
@@ -1220,6 +1290,8 @@ const nextDialogue = () => {
 		finishTyping();
 		return;
 	}
+	// 演出「停顿」期间不允许推进
+	if (isWaiting.value) return;
 	// 「选择」节点必须等玩家点选项，不能自动往下走
 	if (currentChoices.value.length) return;
 	if (currentDialogueIndex.value < currentSceneDialogues.value.length) {
@@ -1245,6 +1317,7 @@ const nextDialogue = () => {
 // 选择分支：跳到目标节点所在的场景/位置
 const selectBranch = (branch) => {
 	if (!branch) return;
+	clearWait();
 	if (autoTimer) {
 		clearTimeout(autoTimer);
 		autoTimer = null;
@@ -1980,7 +2053,38 @@ const backToHome = () => {
   width: 100%;
   height: 100%;
   object-fit: cover; /* 确保图片铺满且保持比例 */
-  transition: filter 0.3s ease;
+  transition: filter 0.3s ease, opacity 0.28s ease;
+}
+
+.background-image.bg-fading { opacity: 0; }
+
+/* 演出「停顿」提示：三个呼吸的圆点 */
+.wait-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 26%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.wait-hint span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  animation: waitPulse 1.2s ease-in-out infinite;
+}
+
+.wait-hint span:nth-child(2) { animation-delay: 0.18s; }
+.wait-hint span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes waitPulse {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
 }
 
 /* 角色立绘样式 - 位于背景之上，对话框之下 */

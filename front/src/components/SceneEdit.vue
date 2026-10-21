@@ -600,11 +600,28 @@
 				</template>
 
 				<template v-else-if="newDirectiveType === 'background'">
-					<el-input v-model="dirForm.url" size="small" placeholder="/static/... 背景图地址" class="dir-field-wide" />
+					<img v-if="dirForm.url" :src="BASE_URL + dirForm.url" class="dir-preview" alt="背景预览" />
+					<el-input v-model="dirForm.url" size="small" placeholder="上传背景图，或直接填 /static/... 地址" class="dir-field-wide" />
+					<el-upload
+						class="dir-upload"
+						:show-file-list="false"
+						:http-request="handleDirUpload"
+						accept="image/*"
+					>
+						<el-button size="small" :loading="dirUploading">上传图片</el-button>
+					</el-upload>
 				</template>
 
 				<template v-else-if="newDirectiveType === 'music'">
-					<el-input v-model="dirForm.url" size="small" placeholder="音乐地址" class="dir-field-wide" />
+					<el-input v-model="dirForm.url" size="small" placeholder="上传 BGM，或直接填地址" class="dir-field-wide" />
+					<el-upload
+						class="dir-upload"
+						:show-file-list="false"
+						:http-request="handleDirUpload"
+						accept="audio/*"
+					>
+						<el-button size="small" :loading="dirUploading">上传音频</el-button>
+					</el-upload>
 					<el-select v-model="dirForm.action" size="small" class="dir-field-sm">
 						<el-option label="播放" value="play" />
 						<el-option label="停止" value="stop" />
@@ -612,7 +629,15 @@
 				</template>
 
 				<template v-else-if="newDirectiveType === 'sound'">
-					<el-input v-model="dirForm.url" size="small" placeholder="音效地址" class="dir-field-wide" />
+					<el-input v-model="dirForm.url" size="small" placeholder="上传音效，或直接填地址" class="dir-field-wide" />
+					<el-upload
+						class="dir-upload"
+						:show-file-list="false"
+						:http-request="handleDirUpload"
+						accept="audio/*"
+					>
+						<el-button size="small" :loading="dirUploading">上传音频</el-button>
+					</el-upload>
 				</template>
 
 				<template v-else>
@@ -772,6 +797,34 @@ const loadDirectives = async (contentId) => {
 	directives.value = await listNodeDirectives(Number(projectId.value), Number(contentId));
 };
 
+// 演出弹窗内的素材上传：背景图走 image，BGM / 音效走 audio；成功后直接回填地址
+const dirUploading = ref(false);
+const handleDirUpload = async (options) => {
+	const t = newDirectiveType.value;
+	const fileType = t === 'background' ? 'image' : 'audio';
+	dirUploading.value = true;
+	try {
+		const formData = new FormData();
+		formData.append('file', options.file);
+		formData.append('project_id', projectId.value);
+		formData.append('file_type', fileType);
+		const response = await uploadSceneFile(formData);
+		if (response.success && response.data && response.data.url) {
+			dirForm.value.url = response.data.url;
+			ElMessage.success(t === 'background' ? '背景图上传成功' : '音频上传成功');
+			options.onSuccess && options.onSuccess(response);
+		} else {
+			throw new Error((response && response.message) || '上传失败');
+		}
+	} catch (err) {
+		console.error('演出素材上传失败:', err);
+		ElMessage.error('上传失败: ' + (err.message || '未知错误'));
+		options.onError && options.onError(err);
+	} finally {
+		dirUploading.value = false;
+	}
+};
+
 const openDirectiveDialog = async (index) => {
 	const d = dialogues.value[index];
 	if (!d || !d.content_id) {
@@ -807,19 +860,19 @@ const addDirective = async () => {
 		};
 	} else if (t === 'background') {
 		if (!dirForm.value.url) {
-			ElMessage.warning('请填写背景图地址');
+			ElMessage.warning('请上传或填写背景图地址');
 			return;
 		}
 		payload = { url: dirForm.value.url, transition: 'fade', duration_ms: 400 };
 	} else if (t === 'music') {
 		if (!dirForm.value.url) {
-			ElMessage.warning('请填写音乐地址');
+			ElMessage.warning('请上传或填写音乐地址');
 			return;
 		}
 		payload = { url: dirForm.value.url, action: dirForm.value.action, loop: true };
 	} else if (t === 'sound') {
 		if (!dirForm.value.url) {
-			ElMessage.warning('请填写音效地址');
+			ElMessage.warning('请上传或填写音效地址');
 			return;
 		}
 		payload = { url: dirForm.value.url };
@@ -2326,4 +2379,16 @@ onMounted(() => {
 .dir-field { width: 120px; }
 .dir-field-sm { width: 96px; }
 .dir-field-wide { flex: 1; min-width: 150px; }
+
+/* 演出弹窗里的素材上传 */
+.dir-upload { flex-shrink: 0; }
+.dir-upload :deep(.el-upload) { display: inline-flex; }
+.dir-preview {
+  width: 44px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #f5e4ea;
+  flex-shrink: 0;
+}
 </style>
