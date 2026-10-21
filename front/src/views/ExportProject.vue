@@ -33,15 +33,27 @@
 				<!-- 背景图 -->
 				<div class="scene-background" @click="onDialogueClick">
 					<img 
-						:src="currentScene.background_url ? BASE_URL + currentScene.background_url : defaultBackground" 
+						:src="stageBackground" 
 						alt="场景背景" 
 						class="background-image"
 						decoding="async"
 					/>
 				</div>
 				
-				<!-- 角色立绘（位于背景之上，对话框之下） -->
-				<div v-if="!loading && !error && currentDialogue?.character_id" class="character-stand">
+				<!-- 演出指令控制的立绘（左 / 中 / 右三槽位） -->
+				<div v-if="hasStageAvatars" class="stage-layer">
+					<div
+						v-for="pos in stagePositions"
+						:key="pos"
+						v-show="stageAvatars[pos]"
+						:class="['stage-avatar', 'pos-' + pos]"
+					>
+						<img :src="stageAvatars[pos]" alt="" decoding="async" />
+					</div>
+				</div>
+
+				<!-- 回退：没有演出指令时，显示当前对话的立绘 -->
+				<div v-else-if="!loading && !error && currentDialogue?.character_id" class="character-stand">
 					<img 
 						:src="getAvatarUrl(currentDialogue.avatar_id)" 
 						alt="角色立绘" 
@@ -406,6 +418,7 @@ import { listBranches } from '@/api/branch'
 import { listSaves, getSave, putSave, deleteSave } from '@/api/save'
 import { listReads, markReads } from '@/api/read'
 import { listVariables, listEffects } from '@/api/variable'
+import { listDirectives } from '@/api/directive'
 import { listEndings, unlockEnding } from '@/api/ending'
 import {
 	BASE_URL
@@ -1105,6 +1118,98 @@ watch([currentSceneIndex, currentDialogueIndex], () => {
 	}, 1500);
 });
 
+/* ===== 节点演出指令（立绘三槽位 / 背景切换 / 音效）===== */
+const stagePositions = ['left', 'center', 'right'];
+const stageAvatars = ref({ left: '', center: '', right: '' });
+const bgFromDirective = ref('');
+const directivesByContent = ref({});
+
+const hasStageAvatars = computed(() =>
+	stagePositions.some(p => !!stageAvatars.value[p])
+);
+
+const stageBackground = computed(() => {
+	if (bgFromDirective.value) return BASE_URL + bgFromDirective.value;
+	return currentScene.value?.background_url
+		? BASE_URL + currentScene.value.background_url
+		: defaultBackground;
+});
+
+const defaultAvatarOf = (characterId) => {
+	const c = characters.value.find(x => x.character_id === characterId);
+	if (!c) return '';
+	const list = c.avatars || [];
+	const def = list.find(a => a.is_default) || list[0];
+	if (def && def.image_url) return BASE_URL + def.image_url;
+	return c.avatar_url ? BASE_URL + c.avatar_url : '';
+};
+
+const loadDirectiveData = async () => {
+	try {
+		const rows = await listDirectives(Number(props.projectId));
+		const map = {};
+		for (const r of rows) {
+			if (!map[r.content_id]) map[r.content_id] = [];
+			map[r.content_id].push(r);
+		}
+		directivesByContent.value = map;
+	} catch (e) {
+		console.warn('读取演出指令失败:', e);
+		directivesByContent.value = {};
+	}
+};
+
+const resetStage = () => {
+	stageAvatars.value = { left: '', center: '', right: '' };
+	bgFromDirective.value = '';
+};
+
+const applyDirectives = (dialogue) => {
+	if (!dialogue) return;
+	const list = directivesByContent.value[dialogue.content_id] || [];
+	if (!list.length) return;
+
+	const next = { ...stageAvatars.value };
+	for (const d of list) {
+		const p = d.payload || {};
+		if (d.directive_type === 'avatar') {
+			const pos = p.position || 'center';
+			next[pos] = p.action === 'hide'
+				? ''
+				: (getAvatarUrl(p.avatar_id) || defaultAvatarOf(p.character_id));
+		} else if (d.directive_type === 'background') {
+			bgFromDirective.value = p.url || '';
+		} else if (d.directive_type === 'music') {
+			if (p.action === 'stop') {
+				if (backgroundMusic.value) {
+					backgroundMusic.value.pause();
+					backgroundMusic.value.currentTime = 0;
+				}
+			} else if (p.url && backgroundMusic.value) {
+				backgroundMusic.value.src = BASE_URL + p.url;
+				backgroundMusic.value.volume = playerSettings.value.bgmVolume / 100;
+				backgroundMusic.value.play().catch(() => {});
+			}
+		} else if (d.directive_type === 'sound' && p.url) {
+			const a = new Audio(BASE_URL + p.url);
+			a.volume = 1;
+			a.play().catch(() => {});
+		}
+	}
+	stageAvatars.value = next;
+};
+
+// 应用到新对话时，若还在加载或指令尚未拉回，等完成后自动重试
+watch(
+	() => [loading.value, error.value, currentDialogue.value?.content_id, directivesByContent.value],
+	() => {
+		if (loading.value || error.value) return;
+		resetStage();
+		applyDirectives(currentDialogue.value);
+	},
+	{ immediate: true }
+);
+
 loadSettings();
 saveSettings();
 
@@ -1497,6 +1602,7 @@ watch(currentScene, (newScene, oldScene) => {
 // 组件挂载时获取数据并设置事件监听
 onMounted(() => {
 	fetchProjectData();
+	loadDirectiveData();
 	
 	// 监听用户交互，一旦有交互就尝试播放音乐（解决浏览器自动播放限制）
 	document.addEventListener('click', playBackgroundMusic, { once: true });
@@ -1893,6 +1999,42 @@ const backToHome = () => {
   width: auto;
   object-fit: contain;
   transition: opacity 0.3s ease;
+}
+
+/* 演出指令：立绘三槽位 */
+.stage-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.stage-avatar {
+  position: absolute;
+  bottom: 0;
+  height: 78%;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.stage-avatar img {
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.18));
+}
+
+.stage-avatar.pos-left {
+  left: 4%;
+}
+
+.stage-avatar.pos-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.stage-avatar.pos-right {
+  right: 4%;
 }
 
 /* 加载和错误状态 */
