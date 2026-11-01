@@ -194,7 +194,12 @@
 						</div>
 					</div>
 					
-					<button type="button" class="save-scene-btn" @click="saveSceneSettings">保存场景设置</button>
+					<button type="button" class="save-scene-btn" :disabled="sceneSaving || !sceneReady" @click="saveSceneSettings">
+						{{ sceneSaving ? '保存中…' : '保存场景设置' }}
+					</button>
+					<div :class="['scene-save-state', { 'is-dirty': sceneDirty }]">
+						{{ !sceneReady ? '场景设置加载中…' : (sceneSaving ? '正在保存场景设置…' : (sceneDirty ? '场景设置有未保存改动，离开会自动保存' : '场景设置已保存')) }}
+					</div>
 				</el-form>
 			</div>
 			
@@ -214,8 +219,8 @@
 					</el-button>
 					<el-button size="small" type="primary" @click="saveAllDialogues">保存全部</el-button>
 					<el-button size="small" @click="openGraph">剧情图</el-button>
-					<span :class="['save-state', { 'is-dirty': dirty }]" :title="dirty ? '有改动尚未保存到服务器' : '改动已保存到服务器'">
-						{{ loading ? '保存中…' : (dirty ? '未保存' : '已保存') }}
+					<span :class="['save-state', { 'is-dirty': dirty }]" :title="dirty ? '台词有改动尚未保存到服务器' : '台词改动已保存到服务器'">
+						{{ loading ? '保存中…' : (dirty ? '台词未保存' : '台词已保存') }}
 					</span>
 				</div>
 				
@@ -286,6 +291,7 @@
 									icon="Delete" 
 									@click="deleteDialogue(index)"
 									class="delete-btn"
+									title="删除这条台词（会级联删除分支/数值/演出，不可撤销）"
 								></el-button>
 								<el-button 
 									size="mini" 
@@ -339,6 +345,8 @@
 								<el-select 
 									v-model="dialogue.avatar_id" 
 									style="width: 100%"
+									clearable
+									placeholder="默认立绘"
 									:disabled="!dialogue.character_id"
 								>
 									<el-option 
@@ -653,7 +661,6 @@
 							v-if="previewBgSrc && !previewBgFailed"
 							:src="previewBgSrc" 
 							alt="场景背景" 
-							style="width: 1350px;"
 							class="background-image"
 							@error="previewBgFailed = true"
 						/>
@@ -710,7 +717,7 @@
 					<p>错误: {{ error }}</p>
 				</div>
 				
-				<div v-if="!loading && !error" style="width: 1350px;" class="dialogue-display">
+				<div v-if="!loading && !error" class="dialogue-display">
 					<div 
 						v-if="currentDialogueIndex < dialogues.length"
 						:class="['dialogue-box', `box-${currentDialogue?.content_type}`]"
@@ -1337,6 +1344,12 @@ const onWindowKeydown = (e) => {
 };
 
 const onBeforeUnload = (e) => {
+	if (sceneDirty.value) {
+		persistSceneSettings({ silent: true, version: false });
+		e.preventDefault();
+		e.returnValue = '';
+		return;
+	}
 	if (!dirty.value) return;
 	saveDraftNow();
 	e.preventDefault();
@@ -1357,13 +1370,20 @@ const batchDelete = async () => {
 	const indexes = [...selectedIndexes.value].sort((a, b) => b - a);
 	if (!indexes.length) return;
 	try {
-		await ElMessageBox.confirm(`确定删除选中的 ${indexes.length} 条对话？`, '批量删除', {
-			type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
-		});
+		await ElMessageBox.confirm(
+			`删除选中的 ${indexes.length} 条台词会同时删除它们的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？`,
+			'批量删除',
+			{
+				type: 'warning',
+				confirmButtonText: '删除',
+				cancelButtonText: '取消',
+				confirmButtonClass: 'el-button--danger'
+			}
+		);
 	} catch (e) {
 		return;
 	}
-	pushHistory();
+	const hadUnsaved = dirty.value;
 	for (const i of indexes) {
 		const d = dialogues.value[i];
 		if (!d) continue;
@@ -1379,8 +1399,12 @@ const batchDelete = async () => {
 	}
 	clearSelection();
 	dialogues.value.forEach((d, i) => d.order_num = i + 1);
-	markDirty();
-	ElMessage.success('已删除选中对话');
+	// 服务端已删除的节点不能靠本地撤销恢复，清空快照避免“幽灵节点”
+	undoStack.value = [];
+	redoStack.value = [];
+	if (hadUnsaved) markDirty();
+	else clearDraft();
+	ElMessage.success('已删除选中对话（不可撤销）');
 };
 
 const batchDuplicate = () => {
@@ -1606,6 +1630,14 @@ const characters = ref([]);
 const loading = ref(true);
 const error = ref('');
 const isPanelOpen = ref(true);
+// 场景设置（标题/描述/背景/音乐/剧情锁）的独立保存状态：
+// 台词有 dirty，场景设置也必须有自己的 dirty，否则切场景会静默丢改动。
+const sceneDirty = ref(false);
+const sceneSaving = ref(false);
+const sceneReady = ref(false);
+let sceneSnapshot = '';
+let sceneSaveTimer = null;
+let sceneSaveQueued = false;
 const currentDialogueIndex = ref(0);
 const defaultBackground = '';
 
@@ -2093,6 +2125,7 @@ const clearNodeCondition = () => {
 const fetchSceneData = async () => {
 	try {
 		loading.value = true;
+		sceneReady.value = false;
 		const sceneIdNum = Number(props.sceneId);
 		if (isNaN(sceneIdNum)) throw new Error('无效的场景ID');
 
@@ -2105,6 +2138,10 @@ const fetchSceneData = async () => {
 		await loadProjectNodes();
 		await loadVariablesAndEffects();
 		await loadSceneLock();
+		// 场景设置与剧情锁加载完成后才建立基线，避免加载过程被误判成用户改动
+		sceneSnapshot = currentSceneSnapshot();
+		sceneDirty.value = false;
+		sceneReady.value = true;
 		await loadJumpMap();
 
 		const dialoguesData = await getDialoguesBySceneId(sceneIdNum);
@@ -2139,6 +2176,7 @@ const fetchSceneData = async () => {
 			if (props.focusContentId) focusDialogueByContentId(props.focusContentId);
 		});
 	} catch (err) {
+		sceneReady.value = false;
 		console.error('获取场景数据失败:', err);
 		error.value = err.message || '获取数据失败，请稍后重试';
 		ElMessage.error(error.value);
@@ -2432,7 +2470,7 @@ const onBackgroundDrop = (e) => {
 	markDirty()
 	scene.value.background_url = url
 	settingsBgFailed.value = false
-	ElMessage.success('已填入背景图，记得点「保存场景设置」')
+	ElMessage.success('已填入背景图，稍后自动保存')
 }
 
 const onMusicDrop = (e) => {
@@ -2449,23 +2487,68 @@ const onMusicDrop = (e) => {
 	musicPlaying.value = false
 	musicProgress.value = 0
 	musicDuration.value = 0
-	ElMessage.success('已填入背景音乐，记得点「保存场景设置」')
+	ElMessage.success('已填入背景音乐，稍后自动保存')
 }
 
-const saveSceneSettings = async () => {
+// 场景设置的快照只包含会被保存的字段，避免 order_num/created_at 之类误触发 dirty
+const sceneSnapshotOf = (sceneData = scene.value, lock = buildSceneLockPayload()) => JSON.stringify({
+	title: sceneData?.title || '',
+	description: sceneData?.description || '',
+	background_url: sceneData?.background_url || '',
+	music_url: sceneData?.music_url || '',
+	lock: lock || null
+});
+const currentSceneSnapshot = () => sceneSnapshotOf();
+
+const scheduleSceneSave = () => {
+	clearTimeout(sceneSaveTimer);
+	sceneSaveTimer = setTimeout(() => {
+		if (sceneDirty.value) persistSceneSettings({ silent: true, version: false });
+	}, 1200);
+};
+
+const persistSceneSettings = async ({ silent = false, version = true } = {}) => {
+	if (!props.sceneId || !sceneReady.value) return;
+	if (sceneSaving.value) {
+		// 自动保存期间又有新改动：等这次请求结束再补一次，避免覆盖
+		if (silent) sceneSaveQueued = true;
+		else ElMessage.info('场景设置正在保存，请稍候');
+		return;
+	}
+	const payload = JSON.parse(JSON.stringify(scene.value || {}));
+	const lock = buildSceneLockPayload();
+	const payloadSnapshot = sceneSnapshotOf(payload, lock);
+	sceneSaving.value = true;
 	try {
-		loading.value = true;
-		await updateScene(Number(props.sceneId), scene.value);
-		await setSceneLock(Number(projectId.value), Number(props.sceneId), buildSceneLockPayload());
-		ElMessage.success('场景设置保存成功');
-		createProjectVersion(Number(projectId.value), '保存场景设置').catch(() => {});
+		await updateScene(Number(props.sceneId), payload);
+		if (projectId.value) {
+			await setSceneLock(Number(projectId.value), Number(props.sceneId), lock);
+		}
+		sceneSnapshot = payloadSnapshot;
+		// 请求期间用户可能又改了字段：只有当前值和刚保存的一致才算干净
+		sceneDirty.value = currentSceneSnapshot() !== payloadSnapshot;
+		if (!silent) ElMessage.success('场景设置保存成功');
+		if (version && projectId.value) {
+			createProjectVersion(Number(projectId.value), '保存场景设置').catch(() => {});
+		}
 		emit('scene-updated');
+		if (sceneDirty.value) scheduleSceneSave();
 	} catch (err) {
 		console.error('保存场景设置失败:', err);
-		ElMessage.error('保存场景设置失败: ' + (err.message || '未知错误'));
+		if (silent) ElMessage.warning('场景设置自动保存失败，请手动保存');
+		else ElMessage.error('保存场景设置失败: ' + (err.message || '未知错误'));
 	} finally {
-		loading.value = false;
+		sceneSaving.value = false;
+		if (sceneSaveQueued) {
+			sceneSaveQueued = false;
+			if (sceneDirty.value) persistSceneSettings({ silent: true, version: false });
+		}
 	}
+};
+
+const saveSceneSettings = () => {
+	clearTimeout(sceneSaveTimer);
+	persistSceneSettings({ silent: false, version: true });
 };
 
 const addNewDialogue = () => {
@@ -2558,25 +2641,55 @@ const saveAllDialogues = async () => {
 };
 
 const deleteDialogue = async (index) => {
-	pushHistory();
-	markDirty();
-	try {
-		const dialogue = dialogues.value[index];
-		if (dialogue.content_id) {
+	const dialogue = dialogues.value[index];
+	if (!dialogue) return;
+
+	// 已落库的台词：服务端删除会级联清理分支/数值/演出/结局/已读，
+	// 前端撤销无法把它们一起恢复，所以必须先确认，并清空本地撤销栈。
+	if (dialogue.content_id) {
+		try {
+			await ElMessageBox.confirm(
+				'删除这条台词会同时删除它的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？',
+				'删除台词',
+				{
+					type: 'warning',
+					confirmButtonText: '删除',
+					cancelButtonText: '取消',
+					confirmButtonClass: 'el-button--danger'
+				}
+			);
+		} catch (e) {
+			return;
+		}
+		const hadUnsaved = dirty.value;
+		try {
 			await apiDeleteDialogue(dialogue.content_id);
 			projectNodes.value = projectNodes.value.filter(n => n.content_id !== dialogue.content_id);
 			const rest = { ...effectsMap.value };
 			delete rest[dialogue.content_id];
 			effectsMap.value = rest;
+			dialogues.value.splice(index, 1);
+			dialogues.value.forEach((d, i) => d.order_num = i + 1);
+			clearSelection();
+			// 旧快照里还带着已删除的节点，继续撤销会造出服务端不存在的“幽灵节点”
+			undoStack.value = [];
+			redoStack.value = [];
+			if (hadUnsaved) markDirty();
+			else clearDraft();
+			ElMessage.success('台词已删除（不可撤销，可用项目版本回滚恢复）');
+		} catch (err) {
+			console.error('删除对话失败:', err);
+			ElMessage.error('删除对话失败: ' + (err.message || '未知错误'));
 		}
-		dialogues.value.splice(index, 1);
-		dialogues.value.forEach((d, i) => d.order_num = i + 1);
-		clearSelection();
-		ElMessage.success('对话已删除');
-	} catch (err) {
-		console.error('删除对话失败:', err);
-		ElMessage.error('删除对话失败: ' + (err.message || '未知错误'));
+		return;
 	}
+
+	// 尚未保存的新台词：只改本地，保留撤销能力
+	pushHistory();
+	markDirty();
+	dialogues.value.splice(index, 1);
+	dialogues.value.forEach((d, i) => d.order_num = i + 1);
+	clearSelection();
 };
 
 const moveDialogueUp = (index) => {
@@ -2729,7 +2842,7 @@ const useAssetFromLibrary = (asset) => {
 		scene.value.music_url = asset.url;
 	}
 	assetPickerVisible.value = false;
-	ElMessage.success('已填入素材，记得点「保存场景设置」');
+	ElMessage.success('已填入素材，稍后自动保存');
 };
 
 const openAIDialog = (index) => {
@@ -3130,6 +3243,21 @@ const applyAIAnswer = () => {
   }
 };
 
+// 场景设置（含剧情锁）改动 → 标记 dirty 并防抖自动保存
+watch(
+	[scene, sceneLockMode, sceneLockItems],
+	() => {
+		if (!sceneReady.value) return;
+		if (currentSceneSnapshot() === sceneSnapshot) {
+			sceneDirty.value = false;
+			return;
+		}
+		sceneDirty.value = true;
+		scheduleSceneSave();
+	},
+	{ deep: true }
+);
+
 onMounted(() => {
 	fetchSceneData();
 	window.addEventListener('keydown', onWindowKeydown);
@@ -3142,8 +3270,11 @@ onBeforeUnmount(() => {
 	window.removeEventListener('keydown', onWindowKeydown);
 	window.removeEventListener('beforeunload', onBeforeUnload);
 	clearTimeout(focusPulseTimer);
+	clearTimeout(sceneSaveTimer);
 	flushTextHistory();
 	saveDraftNow();
+	// 切场景时兜底保存场景设置，避免标题/背景/音乐改动被静默丢掉
+	if (sceneDirty.value) persistSceneSettings({ silent: true, version: false });
 });
 </script>
 
@@ -3590,6 +3721,23 @@ onBeforeUnmount(() => {
 .save-scene-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(200, 31, 74, 0.28);
+}
+
+.save-scene-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
+}
+
+.scene-save-state {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: #1f9d76;
+}
+
+.scene-save-state.is-dirty {
+  color: #b4446a;
 }
 
 .hidden-audio { display: none; }
@@ -4246,13 +4394,13 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(4px);
 }
 
-.dialogue-display { position: absolute; bottom: 0; left: 0; right: 0; padding: 28px; z-index: 3; }
+.dialogue-display { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; z-index: 3; }
 
 .dialogue-box {
   background: rgba(255, 252, 254, 0.94);
-  border-radius: 20px;
-  padding: 28px 32px;
-  max-width: 820px;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 800px;
   margin: 0 auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
   cursor: pointer;
@@ -4267,7 +4415,7 @@ onBeforeUnmount(() => {
 .character-name {
   font-weight: 700;
   color: #c81f4a;
-  font-size: 18px;
+  font-size: 16px;
   margin-bottom: 10px;
   display: inline-block;
   padding-bottom: 4px;
@@ -4275,11 +4423,11 @@ onBeforeUnmount(() => {
 }
 
 .dialogue-text {
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.7;
   color: #2c2c2c;
-  margin-bottom: 20px;
-  min-height: 70px;
+  margin-bottom: 15px;
+  min-height: 100px;
   font-weight: 400;
 }
 
