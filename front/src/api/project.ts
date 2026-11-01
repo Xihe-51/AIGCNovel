@@ -9,6 +9,7 @@ export interface Project {
   template_type: string;
   word_count: number;
   is_public: boolean;
+  ui_theme?: string;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +19,7 @@ interface ProjectCreateParams {
   genre: string;
   template_type: string;
   is_public?: boolean;
+  ui_theme?: string;
 }
 
 interface ProjectUpdateParams extends Partial<ProjectCreateParams> {}
@@ -199,6 +201,17 @@ export const exportProjectText = async (projectId: number): Promise<string> => {
     transformResponse: [(data: string) => data],
   });
   return response.data;
+};
+
+/**
+ * 导出项目剧本为 Word 文档
+ */
+export const exportProjectDocx = async (projectId: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'docx' },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
 };
 
 /**

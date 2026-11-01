@@ -33,18 +33,38 @@ def _owned_project(project_id):
     return row, None
 
 
+def _readable_project(project_id):
+    """只读场景：作者本人，或公开项目的任意登录用户（玩家预览/试玩）。
+
+    写操作仍必须走 _owned_project。
+    """
+    uid = current_user_id()
+    if not uid:
+        return None, (jsonify({'success': False, 'message': '未登录'}), 401)
+    row = db.session.get(Project, int(project_id))
+    if not row:
+        return None, (jsonify({'success': False, 'message': '项目不存在'}), 404)
+    if int(row.user_id) != int(uid) and not bool(row.is_public):
+        return None, (jsonify({'success': False, 'message': '项目不存在或无权访问'}), 404)
+    return row, None
+
+
 def _slot_summary(row):
+    state = row.state_json if isinstance(row.state_json, dict) else {}
     return {
         'slot': row.slot,
         'summary': row.summary or '',
         'updated_at': row.updated_at.isoformat() if row.updated_at else None,
+        # 存档画面缩略图：当前场景背景地址（旧存档可能没有该字段）
+        'thumbnail_url': (state.get('thumbnail_url') or '')[:255] or None,
+        'scene_title': (state.get('scene_title') or '')[:100] or None,
     }
 
 
 @project.route('/saves/<int:project_id>', methods=['GET'])
 def list_saves(project_id):
     """列出当前用户在该项目的所有存档位（不含 state，减小响应体）。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -59,7 +79,7 @@ def list_saves(project_id):
 @project.route('/saves/<int:project_id>/<int:slot>', methods=['GET'])
 def load_save(project_id, slot):
     """读取指定存档位的完整快照。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -80,7 +100,7 @@ def load_save(project_id, slot):
 @project.route('/saves/<int:project_id>/<int:slot>', methods=['PUT'])
 def upsert_save(project_id, slot):
     """写入/覆盖存档。slot=0 为自动存档，1-3 为手动存档。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -120,7 +140,7 @@ def upsert_save(project_id, slot):
 @project.route('/saves/<int:project_id>/<int:slot>', methods=['DELETE'])
 def delete_save(project_id, slot):
     """删除存档位。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 

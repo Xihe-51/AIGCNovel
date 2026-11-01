@@ -26,6 +26,7 @@ def _branch_to_dict(bp: BranchPath) -> Dict[str, Any]:
         'source_content_id': bp.source_content_id,
         'target_content_id': bp.target_content_id,
         'choice_text': bp.choice_text,
+        'image_url': bp.image_url,
         'conditions': bp.conditions,
     }
 
@@ -58,18 +59,10 @@ def _validate_edge(project_id: int, source_id, target_id, valid_ids: Optional[se
 
 
 CONDITION_OPS = ('>', '>=', '<', '<=', '==', '!=')
+CONDITION_MODES = ('and', 'or')
 
 
-def _normalize_conditions(project_id: int, conditions) -> Tuple[Optional[dict], Optional[str]]:
-    """
-    条件格式：{ "variable": "affection_lin", "op": ">=", "value": 50 }
-    空值表示无条件。返回 (normalized, error)。
-    """
-    if conditions in (None, {}, ''):
-        return None, None
-    if not isinstance(conditions, dict):
-        return None, '条件必须是对象'
-
+def _normalize_single_condition(project_id: int, conditions: dict) -> Tuple[Optional[dict], Optional[str]]:
     variable = str(conditions.get('variable') or '').strip()
     op = str(conditions.get('op') or '').strip()
     if not variable:
@@ -88,6 +81,41 @@ def _normalize_conditions(project_id: int, conditions) -> Tuple[Optional[dict], 
         return None, f'变量 {variable} 不属于项目 {project_id}'
 
     return {'variable': variable, 'op': op, 'value': value}, None
+
+
+def _normalize_conditions(project_id: int, conditions) -> Tuple[Optional[dict], Optional[str]]:
+    """
+    条件格式（兼容两种）：
+      单条件：{ "variable": "affection_lin", "op": ">=", "value": 50 }
+      条件组：{ "mode": "and"|"or", "items": [{variable, op, value}, ...] }
+    空值表示无条件。返回 (normalized, error)。
+    """
+    if conditions in (None, {}, ''):
+        return None, None
+    if not isinstance(conditions, dict):
+        return None, '条件必须是对象'
+
+    # 条件组：level 为 and/or
+    if 'items' in conditions:
+        mode = str(conditions.get('mode') or 'and').strip().lower()
+        if mode not in CONDITION_MODES:
+            return None, f'不支持的条件关系：{mode}'
+        raw_items = conditions.get('items')
+        if not isinstance(raw_items, list):
+            return None, '条件组 items 必须是数组'
+        items = []
+        for i, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                return None, f'第 {i + 1} 个条件格式不正确'
+            normalized, err = _normalize_single_condition(project_id, item)
+            if err:
+                return None, f'第 {i + 1} 个条件：{err}'
+            items.append(normalized)
+        if not items:
+            return None, None
+        return {'mode': mode, 'items': items}, None
+
+    return _normalize_single_condition(project_id, conditions)
 
 
 # ==================== CRUD ====================
@@ -125,6 +153,8 @@ def create_branch(project_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
     if existed:
         if 'choice_text' in data:
             existed.choice_text = data.get('choice_text')
+        if 'image_url' in data:
+            existed.image_url = str(data.get('image_url') or '').strip() or None
         if 'conditions' in data:
             existed.conditions = conditions
         db.session.commit()
@@ -135,6 +165,7 @@ def create_branch(project_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
         source_content_id=source_id,
         target_content_id=target_id,
         choice_text=data.get('choice_text'),
+        image_url=str(data.get('image_url') or '').strip() or None,
         conditions=conditions,
     )
     db.session.add(bp)
@@ -163,6 +194,8 @@ def update_branch(path_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
     bp.target_content_id = target_id
     if 'choice_text' in data:
         bp.choice_text = data.get('choice_text')
+    if 'image_url' in data:
+        bp.image_url = str(data.get('image_url') or '').strip() or None
     if 'conditions' in data:
         bp.conditions = conditions
     db.session.commit()
@@ -211,6 +244,7 @@ def batch_replace_branches(project_id: int, branches: List[Dict[str, Any]],
             'source_content_id': s,
             'target_content_id': t,
             'choice_text': item.get('choice_text'),
+            'image_url': str(item.get('image_url') or '').strip() or None,
             'conditions': conditions,
         })
 
@@ -292,6 +326,7 @@ def get_story_graph(project_id: int, with_validation: bool = True) -> Tuple[bool
             'source_content_id': b.source_content_id,
             'target_content_id': b.target_content_id,
             'choice_text': b.choice_text,
+            'image_url': b.image_url,
             'conditions': b.conditions,
         })
 

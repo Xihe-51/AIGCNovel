@@ -1,4 +1,6 @@
 from collections import defaultdict
+from io import BytesIO
+import os
 from urllib.parse import quote
 
 from . import project
@@ -10,11 +12,13 @@ from .services import get_user_projects, get_project_by_id, create_project, upda
     update_character_avatar, get_scene_by_id, delete_scene_by_id, update_existing_scene, create_new_scene, \
     save_uploaded_file, save_dialogue, delete_dialogue, get_character_avatars, get_characters_by_project_id, \
     reorder_dialogues, get_characterAvatar_by_id, export_project, get_public_projects, \
-    TEMPLATE_TYPES, get_templates, build_project_bundle, render_project_script_text, import_project_bundle
-from .. import db
+    TEMPLATE_TYPES, UI_THEMES, get_templates, build_project_bundle, render_project_script_text, \
+    import_project_bundle, duplicate_scene
+from .. import db, STATIC_ROOT
 from ..models import Project, CharacterAvatar, Scene, ScriptContent, Character, BranchPath
 from ..security import current_user_id
 from .services import _UNSET
+from .save_views import _owned_project
 
 
 def _iso(dt):
@@ -32,6 +36,7 @@ def project_to_dict(p):
         'template_type': p.template_type or '线性叙事',
         'word_count': p.word_count or 0,
         'is_public': bool(p.is_public),
+        'ui_theme': p.ui_theme or 'classic',
         'created_at': _iso(p.created_at),
         'updated_at': _iso(p.updated_at),
     }
@@ -119,7 +124,12 @@ def _project_scope_guard():
     """
     if request.method == 'OPTIONS':
         return None
-    if request.endpoint == 'project.get_public_projects_view':
+    if request.endpoint in ('project.get_public_projects_view',
+                            'project.record_play_event',
+                            'project.check_achievements',
+                            'project.public_releases',
+                            'project.get_project_meta',
+                            'project.save_project_meta'):
         return None
 
     uid = current_user_id()
@@ -296,6 +306,11 @@ def modify_project(project_id):
         if key in data and data[key] is not None:
             fields[key] = data[key]
 
+    if 'ui_theme' in data and data['ui_theme'] is not None:
+        if data['ui_theme'] not in UI_THEMES:
+            return jsonify({'success': False, 'message': f"不支持的界面皮肤: {data['ui_theme']}"}), 400
+        fields['ui_theme'] = data['ui_theme']
+
     if 'template_type' in data and data['template_type'] is not None:
         if data['template_type'] not in TEMPLATE_TYPES:
             return jsonify({'success': False, 'message': f"不支持的模板类型: {data['template_type']}"}), 400
@@ -353,6 +368,38 @@ def export_project_data(project_id):
         return jsonify({'success': False, 'message': '项目不存在或无权导出'}), 404
 
     fmt = (request.args.get('format') or 'json').lower()
+
+    if fmt == 'docx':
+        text = render_project_script_text(project_id, user_id) or ''
+        try:
+            from docx import Document
+        except ImportError:
+            return jsonify({'success': False, 'message': '服务器未安装 python-docx，无法导出 Word'}), 503
+
+        doc = Document()
+        doc.add_heading(project_row.title, level=0)
+        # 前两行是标题与类型信息，正文从场景标题开始
+        for line in text.splitlines()[2:]:
+            if line.startswith('# '):
+                doc.add_heading(line[2:], level=1)
+            elif line.startswith('【选择】'):
+                p = doc.add_paragraph(line[4:])
+                try:
+                    p.style = 'Intense Quote'
+                except KeyError:
+                    pass
+            elif line.strip():
+                doc.add_paragraph(line)
+        buf = BytesIO()
+        doc.save(buf)
+        resp = make_response(buf.getvalue())
+        resp.headers['Content-Type'] = (
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        resp.headers['Content-Disposition'] = (
+            f"attachment; filename=project_{project_id}.docx; "
+            f"filename*=UTF-8''{quote(f'{project_row.title}.docx')}"
+        )
+        return resp
 
     if fmt == 'txt':
         text = render_project_script_text(project_id, user_id) or ''
@@ -518,6 +565,7 @@ def get_characters(project_id):
                 'age': c.age,
                 'description': c.description,
                 'settings': c.settings,
+                'voice_type': c.voice_type,
                 'avatar_url': character_avatar_url.get(c.character_id),
                 'is_main': c.is_main,
                 'created_at': c.created_at.isoformat()
@@ -740,6 +788,130 @@ def update_avatar_by_id():
     avatar_id = data['avatar_id']
     message = update_character_avatar(avatar_id)
     return jsonify({"message": message})
+
+
+# 抠图模型会话：u2net 只加载一次，后续请求复用
+_REMBG_SESSION = None
+
+
+def _get_cutout_session():
+    global _REMBG_SESSION
+    if _REMBG_SESSION is None:
+        from rembg import new_session
+        _REMBG_SESSION = new_session('u2net')
+    return _REMBG_SESSION
+
+
+@project.route('/avatar/<int:avatar_id>/cutout', methods=['POST'])
+def cutout_character_avatar(avatar_id):
+    """角色立绘抠图：去掉人物背后的背景，保留透明底 PNG。"""
+    avatar = db.session.get(CharacterAvatar, avatar_id)
+    if not avatar:
+        return jsonify({'success': False, 'code': 'AVATAR_NOT_FOUND', 'message': '立绘不存在'}), 404
+
+    character = db.session.get(Character, avatar.character_id)
+    project_row = db.session.get(Project, character.project_id) if character else None
+    if not project_row or int(project_row.user_id) != int(current_user_id()):
+        return jsonify({'success': False, 'code': 'FORBIDDEN', 'message': '立绘不存在或无权访问'}), 403
+
+    from .asset_views import _disk_path
+    source_path = _disk_path(avatar.image_url)
+    if not source_path:
+        return jsonify({
+            'success': False,
+            'code': 'EXTERNAL_IMAGE',
+            'message': '只能处理项目内上传的图片，外链立绘无法抠图',
+        }), 400
+
+    project_root = os.path.abspath(os.path.join(STATIC_ROOT, 'project', str(project_row.project_id)))
+    source_abs = os.path.abspath(source_path)
+    if not source_abs.startswith(project_root + os.sep):
+        return jsonify({'success': False, 'code': 'FORBIDDEN', 'message': '该立绘不属于当前项目'}), 403
+    if not os.path.isfile(source_abs):
+        return jsonify({
+            'success': False,
+            'code': 'FILE_MISSING',
+            'message': '立绘文件已丢失，请重新上传后再抠图',
+        }), 404
+
+    # 模型/运行环境未就绪（首次使用需要 u2net 模型文件）
+    try:
+        from rembg import remove
+        session = _get_cutout_session()
+    except Exception as e:
+        print(f'抠图环境不可用: {e}')
+        return jsonify({
+            'success': False,
+            'code': 'MODEL_UNAVAILABLE',
+            'message': '本地抠图模型未就绪，请确认 rembg/onnxruntime 已安装并已下载 u2net 模型',
+        }), 503
+
+    # 读取原图：损坏/不支持格式单独提示
+    try:
+        from PIL import Image
+        image = Image.open(source_abs)
+        image.load()
+        rgba = image.convert('RGBA')
+    except Exception as e:
+        print(f'抠图读取图片失败: {e}')
+        return jsonify({
+            'success': False,
+            'code': 'IMAGE_READ_FAILED',
+            'message': '无法读取这张立绘，可能格式损坏或不受支持',
+        }), 400
+
+    if rgba.getchannel('A').getextrema()[0] < 10:
+        return jsonify({
+            'success': True,
+            'data': {
+                'avatar_id': avatar.avatar_id,
+                'image_url': avatar.image_url,
+                'already_transparent': True,
+            },
+            'message': '这张立绘已经是透明背景，无需再抠图',
+        })
+
+    # 识别与写盘
+    try:
+        result = remove(rgba, session=session, post_process_mask=True)
+    except Exception as e:
+        print(f'抠图识别失败: {e}')
+        return jsonify({
+            'success': False,
+            'code': 'CUTOUT_FAILED',
+            'message': '抠图处理失败，请重试；若反复失败可换一张图片',
+        }), 500
+
+    try:
+        ext = os.path.splitext(source_abs)[1].lower()
+        if ext == '.png':
+            result.save(source_abs, 'PNG')
+            new_url = avatar.image_url
+        else:
+            base = os.path.splitext(source_abs)[0]
+            new_path = base + '_cutout.png'
+            result.save(new_path, 'PNG')
+            new_url = '/static/' + os.path.relpath(new_path, STATIC_ROOT).replace('\\', '/')
+            avatar.image_url = new_url
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f'抠图保存失败: {e}')
+        return jsonify({
+            'success': False,
+            'code': 'SAVE_FAILED',
+            'message': '抠图完成但保存文件失败，请检查磁盘权限或空间',
+        }), 500
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'avatar_id': avatar.avatar_id,
+            'image_url': new_url,
+            'already_transparent': False,
+        },
+        'message': '抠图完成',
+    })
 
 
 '''
@@ -1035,6 +1207,33 @@ def delete_scene(scene_id):
 '''
 
 
+@project.route('/scenes/<int:scene_id>/duplicate', methods=['POST'])
+def duplicate_scene_api(scene_id):
+    """深拷贝场景：场景 + 对话 + 分支 + 数值变化 + 演出指令。"""
+    scene = Scene.query.get(scene_id)
+    if not scene:
+        return jsonify({'success': False, 'message': '场景不存在'}), 404
+    _, err = _owned_project(scene.project_id)
+    if err:
+        return err
+    try:
+        new_scene = duplicate_scene(scene_id)
+        return jsonify({
+            'success': True,
+            'data': {
+                'scene_id': new_scene.scene_id,
+                'project_id': new_scene.project_id,
+                'title': new_scene.title,
+                'background_url': new_scene.background_url,
+                'music_url': new_scene.music_url,
+                'description': new_scene.description,
+                'order_num': new_scene.order_num,
+            }
+        }), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'复制场景失败: {str(e)}'}), 500
+
+
 @project.route('/dialogues/<int:scene_id>', methods=['GET'])
 def get_dialogues(scene_id):
     """
@@ -1054,6 +1253,7 @@ def get_dialogues(scene_id):
             'scene_id': d.scene_id,
             'content_type': d.content_type,
             'content_text': d.content_text,
+            'branch_condition': d.branch_condition,
             'voice_url': d.voice_url,
             'character_id': d.character_id,
             'avatar_id': d.avatar_id,
@@ -1094,6 +1294,7 @@ def create_dialogue():
                 'scene_id': dialogue.scene_id,
                 'content_type': dialogue.content_type,
                 'content_text': dialogue.content_text,
+                'branch_condition': dialogue.branch_condition,
                 'voice_url': dialogue.voice_url,
                 'character_id': dialogue.character_id,
                 'avatar_id': dialogue.avatar_id,
@@ -1141,6 +1342,7 @@ def update_dialogue(content_id):
                 'scene_id': dialogue.scene_id,
                 'content_type': dialogue.content_type,
                 'content_text': dialogue.content_text,
+                'branch_condition': dialogue.branch_condition,
                 'voice_url': dialogue.voice_url,
                 'character_id': dialogue.character_id,
                 'avatar_id': dialogue.avatar_id,

@@ -11,6 +11,7 @@ content_directives：播放到某条 script_content 时执行的舞台动作。
   music      背景音乐播放/停止
   sound      音效
   wait       停顿
+  effect     画面效果（闪光 / 震动 / 天气）
 """
 from flask import jsonify, request
 
@@ -19,7 +20,7 @@ from ..models import ContentDirective, ProjectVariable, ScriptContent
 from . import project
 from .save_views import _owned_project
 
-DIRECTIVE_TYPES = {'avatar', 'background', 'music', 'sound', 'wait'}
+DIRECTIVE_TYPES = {'avatar', 'background', 'music', 'sound', 'wait', 'effect'}
 MAX_DIRECTIVES_PER_NODE = 32
 
 

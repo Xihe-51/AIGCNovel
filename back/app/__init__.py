@@ -1,4 +1,6 @@
 # _*_ Coding:utf-8 _*_
+import os
+
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from config import config
@@ -6,6 +8,11 @@ from app.extensions import init_redis
 from app.security import init_auth
 
 db = SQLAlchemy()
+
+# 静态文件根目录（back/app/static 的绝对路径）。
+# 上传/删除素材一律用它拼路径，避免进程从不同工作目录启动时
+# 把文件写到别处、或删除时找不到目标。
+STATIC_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 
 
 def create_app(config_name):

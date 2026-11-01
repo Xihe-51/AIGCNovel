@@ -11,7 +11,7 @@ from .. import db
 from ..models import ReadRecord
 from ..security import current_user_id
 from . import project
-from .save_views import _owned_project
+from .save_views import _owned_project, _readable_project
 
 MAX_BATCH = 5000
 
@@ -19,7 +19,7 @@ MAX_BATCH = 5000
 @project.route('/reads/<int:project_id>', methods=['GET'])
 def list_reads(project_id):
     """返回当前用户在该项目已读的 content_id 列表。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -34,7 +34,7 @@ def list_reads(project_id):
 @project.route('/reads/<int:project_id>', methods=['POST'])
 def mark_reads(project_id):
     """批量标记已读。body: { content_ids: [1,2,3] }"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 

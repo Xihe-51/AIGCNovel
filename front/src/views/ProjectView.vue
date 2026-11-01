@@ -392,7 +392,7 @@
                 <el-table-column label="头像" width="80">
                   <template #default="{ row }">
                     <div class="avatar-cell">
-                      <img :src="getAvatarUrl(row)" :alt="row.name" loading="lazy" decoding="async" />
+                      <img :src="getAvatarUrl(row)" :alt="row.name" loading="lazy" decoding="async" @error="onAvatarImgError" />
                     </div>
                   </template>
                 </el-table-column>
@@ -442,7 +442,16 @@
                     </el-form-item>
                   </el-form>
 
-                  <el-divider v-if="!isAdd">角色立绘</el-divider>
+                  <div v-if="!isAdd" class="avatar-section-head">
+                    <span class="avatar-section-title">角色立绘</span>
+                    <button
+                      class="avatar-btn cutout"
+                      :disabled="cutoutLoadingId !== null || cutoutBatchRunning"
+                      @click="batchCutout"
+                    >
+                      {{ cutoutBatchRunning ? '批量抠图中…' : '全部抠图' }}
+                    </button>
+                  </div>
 
                   <div class="avatar-grid" v-if="!isAdd">
                     <div 
@@ -453,13 +462,21 @@
                       @click="selectAvatar(avatar)"
                     >
                       <div class="avatar-image">
-                        <img :src="BASE_URL + avatar.image_url" loading="lazy" decoding="async" />
+                        <img :src="BASE_URL + avatar.image_url" loading="lazy" decoding="async" @error="onAvatarImgError" />
                       </div>
                       <div class="avatar-info">
                         <span class="avatar-type">{{ avatar.avatar_type }}</span>
                         <span class="avatar-costume">{{ avatar.costume || '默认服装' }}</span>
                       </div>
                       <div class="avatar-actions">
+                        <button
+                          class="avatar-btn cutout"
+                          :disabled="cutoutLoadingId !== null || cutoutBatchRunning"
+                          title="去掉立绘背景，保留透明底人物"
+                          @click.stop="cutoutAvatar(avatar)"
+                        >
+                          {{ cutoutLoadingId === avatar.avatar_id ? '抠图中…' : '抠图' }}
+                        </button>
                         <button 
                           class="avatar-btn" 
                           :class="{ default: avatar.is_default }"
@@ -535,6 +552,37 @@
                 </template>
               </el-dialog>
 
+              <!-- 抠图进度对话框 -->
+              <el-dialog
+                v-model="cutoutDialogVisible"
+                title="角色抠图"
+                width="420px"
+                class="custom-dialog cutout-dialog"
+                :close-on-click-modal="false"
+                :show-close="cutoutStatus !== 'running'"
+                @closed="stopCutoutTimer"
+              >
+                <div class="cutout-progress">
+                  <div v-if="cutoutTarget" class="cutout-target">
+                    {{ cutoutTarget.avatar_type }} · {{ cutoutTarget.costume || '默认服装' }}
+                  </div>
+                  <el-progress
+                    :percentage="cutoutPercent"
+                    :stroke-width="10"
+                    :color="cutoutStatus === 'error' ? '#F56C6C' : (cutoutStatus === 'success' ? '#67C23A' : '#5b8def')"
+                  />
+                  <div class="cutout-stage">{{ cutoutStage }}</div>
+                  <div v-if="cutoutError" class="cutout-error">{{ cutoutError }}</div>
+                  <div class="cutout-hint">大图可能需要几秒；处理期间可以点「后台运行」，完成后会提示。</div>
+                </div>
+                <template #footer>
+                  <button v-if="cutoutStatus === 'error'" class="dialog-btn confirm" @click="retryCutout">重试</button>
+                  <button class="dialog-btn cancel" @click="cutoutDialogVisible = false">
+                    {{ cutoutStatus === 'running' ? '后台运行' : '关闭' }}
+                  </button>
+                </template>
+              </el-dialog>
+
               <!-- 参数设置对话框 -->
               <el-dialog v-model="settingsDialogVisible" title="参数设置" width="500px" class="custom-dialog">
                 <div class="settings-panel">
@@ -589,6 +637,12 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="description" label="说明" min-width="140" />
+                <el-table-column label="跨周目" width="90">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.persist" type="warning" size="small">保留</el-tag>
+                    <span v-else>—</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="操作" width="140">
                   <template #default="{ row }">
                     <button class="action-btn" @click="openEditVariable(row)">编辑</button>
@@ -698,6 +752,16 @@
             <el-form-item label="初始值">
               <el-input v-model="variableForm.initial_value" placeholder="0" />
             </el-form-item>
+            <el-form-item label="绑定角色（可选，用于好感度面板）">
+              <el-select v-model="variableForm.character_id" clearable placeholder="不绑定角色" style="width: 100%">
+                <el-option
+                  v-for="c in characters"
+                  :key="c.character_id"
+                  :label="c.name"
+                  :value="String(c.character_id)"
+                />
+              </el-select>
+            </el-form-item>
             <div class="variable-range">
               <el-form-item label="最小值">
                 <el-input v-model="variableForm.min_value" placeholder="留空表示不限" />
@@ -708,6 +772,10 @@
             </div>
             <el-form-item label="说明">
               <el-input v-model="variableForm.description" placeholder="可选" />
+            </el-form-item>
+            <el-form-item label="跨周目保留">
+              <el-switch v-model="variableForm.persist" />
+              <span class="variable-persist-tip">开启后，重新开始/进入下一周目时保留该变量的当前值</span>
             </el-form-item>
           </el-form>
           <template #footer>
@@ -835,9 +903,9 @@ import {
   Film, ChatLineRound, Loading, Plus, Search, Sort, Close, Refresh,
   ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getProject, getDialogueCount } from '@/api/project'
-import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar } from '@/api/character'
+import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar, cutoutCharacterAvatar } from '@/api/character'
 import type { AvatarType } from '@/api/character'
 import { getScenes, uploadSceneFile } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
@@ -849,6 +917,7 @@ import { searchResources, getResourceDetail } from '@/api/market'
 import { checkProjectAssets } from '@/api/asset'
 import type { AssetCheckResult } from '@/api/asset'
 import { BASE_URL } from '@/utils/request'
+import defaultAvatarImg from '@/assets/default.jpg'
 import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
 import TechNavCircle from '@/components/TechNavCircle.vue'
 
@@ -962,11 +1031,19 @@ export default defineComponent({
     const variableForm = ref({
       label: '',
       name: '',
+      character_id: '',
       initial_value: '0',
       min_value: '',
       max_value: '',
       description: '',
+      persist: false,
     })
+
+    // 变量绑定角色后，播放器「好感度」页按角色展示
+    const characterName = (id: number | null | undefined) => {
+      if (!id) return '—'
+      return characters.value.find(c => c.character_id === id)?.name || `#${id}`
+    }
 
     // 结局
     const endings = ref<any[]>([])
@@ -1004,6 +1081,16 @@ export default defineComponent({
     const avatarDialogVisible = ref(false)
     const newAvatar = ref<Partial<CharacterAvatar>>({ avatar_type: '正常', is_default: false })
     const selectedAvatar = ref<CharacterAvatar | null>(null)
+    const cutoutLoadingId = ref<number | null>(null)
+    const cutoutBatchRunning = ref(false)
+    const cutoutDialogVisible = ref(false)
+    const cutoutTarget = ref<CharacterAvatar | null>(null)
+    const cutoutPercent = ref(0)
+    const cutoutStage = ref('')
+    const cutoutStatus = ref<'running' | 'success' | 'error'>('running')
+    const cutoutError = ref('')
+    let cutoutTimer: ReturnType<typeof setInterval> | null = null
+    let cutoutCloseTimer: ReturnType<typeof setTimeout> | null = null
     const settingsDialogVisible = ref(false)
     const showFeaturePreview = ref(false)
     const showNodeEditor = ref(false)
@@ -1471,6 +1558,181 @@ export default defineComponent({
       } catch {}
     }
 
+    // ==================== 角色抠图：进度提示 + 错误处理 ====================
+    const stopCutoutTimer = () => {
+      if (cutoutTimer) {
+        clearInterval(cutoutTimer)
+        cutoutTimer = null
+      }
+    }
+
+    const clearCutoutCloseTimer = () => {
+      if (cutoutCloseTimer) {
+        clearTimeout(cutoutCloseTimer)
+        cutoutCloseTimer = null
+      }
+    }
+
+    const startCutoutTimer = () => {
+      stopCutoutTimer()
+      cutoutPercent.value = 4
+      cutoutStage.value = '准备图片'
+      cutoutTimer = setInterval(() => {
+        if (cutoutStatus.value !== 'running') return
+        const p = cutoutPercent.value
+        let next = p
+        if (p < 30) next = p + 4
+        else if (p < 60) next = p + 2
+        else if (p < 85) next = p + 1
+        cutoutPercent.value = Math.min(85, next)
+        cutoutStage.value = cutoutPercent.value < 15
+          ? '准备图片'
+          : cutoutPercent.value < 32
+            ? '加载本地抠图模型'
+            : cutoutPercent.value < 88
+              ? '识别人物轮廓并去除背景'
+              : '生成透明底图片'
+      }, 450)
+    }
+
+    const cutoutErrorMessage = (e: any) => {
+      const message = e?.response?.data?.message
+      if (message) return message
+      if (e?.code === 'ECONNABORTED') return '处理超时，请重试'
+      if (!e?.response) return '无法连接后端服务，请确认后端已启动'
+      if (e?.response?.status === 503) return '本地抠图模型暂不可用，请稍后重试'
+      return '抠图失败，请重试'
+    }
+
+    const applyCutoutResult = (avatar: CharacterAvatar, data: { image_url: string; already_transparent?: boolean }) => {
+      // PNG 覆盖会沿用原地址，加时间戳避免浏览器继续用缓存的旧图
+      const displayUrl = data.already_transparent
+        ? data.image_url
+        : `${data.image_url}${data.image_url.includes('?') ? '&' : '?'}v=${Date.now()}`
+      const target = characterAvatars.value.find(a => a.avatar_id === avatar.avatar_id)
+      if (target) target.image_url = displayUrl
+      if (selectedAvatar.value?.avatar_id === avatar.avatar_id) {
+        selectedAvatar.value = { ...selectedAvatar.value, image_url: displayUrl }
+      }
+      if (avatar.is_default) {
+        const ch = characters.value.find(c => c.character_id === avatar.character_id)
+        if (ch) ch.avatar_url = displayUrl
+      }
+    }
+
+    const runCutout = async (avatar: CharacterAvatar) => {
+      const targetId = avatar.avatar_id
+      cutoutTarget.value = avatar
+      cutoutStatus.value = 'running'
+      cutoutError.value = ''
+      cutoutDialogVisible.value = true
+      cutoutLoadingId.value = targetId
+      clearCutoutCloseTimer()
+      startCutoutTimer()
+
+      try {
+        const data = await cutoutCharacterAvatar(targetId)
+        stopCutoutTimer()
+        cutoutPercent.value = 100
+        cutoutStatus.value = 'success'
+        cutoutStage.value = data.already_transparent ? '这张立绘已经是透明背景' : '抠图完成'
+        applyCutoutResult(avatar, data)
+        ElMessage.success(data.already_transparent ? '已经是透明背景，无需再抠图' : '抠图完成，背景已透明')
+        cutoutCloseTimer = setTimeout(() => {
+          if (cutoutTarget.value?.avatar_id === targetId) cutoutDialogVisible.value = false
+        }, 1200)
+      } catch (e: any) {
+        stopCutoutTimer()
+        cutoutStatus.value = 'error'
+        cutoutStage.value = '抠图失败'
+        cutoutError.value = cutoutErrorMessage(e)
+        ElMessage.error(cutoutError.value)
+      } finally {
+        cutoutLoadingId.value = null
+      }
+    }
+
+    const cutoutAvatar = async (avatar: CharacterAvatar) => {
+      if (cutoutBatchRunning.value) {
+        ElMessage.warning('正在批量抠图，请稍候')
+        return
+      }
+      if (cutoutLoadingId.value !== null) {
+        ElMessage.warning('上一张立绘还在抠图，请稍候')
+        return
+      }
+      try {
+        await ElMessageBox.confirm(
+          '会自动识别人物并去掉背景，生成透明底立绘。PNG 会直接覆盖原文件，其他格式会另存为 PNG。是否继续？',
+          '角色抠图',
+          { confirmButtonText: '开始抠图', cancelButtonText: '取消', type: 'info' }
+        )
+      } catch {
+        return
+      }
+      runCutout(avatar)
+    }
+
+    const retryCutout = () => {
+      if (!cutoutTarget.value) return
+      runCutout(cutoutTarget.value)
+    }
+
+    // 批量抠图：逐张处理当前角色的立绘，失败不影响后续
+    const batchCutout = async () => {
+      if (cutoutBatchRunning.value || cutoutLoadingId.value !== null) return
+      const list = currentCharacterAvatars.value.filter(
+        a => a.image_url && !/^https?:\/\//i.test(a.image_url)
+      )
+      if (!list.length) {
+        ElMessage.warning('这个角色还没有可抠图的本地立绘')
+        return
+      }
+      try {
+        await ElMessageBox.confirm(
+          `将依次处理 ${list.length} 张立绘：自动去掉背景并生成透明底 PNG，原 PNG 会被覆盖。是否继续？`,
+          '批量抠图',
+          { confirmButtonText: '开始', cancelButtonText: '取消', type: 'info' }
+        )
+      } catch {
+        return
+      }
+
+      cutoutBatchRunning.value = true
+      const loading = ElLoading.service({
+        lock: true,
+        text: `批量抠图 0/${list.length}`,
+        background: 'rgba(255, 255, 255, 0.7)',
+      })
+      let done = 0
+      let skipped = 0
+      let failed = 0
+      try {
+        for (let i = 0; i < list.length; i++) {
+          const avatar = list[i]
+          loading.setText(`批量抠图 ${i + 1}/${list.length}：${avatar.costume || avatar.avatar_type}`)
+          try {
+            const data = await cutoutCharacterAvatar(avatar.avatar_id)
+            applyCutoutResult(avatar, data)
+            data.already_transparent ? skipped++ : done++
+          } catch (e) {
+            failed++
+            console.warn('批量抠图失败', avatar.avatar_id, e)
+          }
+        }
+      } finally {
+        loading.close()
+        cutoutBatchRunning.value = false
+      }
+
+      const parts = [`处理 ${done} 张`]
+      if (skipped) parts.push(`已是透明 ${skipped} 张`)
+      if (failed) parts.push(`失败 ${failed} 张`)
+      const text = `批量抠图完成：${parts.join('，')}`
+      if (failed) ElMessage.warning(text)
+      else ElMessage.success(text)
+    }
+
     const showSettingsDialog = () => { settingsDialogVisible.value = true }
 
     const settingsArray = computed({
@@ -1526,7 +1788,15 @@ export default defineComponent({
       if (row.avatar_url) return BASE_URL + row.avatar_url
       const defaultAvatar = characterAvatars.value.find(a => a.character_id === row.character_id && a.is_default)
       if (defaultAvatar) return BASE_URL + defaultAvatar.image_url
-      return "/src/assets/default.jpg"
+      return defaultAvatarImg
+    }
+
+    // 立绘文件已丢失时退回默认头像，不再显示裂图
+    const onAvatarImgError = (e: Event) => {
+      const el = e.target as HTMLImageElement
+      if (!el || el.dataset.fallbackApplied) return
+      el.dataset.fallbackApplied = '1'
+      el.src = defaultAvatarImg
     }
 
     const startVoice = (voice_url: string) => {
@@ -1548,10 +1818,12 @@ export default defineComponent({
       variableForm.value = {
         label: '',
         name: '',
+        character_id: '',
         initial_value: '0',
         min_value: '',
         max_value: '',
         description: '',
+        persist: false,
       }
     }
 
@@ -1566,10 +1838,12 @@ export default defineComponent({
       variableForm.value = {
         label: row.label || '',
         name: row.name || '',
+        character_id: row.character_id ? String(row.character_id) : '',
         initial_value: String(row.initial_value ?? 0),
         min_value: row.min_value == null ? '' : String(row.min_value),
         max_value: row.max_value == null ? '' : String(row.max_value),
         description: row.description || '',
+        persist: !!row.persist,
       }
       variableDialogVisible.value = true
     }
@@ -1594,10 +1868,14 @@ export default defineComponent({
       const payload = {
         name,
         label,
+        character_id: variableForm.value.character_id
+          ? Number(variableForm.value.character_id)
+          : null,
         initial_value: parseOptionalInt(variableForm.value.initial_value) ?? 0,
         min_value: parseOptionalInt(variableForm.value.min_value),
         max_value: parseOptionalInt(variableForm.value.max_value),
         description: variableForm.value.description.trim(),
+        persist: !!variableForm.value.persist,
       }
       variableSaving.value = true
       try {
@@ -1930,7 +2208,10 @@ export default defineComponent({
       fetchCGs, openCreateCG, openEditCG, pickCGFile, onCGFileChange,
       openCGMarketPicker, applyCGMarket, saveCG, removeCG,
       characterDrawerVisible, currentCharacter, avatarDialogVisible, newAvatar,
-      selectedAvatar, settingsDialogVisible, showFeaturePreview, showNodeEditor,
+      selectedAvatar, cutoutLoadingId, cutoutBatchRunning,
+      cutoutDialogVisible, cutoutTarget, cutoutPercent, cutoutStage, cutoutStatus, cutoutError,
+      stopCutoutTimer, retryCutout, batchCutout,
+      settingsDialogVisible, showFeaturePreview, showNodeEditor,
       assetDialogVisible, assetLoading, assetResult, openAssetCheck,
       sceneEditorVisible, currentScene, sceneCharacters, currentSceneBackground,
       previewMode, currentPreviewScene, currentPreviewContent, currentPreviewCharacters,
@@ -1939,10 +2220,10 @@ export default defineComponent({
       settingsArray,
       formatTime, handleChange, getGenreColor, getContentTagType, getCharacterColor,
       showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
-      showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, deleteAvatar,
+      showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, cutoutAvatar, deleteAvatar,
       showSettingsDialog, addSetting, removeSetting, updateSettings,
       fetchScenes, getNextScene,
-      getAvatarUrl, startVoice,
+      getAvatarUrl, onAvatarImgError, startVoice,
       // 画布相关
       scale, panOffset, canvasWidth, canvasHeight, flowNodes, edges,
       selectedNode, canvasLoading,
@@ -2665,6 +2946,40 @@ $cg-text-light: #999999;
   }
   
   .drawer-content {
+    .avatar-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 16px;
+      margin-bottom: 4px;
+    }
+
+    .avatar-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: $cg-text;
+    }
+
+    .avatar-section-head .avatar-btn {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      background: rgba(110, 160, 255, 0.1);
+      border: 1px solid rgba(110, 160, 255, 0.35);
+      color: #5b8def;
+      transition: all 0.2s;
+
+      &:hover:not(:disabled) {
+        background: rgba(110, 160, 255, 0.2);
+      }
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+    }
+
     .avatar-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -2736,6 +3051,17 @@ $cg-text-light: #999999;
               background: #f0f0f0;
             }
             
+            &.cutout {
+              background: rgba(110, 160, 255, 0.1);
+              border-color: rgba(110, 160, 255, 0.35);
+              color: #5b8def;
+
+              &:disabled {
+                opacity: 0.6;
+                cursor: wait;
+              }
+            }
+
             &.default {
               background: rgba(103, 210, 176, 0.1);
               border-color: rgba(103, 210, 176, 0.3);
@@ -3085,6 +3411,12 @@ $cg-text-light: #999999;
   overflow: hidden;
 }
 
+.variable-persist-tip {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #8a7f92;
+}
+
 .variables-empty {
   padding: 40px;
   text-align: center;
@@ -3281,5 +3613,59 @@ $cg-text-light: #999999;
   font-size: 11px;
   color: #b99aa5;
   line-height: 1.6;
+}
+
+/* ===== 角色抠图进度对话框 ===== */
+.cutout-dialog {
+  .el-dialog__body {
+    padding: 8px 24px 4px;
+  }
+}
+
+.cutout-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cutout-target {
+  font-size: 12px;
+  color: #8a6a76;
+  background: #fdf3f7;
+  border: 1px solid #f6d6e2;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.cutout-stage {
+  font-size: 13px;
+  color: #3d2b32;
+  min-height: 18px;
+}
+
+.cutout-error {
+  font-size: 12px;
+  color: #c0392b;
+  background: #fdeeee;
+  border: 1px solid #f5c6c6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.cutout-hint {
+  font-size: 11px;
+  color: #b99aa5;
+  line-height: 1.6;
+}
+
+.cutout-dialog .el-progress-bar__outer {
+  background-color: #f5e4ea;
+}
+
+.cutout-dialog .el-progress__text {
+  font-size: 12px !important;
+  color: #8a6a76;
 }
 </style>

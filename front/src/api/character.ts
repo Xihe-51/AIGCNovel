@@ -9,6 +9,7 @@ export interface Character {
   description?: string
   settings?: Record<string, any>
   is_main: boolean
+  voice_type?: string
   created_at: string
 }
 
@@ -74,6 +75,14 @@ export const uploadCharacterAvatar = async (
     throw error; // 向上抛出错误以便在调用处处理
   }
 };
+
+/** 角色立绘抠图：去掉背景，返回透明底 PNG 的新地址 */
+export const cutoutCharacterAvatar = async (
+  avatarId: number
+): Promise<{ avatar_id: number; image_url: string; already_transparent?: boolean }> => {
+  const response = await request.post(`/project/avatar/${avatarId}/cutout`)
+  return (response.data as any).data
+}
 
 /**
  * 获取项目下所有角色
@@ -148,7 +157,7 @@ export const createCharacter = async (characterData: Omit<Character, 'character_
  * @param characterData 角色数据
  * @returns 编辑后信息
  */
-export const updateCharacter = async (characterData: Omit<Character, 'character_id' | 'created_at'>): Promise<Character> => {
+export const updateCharacter = async (characterData: Character): Promise<Character> => {
   try {
     const response = await request.post('/project/update_character', characterData);
     return response.data.data;

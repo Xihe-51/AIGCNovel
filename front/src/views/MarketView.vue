@@ -313,6 +313,14 @@
               <el-icon><Link /></el-icon>
               <span>引用到项目</span>
             </button>
+            <button
+              v-if="userId"
+              class="secondary-btn reference-btn"
+              @click="openImportDialog(currentResource)"
+            >
+              <el-icon><FolderAdd /></el-icon>
+              <span>入库到项目</span>
+            </button>
             <button 
               v-if="userId && currentResource.uploader_id === userId"
               class="secondary-btn edit-btn"
@@ -539,6 +547,52 @@
         </button>
       </template>
     </el-dialog>
+
+    <!-- 素材入库对话框 -->
+    <el-dialog
+      v-model="importDialogVisible"
+      width="420px"
+      class="orange-dialog"
+      :close-on-click-modal="false"
+    >
+      <template #header>
+        <div class="dialog-header">
+          <span class="dialog-title">入库到项目</span>
+        </div>
+      </template>
+
+      <div class="reference-container">
+        <p class="reference-tip">
+          把「{{ importTarget?.title }}」复制到项目素材目录，之后可在创作页「素材」里直接拖到场景：
+        </p>
+        <el-select
+          v-model="importProjectId"
+          placeholder="请选择项目"
+          class="reference-select"
+        >
+          <el-option
+            v-for="p in myProjects"
+            :key="p.project_id"
+            :label="p.title"
+            :value="p.project_id"
+          />
+        </el-select>
+        <p v-if="myProjectsLoaded && myProjects.length === 0" class="reference-empty">
+          你还没有项目，先去项目页创建一个吧
+        </p>
+      </div>
+
+      <template #footer>
+        <button class="dialog-btn cancel" @click="importDialogVisible = false">取消</button>
+        <button
+          class="dialog-btn confirm"
+          :disabled="!importProjectId || importing"
+          @click="submitImport"
+        >
+          {{ importing ? '入库中…' : '确定入库' }}
+        </button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -549,7 +603,7 @@ import {
   Search, User, Coin, Upload, Download, 
   Calendar, Document, UploadFilled,
   Loading, CircleCheckFilled, Headset, Link,
-  Present, Edit, Delete, ChatDotRound, Wallet
+  Present, Edit, Delete, ChatDotRound, Wallet, FolderAdd
 } from '@element-plus/icons-vue'
 import { jwtDecode } from "jwt-decode"
 import { 
@@ -591,6 +645,10 @@ const detailDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
 const referenceDialogVisible = ref(false)
 const referenceProjectId = ref(null)
+const importDialogVisible = ref(false)
+const importProjectId = ref(null)
+const importTarget = ref(null)
+const importing = ref(false)
 const myProjects = ref([])
 const myProjectsLoaded = ref(false)
 const currentResource = ref({})
@@ -715,6 +773,47 @@ const submitReference = async () => {
     fetchResources()
   } catch (error) {
     ElMessage.error('引用失败，请确认该项目属于你')
+  }
+}
+
+// 打开「入库到项目」对话框：把市场素材复制到项目素材目录
+const openImportDialog = async (resource) => {
+  if (!userId) {
+    ElMessage.warning('请先登录后再入库')
+    return
+  }
+  importTarget.value = resource
+  importProjectId.value = null
+  importDialogVisible.value = true
+  try {
+    myProjects.value = await getProjects()
+  } catch (error) {
+    myProjects.value = []
+    ElMessage.error('获取项目列表失败')
+  } finally {
+    myProjectsLoaded.value = true
+  }
+}
+
+const submitImport = async () => {
+  if (!importProjectId.value || !importTarget.value) {
+    ElMessage.warning('请先选择目标项目')
+    return
+  }
+  importing.value = true
+  try {
+    await importMarketAsset(Number(importProjectId.value), importTarget.value.resource_id)
+    ElMessage.success('已入库到项目素材，可在创作页「素材」里拖拽使用')
+    importDialogVisible.value = false
+    fetchResources()
+    if (detailDialogVisible.value) {
+      const detail = await getResourceDetail(importTarget.value.resource_id)
+      currentResource.value = detail.data.data
+    }
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '入库失败')
+  } finally {
+    importing.value = false
   }
 }
 

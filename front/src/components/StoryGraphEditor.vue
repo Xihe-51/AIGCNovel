@@ -3,10 +3,27 @@
     <!-- 工具栏 -->
     <div class="sge-toolbar">
       <div class="sge-info">
-        节点级剧情图 · <b>{{ nodes.length }}</b> 个剧情节点 · <b>{{ edges.length }}</b> 条分支
+        节点级剧情图 · <b>{{ displayNodes.length }}</b>
+        <span v-if="sceneFilter" class="sge-filter-total">/ {{ nodes.length }}</span>
+        个剧情节点 · <b>{{ displayEdgeCount }}</b> 条分支
         <span v-if="dirty" class="sge-dirty">（有未保存改动）</span>
       </div>
       <div class="sge-tools">
+        <el-select
+          v-model="sceneFilter"
+          size="small"
+          clearable
+          placeholder="全部场景"
+          class="sge-scene-filter"
+          :teleported="false"
+        >
+          <el-option
+            v-for="s in sceneOptions"
+            :key="s.scene_id"
+            :label="`${s.order}. ${s.title}`"
+            :value="s.scene_id"
+          />
+        </el-select>
         <button class="sge-btn" @click="autoLayout">自动布局</button>
         <button class="sge-btn" @click="zoom(-0.1)">－</button>
         <span class="sge-zoom">{{ Math.round(scale * 100) }}%</span>
@@ -76,7 +93,7 @@
           </svg>
 
           <div
-            v-for="n in nodes"
+            v-for="n in displayNodes"
             :key="n.content_id"
             class="sge-node"
             :class="[nodeClass(n), {
@@ -120,11 +137,16 @@
           </div>
           <div class="sge-field">
             <label>显示条件</label>
+            <div v-if="edgeGroupLock" class="sge-read" style="margin-bottom: 6px">
+              该连线使用多条件组（{{ selectedEdge.conditions.mode === 'or' ? '任一满足' : '全部满足' }}，{{ (selectedEdge.conditions.items || []).length }} 条）
+              —— 请到场景编辑器的「选择项」里修改
+            </div>
             <el-select
               v-model="edgeForm.variable"
               size="small"
               clearable
               placeholder="无条件（始终显示）"
+              :disabled="edgeGroupLock"
               style="width: 100%"
             >
               <el-option v-for="v in variables" :key="v.variable_id" :label="v.label" :value="v.name" />
@@ -140,10 +162,10 @@
               <el-option label="≠" value="!=" />
             </el-select>
             <el-input-number v-model="edgeForm.value" size="small" :step="1" :controls="false" style="width: 96px" />
-            <span class="sge-cond-tip">仅当条件成立才显示该选项</span>
+            <span class="sge-cond-tip">{{ sourceNotChoice ? '仅当条件成立才自动跳转' : '仅当条件成立才显示该选项' }}</span>
           </div>
           <p v-if="sourceNotChoice" class="sge-warn">
-            起点不是「选择」节点：该连线只参与剧情图结构校验，播放器不会按它跳转。
+            起点不是「选择」节点：播放完该节点后会按这条连线自动跳转（多条时取第一条条件成立的边）。
           </p>
           <div class="sge-panel-actions">
             <button class="sge-btn danger" @click="deleteEdge(selectedEdge)">删除连线</button>
@@ -179,6 +201,8 @@
             该节点不是「选择」节点：它的出边只用于剧情图校验，播放器不会按它跳转。
           </p>
           <div class="sge-panel-actions">
+            <button class="sge-btn primary" @click="locateInScript(selectedNode)">在脚本中编辑</button>
+            <button class="sge-btn" @click="playFromNode(selectedNode)">从此节点试玩</button>
             <button class="sge-btn danger" @click="deleteNodeEdges(selectedNode)">清空该节点出边</button>
             <button class="sge-btn" @click="panelMode = 'none'">完成</button>
           </div>
@@ -209,8 +233,13 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getStoryGraph, batchSaveBranches } from '@/api/branch'
 import { listVariables } from '@/api/variable'
+import { createProjectVersion } from '@/api/version'
 
-const props = defineProps<{ projectId: number }>()
+const props = defineProps<{ projectId: number; focusContentId?: number | null }>()
+
+const emit = defineEmits<{
+  (e: 'locate', sceneId: number, contentId: number | null): void
+}>()
 
 const NODE_W = 210
 const NODE_H = 70
@@ -220,6 +249,34 @@ const MAX_SCALE = 2
 const nodes = ref<any[]>([])
 const edges = ref<any[]>([])
 const variables = ref<any[]>([])
+// 大项目按场景筛选：只渲染当前场景的节点与场景内连线
+const sceneFilter = ref<number | null>(null)
+
+const sceneOptions = computed(() => {
+  const map = new Map<number, { scene_id: number; title: string; order: number }>()
+  for (const n of nodes.value) {
+    if (!map.has(n.scene_id)) {
+      map.set(n.scene_id, {
+        scene_id: n.scene_id,
+        title: n.scene_title || `场景 ${n.scene_id}`,
+        order: n.scene_order || 0,
+      })
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.order - b.order)
+})
+
+const displayNodes = computed(() => {
+  if (!sceneFilter.value) return nodes.value
+  const sid = Number(sceneFilter.value)
+  return nodes.value.filter(n => Number(n.scene_id) === sid)
+})
+
+const displayEdgeCount = computed(() => {
+  if (!sceneFilter.value) return edges.value.length
+  const ids = new Set(displayNodes.value.map(n => n.content_id))
+  return edges.value.filter(e => ids.has(e.source_content_id) && ids.has(e.target_content_id)).length
+})
 
 const loading = ref(false)
 const saving = ref(false)
@@ -234,6 +291,7 @@ const selectedEdge = ref<any>(null)
 const panelMode = ref<'node' | 'edge' | 'none'>('none')
 
 const edgeForm = ref<any>({ choice_text: '', variable: '', op: '>=', value: 0 })
+const edgeGroupLock = ref(false)
 let formSyncing = false
 
 const connecting = ref<{ from: any; x: number; y: number; hoverId: number | null } | null>(null)
@@ -253,13 +311,13 @@ const innerStyle = computed(() => ({
 
 const canvasW = computed(() => {
   let maxX = 0
-  for (const n of nodes.value) maxX = Math.max(maxX, n._x || 0)
+  for (const n of displayNodes.value) maxX = Math.max(maxX, n._x || 0)
   return Math.max(1200, maxX + NODE_W + 220)
 })
 
 const canvasH = computed(() => {
   let maxY = 0
-  for (const n of nodes.value) maxY = Math.max(maxY, n._y || 0)
+  for (const n of displayNodes.value) maxY = Math.max(maxY, n._y || 0)
   return Math.max(720, maxY + NODE_H + 200)
 })
 
@@ -382,7 +440,7 @@ const onWheel = (e: WheelEvent) => {
 
 const renderEdges = computed(() => {
   const byId: Record<number, any> = {}
-  for (const n of nodes.value) byId[n.content_id] = n
+  for (const n of displayNodes.value) byId[n.content_id] = n
 
   const out: any[] = []
   const explicitOut = new Set<number>()
@@ -408,7 +466,7 @@ const renderEdges = computed(() => {
   }
 
   // 顺序边（后端 auto_sequence 的前端镜像，仅展示，不可编辑）
-  const ordered = [...nodes.value].sort(
+  const ordered = [...displayNodes.value].sort(
     (a, b) => (a.scene_order - b.scene_order) || (a.order_num - b.order_num) || (a.content_id - b.content_id)
   )
   for (let i = 0; i < ordered.length - 1; i++) {
@@ -499,6 +557,40 @@ const selectNode = (n: any) => {
   panelMode.value = 'node'
 }
 
+/** 优先脚本中定位：切回脚本页并滚动到对应台词 */
+const locateInScript = (node: any) => {
+  if (!node) return
+  emit('locate', Number(node.scene_id), Number(node.content_id))
+}
+
+/** 选中并居中某个节点（从脚本页跳转过来时用） */
+const focusNode = (contentId: number | null | undefined) => {
+  if (contentId == null) return
+  const n = nodes.value.find(x => Number(x.content_id) === Number(contentId))
+  if (!n) return
+  // 定位前清掉场景筛选，避免目标节点被过滤掉
+  sceneFilter.value = null
+  selectedNodeId.value = n.content_id
+  selectedEdge.value = null
+  panelMode.value = 'node'
+  const w = canvasRef.value?.clientWidth || 0
+  const h = canvasRef.value?.clientHeight || 0
+  if (w && h) {
+    pan.value = {
+      x: w / 2 - ((n._x || 0) + NODE_W / 2) * scale.value,
+      y: h / 2 - ((n._y || 0) + NODE_H / 2) * scale.value,
+    }
+  }
+}
+
+watch(
+  () => props.focusContentId,
+  (v) => {
+    if (v == null) return
+    nextTick(() => setTimeout(() => focusNode(v), 0))
+  }
+)
+
 const startConnect = (ev: MouseEvent, n: any) => {
   const p = toCanvas(ev.clientX, ev.clientY)
   connecting.value = { from: n, x: p.x, y: p.y, hoverId: null }
@@ -544,6 +636,8 @@ const selectEdge = (e: any) => {
   selectedNodeId.value = null
   panelMode.value = 'edge'
   formSyncing = true
+  // 多条件组（AND/OR）在剧情树里只读，避免保存时被压成单条件
+  edgeGroupLock.value = !!(e.conditions && Array.isArray(e.conditions.items))
   edgeForm.value = {
     choice_text: e.choice_text || '',
     variable: e.conditions && e.conditions.variable ? e.conditions.variable : '',
@@ -562,6 +656,11 @@ watch(
     const e = selectedEdge.value
     if (!e) return
     e.choice_text = edgeForm.value.choice_text
+    // 多条件组保持原样，只允许改文案
+    if (edgeGroupLock.value) {
+      dirty.value = true
+      return
+    }
     e.conditions = edgeForm.value.variable
       ? { variable: edgeForm.value.variable, op: edgeForm.value.op, value: Number(edgeForm.value.value) || 0 }
       : null
@@ -576,6 +675,13 @@ const deleteEdge = (e: any) => {
   selectedEdge.value = null
   panelMode.value = 'none'
   dirty.value = true
+}
+
+// 调试器：从指定节点开始试玩（新窗口，带 debug=1）
+const playFromNode = (node: any) => {
+  if (!node || !node.content_id) return
+  const url = `/view/${props.projectId}?debug=1&start=${node.content_id}`
+  window.open(url, '_blank')
 }
 
 const deleteNodeEdges = (n: any) => {
@@ -605,6 +711,9 @@ const reload = async () => {
     selectedEdge.value = null
     panelMode.value = 'none'
     dirty.value = false
+    if (props.focusContentId != null) {
+      nextTick(() => setTimeout(() => focusNode(props.focusContentId), 0))
+    }
   } catch (e) {
     ElMessage.error('加载剧情节点失败')
     nodes.value = []
@@ -623,11 +732,13 @@ const saveTopology = async () => {
         source_content_id: e.source_content_id,
         target_content_id: e.target_content_id,
         choice_text: e.choice_text || '',
+        image_url: e.image_url || null,
         conditions: e.conditions || null,
       })),
       true
     )
     ElMessage.success('拓扑已保存')
+    createProjectVersion(props.projectId, '保存剧情图').catch(() => {})
     dirty.value = false
     await reload()
   } catch (e: any) {
@@ -673,6 +784,12 @@ defineExpose({ reload })
 }
 .sge-dirty {
   color: #e6a23c;
+}
+.sge-filter-total {
+  color: #94a3b8;
+}
+.sge-scene-filter {
+  width: 130px;
 }
 
 .sge-tools {

@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Tuple, List, Dict
 from flask import current_app
-from .. import db
+from .. import db, STATIC_ROOT
 from ..models import AIGeneration
 from ..extensions import cache_get, cache_set
 from .backends import text_ollama, text_deepseek
@@ -220,7 +220,7 @@ def _save_image_record(user_id: int, prompt: str, filename: str):
     generation_record = AIGeneration(
         user_id=user_id,
         prompt_text=prompt,
-        generated_text=filename.replace("app", "", 1),
+        generated_text=_static_rel_url(filename),
         length=1,
         type="image",
         forbidden_words="default"
@@ -239,11 +239,11 @@ def _generate_image_tongyi(user_id: int, prompt: str, width: int, height: int) -
         img_response = requests.get(image_url, timeout=30)
         img_response.raise_for_status()
 
-        directory = f"app/static/images/{user_id}"
+        directory = os.path.join(STATIC_ROOT, 'images', str(user_id))
         os.makedirs(directory, exist_ok=True)
 
         timestamp = int(time.time())
-        filename = f"{directory}/{timestamp}.png"
+        filename = os.path.join(directory, f"{timestamp}.png")
 
         with open(filename, 'wb') as f:
             f.write(img_response.content)
@@ -271,10 +271,10 @@ def _generate_image_local(user_id: int, prompt: str, width: int, height: int) ->
                 "backend": "local",
             }
 
-        directory = f"app/static/images/{user_id}"
+        directory = os.path.join(STATIC_ROOT, 'images', str(user_id))
         os.makedirs(directory, exist_ok=True)
         timestamp = int(time.time())
-        filename = f"{directory}/{timestamp}.png"
+        filename = os.path.join(directory, f"{timestamp}.png")
 
         meta = image_local.generate_to_file(prompt, filename, width=width, height=height)
 
@@ -415,16 +415,25 @@ def _static_rel_url(full_path: str) -> str:
     """
     把磁盘路径转成前端可直接拼 BASE_URL 的 URL 片段。
 
-    坑：`os.path.join('app/static/music/4', 'a.wav')` 在 Windows 上得到
-    `app/static/music/4\\a.wav`，混入反斜杠后前端拼出的 URL 不可靠。
-    这里统一转成 `/static/music/4/a.wav`。
+    统一按 STATIC_ROOT 计算相对路径，返回 `/static/...`：
+    进程无论从哪个目录启动，都不会拼出带盘符或反斜杠的坏 URL。
     """
-    rel = full_path.replace('\\', '/')
-    if rel.startswith('app/'):
-        rel = rel[len('app'):]
-    elif rel.startswith('app'):
-        rel = rel[len('app'):]
-    return rel
+    raw = str(full_path or '')
+    root = os.path.abspath(STATIC_ROOT)
+    try:
+        rel = os.path.relpath(os.path.abspath(raw), root)
+    except ValueError:
+        rel = raw
+    rel = rel.replace('\\', '/')
+    if rel.startswith('../'):
+        # 兼容旧数据/旧记录里的 app/static/... 形式
+        legacy = raw.replace('\\', '/')
+        if legacy.startswith('app/'):
+            legacy = legacy[len('app'):]
+        elif legacy.startswith('app'):
+            legacy = legacy[len('app'):]
+        return legacy if legacy.startswith('/') else '/' + legacy
+    return '/static/' + rel
 
 
 def _save_audio_record(user_id: int, prompt: str, filename: str,
@@ -473,7 +482,7 @@ def generate_music(user_id: int, prompt: str, duration: int,
                 "backend": "local",
             }
 
-        directory = f"app/static/music/{user_id}"
+        directory = os.path.join(STATIC_ROOT, 'music', str(user_id))
         os.makedirs(directory, exist_ok=True)
         timestamp = int(time.time())
         filename = f"music_{timestamp}.wav"
@@ -589,7 +598,7 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
     except Exception as e:
         return False, {"message": f"音频数据解码失败: {e}"}
 
-    directory = f"app/static/music/{user_id}"
+    directory = os.path.join(STATIC_ROOT, 'music', str(user_id))
     os.makedirs(directory, exist_ok=True)
     filename = f"voice_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{fmt}"
     full_path = os.path.join(directory, filename)

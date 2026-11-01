@@ -15,6 +15,7 @@ export interface BranchPath {
   source_content_id: number;
   target_content_id: number;
   choice_text?: string | null;
+  image_url?: string | null;
   conditions?: any;
 }
 

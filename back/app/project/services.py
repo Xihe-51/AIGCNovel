@@ -4,10 +4,11 @@ from datetime import datetime
 from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
-from .. import db
+from .. import db, STATIC_ROOT
 from ..models import Project, Character, CharacterAvatar, Scene, ScriptContent, BranchPath, \
     ContentEffect, ProjectVariable, SaveSlot, ReadRecord, Ending, EndingUnlock, ResourceReference, \
-    ProjectCG, ContentDirective
+    ProjectCG, ContentDirective, SceneChapter, StoryChapter, SceneLock, ProjectVersion, \
+    ProjectTerm, PlayEvent, Achievement, AchievementUnlock, ProjectMeta
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {
@@ -19,6 +20,8 @@ ALLOWED_EXTENSIONS = {
 # 项目类型与叙事模板的合法取值（与模型 Enum / 前端下拉一致）
 GENRES = ('悬疑', '恋爱', '科幻', '奇幻', '历史', '现代', '其他')
 TEMPLATE_TYPES = ('线性叙事', '分支叙事', '开放世界')
+# 播放器 UI 皮肤（与前端 src/utils/uiThemes.ts 保持一致）
+UI_THEMES = ('classic', 'sakura', 'ink', 'midnight', 'mint')
 
 # 模板中心元数据：展示用名称/描述/特性 + 建项目时自动铺的场景骨架。
 # 骨架 = 场景 + 占位对话（统一用「【在此填写：…】」，让作者一眼知道该改哪里）
@@ -194,8 +197,14 @@ def _safe_delete_file(file_url):
         return
 
     try:
-        # 构建完整文件路径
-        file_path = os.path.join('app', file_url.lstrip('/'))
+        # 构建完整文件路径（基于 app/static 的绝对路径，不依赖进程工作目录）
+        rel = str(file_url).lstrip('/')
+        if rel.startswith('static/'):
+            rel = rel[len('static/'):]
+        file_path = os.path.abspath(os.path.join(STATIC_ROOT, rel))
+        # 防止路径穿越，删到 static 之外
+        if not file_path.startswith(os.path.abspath(STATIC_ROOT) + os.sep):
+            return
         if os.path.exists(file_path):
             os.remove(file_path)
             print(f"文件删除成功: {file_path}")
@@ -211,7 +220,7 @@ def _delete_project_files(project_id):
     """
     try:
         # 删除项目的整个静态文件目录
-        project_static_dir = os.path.join('app', 'static', 'project', str(project_id))
+        project_static_dir = os.path.join(STATIC_ROOT, 'project', str(project_id))
         if os.path.exists(project_static_dir):
             import shutil
             shutil.rmtree(project_static_dir)
@@ -252,7 +261,7 @@ def save_uploaded_file(file, project_id):
     now = datetime.now()
     timestamp = now.strftime("%Y%m%d_%H%M%S_%f")[:-3]
     new_filename = f"{timestamp}.{ext}"
-    upload_dir = os.path.join('app', 'static', 'project', str(project_id), file_type)
+    upload_dir = os.path.join(STATIC_ROOT, 'project', str(project_id), file_type)
     try:
         os.makedirs(upload_dir, exist_ok=True)
     except OSError as e:
@@ -269,9 +278,7 @@ def save_uploaded_file(file, project_id):
 
     # 返回给前端/落库的路径必须是 POSIX 风格：Windows 的 os.path.join 会混入 `\`，
     # 拼进 URL 或 CSS url() 后图片/音乐会加载失败（与 FIX-11 同类问题）
-    relative_path = file_path.replace('app', '', 1).replace('\\', '/')
-    if not relative_path.startswith('/'):
-        relative_path = '/' + relative_path
+    relative_path = '/static/' + os.path.relpath(file_path, STATIC_ROOT).replace('\\', '/')
     return relative_path
 
 
@@ -540,14 +547,44 @@ def delete_project(project_id, user_id):
         # 素材引用计数记录同样外键引用 project_id，需一并清理
         ref_count = ResourceReference.query.filter_by(project_id=project_id).delete(
             synchronize_session=False)
+        # 剧本版本快照（先删发布记录，释放对快照的引用）
+        release_count = ProjectRelease.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
+        version_count = ProjectVersion.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
+        # 术语表
+        term_count = ProjectTerm.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
+        # 试玩埋点
+        play_event_count = PlayEvent.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
+        # 跨周目玩家元数据
+        meta_count = ProjectMeta.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
+        # 成就与解锁记录
+        achievement_ids = [a.achievement_id for a in
+                          Achievement.query.filter_by(project_id=project_id).all()]
+        if achievement_ids:
+            AchievementUnlock.query.filter(
+                AchievementUnlock.achievement_id.in_(achievement_ids)).delete(
+                synchronize_session=False)
+        achievement_count = Achievement.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
         print(f"  删除 {read_count} 条已读记录、{save_count} 个存档、"
               f"{ending_count} 个结局、{unlock_count} 条解锁记录、{ref_count} 条素材引用、"
-              f"{cg_count} 条 CG")
+              f"{cg_count} 条 CG、{version_count} 个版本快照、{term_count} 条术语、"
+              f"{play_event_count} 条试玩埋点、{meta_count} 条跨周目元数据、"
+              f"{achievement_count} 个成就")
 
         # 3. 删除场景中的所有对话
         for scene in scenes:
             deleted_count = ScriptContent.query.filter_by(scene_id=scene.scene_id).delete()
             print(f"  删除场景 {scene.scene_id} 中的 {deleted_count} 条对话")
+
+        # 3.1 清理章节归属、章节定义与播放条件（外键引用 scenes）
+        SceneChapter.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        StoryChapter.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        SceneLock.query.filter_by(project_id=project_id).delete(synchronize_session=False)
 
         # 4. 删除所有场景
         scene_count = Scene.query.filter_by(project_id=project_id).delete()
@@ -628,7 +665,7 @@ def save_upload_file(file, sub_folder='covers'):
         # 生成唯一文件名
         unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
         # 保存路径
-        save_path = os.path.join('app/static/uploads', sub_folder)
+        save_path = os.path.join(STATIC_ROOT, 'uploads', sub_folder)
         os.makedirs(save_path, exist_ok=True)
         file_path = os.path.join(save_path, unique_filename)
         file.save(file_path)
@@ -739,7 +776,8 @@ def create_character(data):
             name=data['name'],
             age=data['age'],
             description=data['description'],
-            is_main=data['is_main']
+            is_main=data['is_main'],
+            voice_type=(str(data.get('voice_type') or '').strip() or None),
         )
 
         db.session.add(new_character)
@@ -774,6 +812,8 @@ def update_character(character_id, data):
         character.age = data.get('age', character.age)  # 如果没有提供age，则保持原值
         character.description = data.get('description', character.description)
         character.is_main = data.get('is_main', character.is_main)
+        if 'voice_type' in data:
+            character.voice_type = (str(data.get('voice_type') or '').strip() or None)
 
         db.session.commit()
 
@@ -920,14 +960,22 @@ def delete_character_avatar(avatar_id):
         return False
 
     try:
-        # 构建图片文件路径
-        image_path = f"app/{avatar.image_url}"
+        # 删除立绘前先清掉对话里的引用，否则对话仍指向已删除的 avatar_id，
+        # 预览区会拿到空路径，表现为「角色立绘」裂图。
+        ScriptContent.query.filter_by(avatar_id=avatar_id).update(
+            {'avatar_id': None}, synchronize_session=False)
+
+        # 构建图片文件路径（绝对路径，避免受启动目录影响）
+        rel = str(avatar.image_url or '').lstrip('/')
+        if rel.startswith('static/'):
+            rel = rel[len('static/'):]
+        image_path = os.path.abspath(os.path.join(STATIC_ROOT, rel))
         # 删除数据库记录
         db.session.delete(avatar)
         db.session.commit()
 
-        # 删除图片文件
-        if os.path.exists(image_path):
+        # 删除图片文件（仅限 static 目录内）
+        if image_path.startswith(os.path.abspath(STATIC_ROOT) + os.sep) and os.path.exists(image_path):
             os.remove(image_path)
 
         return True
@@ -1147,11 +1195,19 @@ def delete_scene_by_id(scene_id):
             ContentEffect.query.filter(
                 ContentEffect.content_id.in_(content_ids)
             ).delete(synchronize_session=False)
+            # 演出指令也引用 script_contents，必须先清掉才能删节点
+            ContentDirective.query.filter(
+                ContentDirective.content_id.in_(content_ids)
+            ).delete(synchronize_session=False)
             ReadRecord.query.filter(
                 ReadRecord.content_id.in_(content_ids)
             ).delete(synchronize_session=False)
             _delete_endings_for_contents(content_ids)
             ScriptContent.query.filter_by(scene_id=scene_id).delete(synchronize_session=False)
+
+        # 章节归属与播放条件是 scene_id 主键外键，删除场景前先清掉
+        SceneChapter.query.filter_by(scene_id=scene_id).delete(synchronize_session=False)
+        SceneLock.query.filter_by(scene_id=scene_id).delete(synchronize_session=False)
 
         db.session.delete(scene)
         db.session.commit()
@@ -1186,6 +1242,19 @@ def save_dialogue(data, content_id=None):
     for field in required_fields:
         if field not in data:
             return None, f'缺少必要字段: {field}'
+
+    # 台词级显示条件：条件不满足时顺序播放会跳过该条
+    has_condition = 'branch_condition' in data
+    normalized_condition = None
+    if has_condition:
+        try:
+            from .branch_service import _normalize_conditions
+            normalized_condition, cerr = _normalize_conditions(
+                int(data['project_id']), data.get('branch_condition'))
+        except Exception as e:
+            return None, f'台词条件格式错误: {str(e)}'
+        if cerr:
+            return None, f'台词条件：{cerr}'
 
     if content_id:
         # 更新现有对话
@@ -1228,6 +1297,8 @@ def save_dialogue(data, content_id=None):
     dialogue.content_text = data['content_text']
     dialogue.voice_url = data.get('voice_url')
     dialogue.order_num = data['order_num']
+    if has_condition:
+        dialogue.branch_condition = normalized_condition
 
     try:
         db.session.commit()
@@ -1236,6 +1307,99 @@ def save_dialogue(data, content_id=None):
         db.session.rollback()
         print(e)
         return None, f'保存对话失败: {str(e)}'
+
+
+def duplicate_scene(scene_id):
+    """
+    深拷贝场景：场景本身 + 对话节点 + 分支 + 数值变化 + 演出指令。
+    分支只复制“起点在本场景”的；目标在本场景内则重映射，跨场景则保留原目标。
+    """
+    scene = Scene.query.get(scene_id)
+    if not scene:
+        return None
+
+    try:
+        max_order = (db.session.query(func.max(Scene.order_num))
+                     .filter(Scene.project_id == scene.project_id)
+                     .scalar()) or 0
+        new_scene = Scene(
+            project_id=scene.project_id,
+            title=f"{scene.title} 副本"[:100],
+            background_url=scene.background_url,
+            music_url=scene.music_url,
+            description=scene.description,
+            order_num=max_order + 1,
+        )
+        db.session.add(new_scene)
+        db.session.flush()
+
+        # 副本沿用原场景的章节归属与播放条件
+        src_chapter = db.session.get(SceneChapter, scene_id)
+        if src_chapter:
+            db.session.add(SceneChapter(
+                scene_id=new_scene.scene_id,
+                chapter_id=src_chapter.chapter_id,
+                project_id=scene.project_id,
+            ))
+        src_lock = db.session.get(SceneLock, scene_id)
+        if src_lock:
+            db.session.add(SceneLock(
+                scene_id=new_scene.scene_id,
+                project_id=scene.project_id,
+                conditions=src_lock.conditions,
+            ))
+
+        contents = (ScriptContent.query
+                    .filter_by(scene_id=scene_id)
+                    .order_by(ScriptContent.order_num)
+                    .all())
+        id_map = {}
+        for c in contents:
+            nc = ScriptContent(
+                project_id=c.project_id,
+                scene_id=new_scene.scene_id,
+                character_id=c.character_id,
+                avatar_id=c.avatar_id,
+                content_type=c.content_type,
+                content_text=c.content_text,
+                voice_url=c.voice_url,
+                branch_condition=c.branch_condition,
+                order_num=c.order_num,
+            )
+            db.session.add(nc)
+            db.session.flush()
+            id_map[c.content_id] = nc.content_id
+
+        old_ids = list(id_map.keys())
+        if old_ids:
+            for b in BranchPath.query.filter(BranchPath.source_content_id.in_(old_ids)).all():
+                db.session.add(BranchPath(
+                    project_id=b.project_id,
+                    source_content_id=id_map[b.source_content_id],
+                    target_content_id=id_map.get(b.target_content_id, b.target_content_id),
+                    choice_text=b.choice_text,
+                    conditions=b.conditions,
+                ))
+            for e in ContentEffect.query.filter(ContentEffect.content_id.in_(old_ids)).all():
+                db.session.add(ContentEffect(
+                    content_id=id_map[e.content_id],
+                    variable_id=e.variable_id,
+                    delta=e.delta,
+                ))
+            for d in ContentDirective.query.filter(ContentDirective.content_id.in_(old_ids)).all():
+                db.session.add(ContentDirective(
+                    project_id=d.project_id,
+                    content_id=id_map[d.content_id],
+                    directive_type=d.directive_type,
+                    payload=d.payload,
+                    order_num=d.order_num,
+                ))
+
+        db.session.commit()
+        return new_scene
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        raise e
 
 
 def delete_dialogue(content_id):
@@ -1255,6 +1419,8 @@ def delete_dialogue(content_id):
                 BranchPath.target_content_id == content_id)
         ).delete(synchronize_session=False)
         ContentEffect.query.filter_by(content_id=content_id).delete(synchronize_session=False)
+        # 演出指令外键引用 script_contents，同样要先清掉
+        ContentDirective.query.filter_by(content_id=content_id).delete(synchronize_session=False)
         ReadRecord.query.filter_by(content_id=content_id).delete(synchronize_session=False)
         _delete_endings_for_contents([content_id])
 
@@ -1515,6 +1681,7 @@ def import_project_bundle(user_id, bundle):
                 description=c.get('description'),
                 settings=c.get('settings'),
                 is_main=bool(c.get('is_main')),
+                voice_type=c.get('voice_type') or None,
             )
             db.session.add(ch)
             db.session.flush()

@@ -96,6 +96,7 @@
                   <el-dropdown-menu>
                     <el-dropdown-item command="json">导出 JSON 包</el-dropdown-item>
                     <el-dropdown-item command="txt">导出剧本 TXT</el-dropdown-item>
+                    <el-dropdown-item command="docx">导出剧本 DOCX</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -854,8 +855,8 @@ const loadTemplates = async () => {
 }
 
 // 触发浏览器下载
-const downloadFile = (content: string, filename: string, mime: string) => {
-  const blob = new Blob([content], { type: mime })
+const downloadFile = (content: string | Blob, filename: string, mime: string) => {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -866,12 +867,15 @@ const downloadFile = (content: string, filename: string, mime: string) => {
   URL.revokeObjectURL(url)
 }
 
-// 导出项目：json=完整项目包，txt=纯文本剧本
+// 导出项目：json=完整项目包，txt=纯文本剧本，docx=Word 文档
 const handleExport = async (project: Project, format: string) => {
   try {
     if (format === 'txt') {
       const text = await projectApi.exportProjectText(project.project_id)
       downloadFile(text, `${project.title}.txt`, 'text/plain;charset=utf-8')
+    } else if (format === 'docx') {
+      const blob = await projectApi.exportProjectDocx(project.project_id)
+      downloadFile(blob, `${project.title}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
     } else {
       const bundle = await projectApi.exportProjectBundle(project.project_id)
       downloadFile(JSON.stringify(bundle, null, 2), `${project.title}.json`, 'application/json')

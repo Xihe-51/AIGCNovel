@@ -21,6 +21,7 @@ export interface Dialogue {
   content_type: '对话' | '描述' | '选择';
   content_text: string;
   voice_url?: string;
+  branch_condition?: any;
   avatar_type?: string;
   order_num: number;
 }
