@@ -660,10 +660,14 @@
 			:show-bgm="!!scene.music_url"
 			:bgm-muted="bgmMuted"
 			:is-panel-open="isPanelOpen"
+			:editable="stageEditing"
+			:can-edit="!!currentDialogue?.content_id"
 			@toggle-panel="togglePanel"
 			@toggle-bgm="toggleBgm"
+			@toggle-edit="stageEditing = !stageEditing"
 			@next="nextDialogue"
 			@restart="restartDialogues"
+			@avatar-move="handleAvatarMove"
 		/>
 	</div>
 	
@@ -1058,7 +1062,7 @@ import { generateText, continueStory, generateVoice, submitAndWait } from '@/api
 import { importAiAsset, checkProjectAssets } from '@/api/asset'
 import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/branch'
 import { listVariables, listEffects, saveContentEffects } from '@/api/variable'
-import { listNodeDirectives, createDirective, deleteDirective } from '@/api/directive'
+import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
 import { createProjectVersion } from '@/api/version'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import { 
@@ -1551,6 +1555,8 @@ const error = ref('');
 const isPanelOpen = ref(true);
 // 编辑面板默认进入「脚本」，场景设置收进第二个 tab，避免打开先看到大背景图
 const panelTab = ref('script');
+// 舞台直接拖拽立绘（画布第一版）：拖动后写回 avatar 演出指令
+const stageEditing = ref(false);
 // 场景设置（标题/描述/背景/音乐/剧情锁）的独立保存状态：
 // 台词有 dirty，场景设置也必须有自己的 dirty，否则切场景会静默丢改动。
 const sceneDirty = ref(false);
@@ -2275,7 +2281,10 @@ const previewSlots = computed(() => {
 			style: {
 				transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
 				opacity
-			}
+			},
+			x,
+			y,
+			position: pos
 		};
 	}
 	return slots;
@@ -2345,6 +2354,56 @@ const loadPreviewDirectives = async (contentId) => {
 		previewDirectives.value = await listNodeDirectives(Number(projectId.value), Number(contentId));
 	} catch (e) {
 		previewDirectives.value = [];
+	}
+};
+
+// 舞台拖拽：把像素位移折算成指令里的 x/y 百分比，写回当前台词的 avatar 指令
+const handleAvatarMove = async ({ position, x, y }) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) {
+		ElMessage.warning('请先保存当前台词，再调整立绘位置');
+		return;
+	}
+	const pid = Number(projectId.value);
+	if (!pid) return;
+	const pos = position || 'center';
+	const clamp = (v) => Math.max(-100, Math.min(100, Number(v) || 0));
+	const nx = Math.round(clamp(x) * 10) / 10;
+	const ny = Math.round(clamp(y) * 10) / 10;
+	const contentId = Number(dialogue.content_id);
+	const existing = previewDirectives.value
+		.filter(d => d.directive_type === 'avatar')
+		.filter(d => (d.payload?.position || 'center') === pos)
+		.pop();
+	try {
+		if (existing) {
+			await updateDirective(pid, existing.directive_id, {
+				payload: { ...(existing.payload || {}), x: nx, y: ny }
+			});
+		} else {
+			const speaker = previewSpeaker.value || dialogue;
+			if (!speaker?.character_id) {
+				ElMessage.warning('当前台词没有角色，无法添加立绘');
+				return;
+			}
+			await createDirective(pid, {
+				content_id: contentId,
+				directive_type: 'avatar',
+				payload: {
+					position: pos,
+					character_id: speaker.character_id,
+					avatar_id: speaker.avatar_id || null,
+					x: nx,
+					y: ny
+				}
+			});
+		}
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		ElMessage.success('立绘位置已保存');
+	} catch (e) {
+		console.error('保存立绘位置失败:', e);
+		ElMessage.error('保存立绘位置失败: ' + (e.message || '未知错误'));
 	}
 };
 

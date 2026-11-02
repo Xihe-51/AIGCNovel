@@ -9,6 +9,16 @@
 		>{{ bgmMuted ? '试听 BGM' : '停止 BGM' }}</button>
 
 		<button
+			class="stage-edit-btn"
+			:class="{ 'is-active': editable }"
+			:disabled="!canEdit"
+			:title="canEdit ? (editable ? '退出舞台编辑' : '拖动立绘调整位置') : '先保存当前台词再编辑舞台'"
+			@click="$emit('toggle-edit')"
+		>{{ editable ? '退出舞台编辑' : '舞台编辑' }}</button>
+
+		<div v-if="editable && canEdit" class="stage-edit-hint">拖动立绘调整位置 · 松手自动保存</div>
+
+		<button
 			class="panel-toggle-btn"
 			:class="isPanelOpen ? 'toggle-hidden' : 'toggle-visible'"
 			:title="isPanelOpen ? '收起面板，预览舞台' : '展开编辑面板'"
@@ -20,7 +30,7 @@
 
 		<div
 			class="preview-container"
-			:class="{ 'fx-shake': activeEffect && activeEffect.effect === 'shake' }"
+			:class="{ 'fx-shake': activeEffect && activeEffect.effect === 'shake', 'is-editing': editable }"
 			:style="{ '--fx-amp': (activeEffect && activeEffect.intensity ? activeEffect.intensity : 5) + 'px' }"
 		>
 			<div class="scene-background">
@@ -35,19 +45,25 @@
 			</div>
 
 			<!-- 演出指令控制的立绘（左 / 中 / 右） -->
-			<div v-if="!loading && !error && hasSlots" class="preview-stage">
+			<div v-if="!loading && !error && hasSlots" class="preview-stage" :class="{ 'is-editing': editable }">
 				<div
 					v-for="pos in ['left', 'center', 'right']"
 					:key="pos"
 					v-show="slots[pos]"
 					:class="['preview-stage-avatar', 'pos-' + pos]"
+					@pointerdown="startDrag($event, pos)"
 				>
 					<img :src="slots[pos]?.src" :style="slots[pos]?.style" alt="" @error="hideImage" />
 				</div>
 			</div>
 
 			<!-- 回退：没有演出指令时，显示当前（或最近一位）说话角色的立绘 -->
-			<div v-else-if="!loading && !error && avatarSrc" class="character-stand">
+			<div
+				v-else-if="!loading && !error && avatarSrc"
+				class="character-stand"
+				:class="{ 'is-editing': editable }"
+				@pointerdown="startDrag($event, 'center')"
+			>
 				<img
 					:src="avatarSrc"
 					alt="角色立绘"
@@ -115,13 +131,16 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, watch } from 'vue'
+	import { ref, watch, onBeforeUnmount } from 'vue'
 	import { ArrowLeft, ArrowRight, WarningFilled } from '@element-plus/icons-vue'
 	import { BASE_URL } from '@/utils/request'
 
 	interface StageSlot {
 		src: string
 		style?: Record<string, any>
+		x?: number
+		y?: number
+		position?: string
 	}
 
 	const props = withDefaults(defineProps<{
@@ -141,6 +160,8 @@
 		showBgm?: boolean
 		bgmMuted?: boolean
 		isPanelOpen?: boolean
+		editable?: boolean
+		canEdit?: boolean
 	}>(), {
 		bgSrc: '',
 		avatarSrc: '',
@@ -158,13 +179,17 @@
 		showBgm: false,
 		bgmMuted: true,
 		isPanelOpen: true,
+		editable: false,
+		canEdit: false,
 	})
 
-	defineEmits<{
+	const emit = defineEmits<{
 		(e: 'toggle-panel'): void
 		(e: 'toggle-bgm'): void
+		(e: 'toggle-edit'): void
 		(e: 'next'): void
 		(e: 'restart'): void
+		(e: 'avatar-move', payload: { position: string; x: number; y: number }): void
 	}>()
 
 	const bgFailed = ref(false)
@@ -174,6 +199,81 @@
 		const img = e.target as HTMLImageElement | null
 		if (img) img.style.visibility = 'hidden'
 	}
+
+	interface DragState {
+		pos: string
+		startX: number
+		startY: number
+		baseX: number
+		baseY: number
+		dx: number
+		dy: number
+		w: number
+		h: number
+		el: HTMLElement
+		baseTransform: string
+		moved: boolean
+	}
+
+	let drag: DragState | null = null
+
+	const onDragMove = (e: PointerEvent) => {
+		if (!drag) return
+		drag.dx = e.clientX - drag.startX
+		drag.dy = e.clientY - drag.startY
+		if (Math.abs(drag.dx) + Math.abs(drag.dy) > 3) drag.moved = true
+		drag.el.style.transform = `translate(${drag.dx}px, ${drag.dy}px) ${drag.baseTransform}`
+	}
+
+	const onDragEnd = () => {
+		window.removeEventListener('pointermove', onDragMove)
+		window.removeEventListener('pointerup', onDragEnd)
+		window.removeEventListener('pointercancel', onDragEnd)
+		if (!drag) return
+		const d = drag
+		drag = null
+		d.el.style.transform = d.baseTransform
+		if (!d.moved) return
+		const x = Math.round((d.baseX + d.dx / d.w * 100) * 10) / 10
+		const y = Math.round((d.baseY + d.dy / d.h * 100) * 10) / 10
+		emit('avatar-move', { position: d.pos, x, y })
+	}
+
+	const startDrag = (e: PointerEvent, pos: string) => {
+		if (!props.editable || !props.canEdit) return
+		const host = e.currentTarget as HTMLElement | null
+		if (!host) return
+		const img = host.querySelector('img') as HTMLImageElement | null
+		const rect = (img || host).getBoundingClientRect()
+		const slot = props.slots[pos]
+		drag = {
+			pos,
+			startX: e.clientX,
+			startY: e.clientY,
+			baseX: Number(slot?.x) || 0,
+			baseY: Number(slot?.y) || 0,
+			dx: 0,
+			dy: 0,
+			w: rect.width || 1,
+			h: rect.height || 1,
+			el: host,
+			baseTransform: String(slot?.style?.transform || ''),
+			moved: false,
+		}
+		try { host.setPointerCapture?.(e.pointerId) } catch (err) { /* 合成事件没有活动指针，忽略 */ }
+		window.addEventListener('pointermove', onDragMove)
+		window.addEventListener('pointerup', onDragEnd)
+		window.addEventListener('pointercancel', onDragEnd)
+		e.preventDefault()
+		e.stopPropagation()
+	}
+
+	onBeforeUnmount(() => {
+		window.removeEventListener('pointermove', onDragMove)
+		window.removeEventListener('pointerup', onDragEnd)
+		window.removeEventListener('pointercancel', onDragEnd)
+		drag = null
+	})
 </script>
 
 <style scoped>
@@ -198,6 +298,75 @@
 		border-color: #d9d9e3;
 		color: #8a8a99;
 		background: rgba(248, 248, 250, 0.92);
+	}
+
+	.stage-edit-btn {
+		position: absolute;
+		top: 12px;
+		right: 12px;
+		z-index: 50;
+		padding: 5px 10px;
+		border-radius: 14px;
+		border: 1px solid #ffc0d0;
+		background: rgba(255, 255, 255, 0.92);
+		color: #c81f4a;
+		font-size: 11px;
+		cursor: pointer;
+		box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+	}
+
+	.stage-edit-btn.is-active {
+		background: #e8467c;
+		border-color: #e8467c;
+		color: #fff;
+	}
+
+	.stage-edit-btn:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	.stage-edit-hint {
+		position: absolute;
+		top: 14px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 50;
+		padding: 5px 12px;
+		border-radius: 14px;
+		background: rgba(61, 43, 50, 0.72);
+		color: #fff;
+		font-size: 11px;
+		pointer-events: none;
+		white-space: nowrap;
+	}
+
+	.preview-container.is-editing {
+		box-shadow: inset 0 0 0 2px rgba(232, 70, 124, 0.35);
+	}
+
+	.preview-stage.is-editing {
+		pointer-events: none;
+	}
+
+	.preview-stage.is-editing .preview-stage-avatar {
+		pointer-events: auto;
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.preview-stage.is-editing .preview-stage-avatar:active {
+		cursor: grabbing;
+	}
+
+	.character-stand.is-editing {
+		pointer-events: auto;
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.character-stand.is-editing:active {
+		cursor: grabbing;
 	}
 
 	.panel-toggle-btn {
