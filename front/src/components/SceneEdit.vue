@@ -47,7 +47,7 @@
 						<div class="scene-lock">
 							<div v-if="sceneLockItems.length > 1" class="scene-lock-mode">
 								<span class="scene-lock-mode-label">条件关系</span>
-								<el-radio-group v-model="sceneLockMode" size="mini">
+								<el-radio-group v-model="sceneLockMode" size="small">
 									<el-radio-button value="and">全部满足</el-radio-button>
 									<el-radio-button value="or">任一满足</el-radio-button>
 								</el-radio-group>
@@ -59,7 +59,7 @@
 							>
 								<el-select
 									v-model="c.variable"
-									size="mini"
+									size="small"
 									clearable
 									placeholder="变量"
 									class="condition-var"
@@ -73,7 +73,7 @@
 								</el-select>
 								<el-select
 									v-model="c.op"
-									size="mini"
+									size="small"
 									class="condition-op"
 									:disabled="!c.variable"
 								>
@@ -86,13 +86,13 @@
 								</el-select>
 								<el-input-number
 									v-model="c.value"
-									size="mini"
+									size="small"
 									:step="1"
 									:disabled="!c.variable"
 									class="condition-value"
 								/>
 								<el-button
-									size="mini"
+									size="small"
 									type="danger"
 									plain
 									icon="Delete"
@@ -100,7 +100,7 @@
 								/>
 							</div>
 							<div class="scene-lock-actions">
-								<el-button size="mini" icon="Plus" @click="addSceneLockCondition">添加条件</el-button>
+								<el-button size="small" icon="Plus" @click="addSceneLockCondition">添加条件</el-button>
 								<span class="condition-tip">条件不满足时，顺序播放会跳过该场景</span>
 							</div>
 						</div>
@@ -279,52 +279,52 @@
 							
 							<div class="dialogue-actions">
 								<el-button
-									size="mini"
+									size="small"
 									@click="openDirectiveDialog(index)"
 									class="directive-btn"
 									title="演出指令：立绘位置、背景切换、音效"
 								>演出</el-button>
 								<el-button
-									size="mini"
+									size="small"
 									:class="['condition-btn', { 'has-condition': hasNodeCondition(dialogue) }]"
 									title="台词显示条件：条件不满足时顺序播放会跳过这条"
 									@click="openNodeConditionDialog(index)"
 								>条件</el-button>
 								<el-button
-									size="mini"
+									size="small"
 									class="play-btn"
 									:disabled="!dialogue.content_id"
 									title="从这条台词开始调试播放"
 									@click="playFromDialogue(dialogue)"
 								>试玩</el-button>
 								<el-button 
-									size="mini" 
+									size="small" 
 									icon="Delete" 
 									@click="deleteDialogue(index)"
 									class="delete-btn"
 									title="删除这条台词（会级联删除分支/数值/演出，不可撤销）"
 								></el-button>
 								<el-button 
-									size="mini" 
+									size="small" 
 									icon="Top" 
 									@click="moveDialogueUp(index)"
 									:disabled="index === 0"
 									class="move-btn"
 								></el-button>
 								<el-button 
-									size="mini" 
+									size="small" 
 									icon="Bottom" 
 									@click="moveDialogueDown(index)"
 									:disabled="index === dialogues.length - 1"
 									class="move-btn"
 								></el-button>
-								<el-button size="mini" type="success" @click="addNewDialogue">
+								<el-button size="small" type="success" @click="addNewDialogue">
 									<el-icon><Plus /></el-icon>
 								</el-button>
 							</div>
 						</div>
 						
-						<el-form :model="dialogue" label-width="70px" size="mini" class="dialogue-form">
+						<el-form :model="dialogue" label-width="70px" size="small" class="dialogue-form">
 							<el-form-item label="类型">
 								<el-select 
 									v-model="dialogue.content_type" 
@@ -374,7 +374,7 @@
 									type="textarea" 
 									v-model="dialogue.content_text" 
 									placeholder="输入对话内容" 
-									rows="2"
+									:rows="2"
 								/>
 								<div class="rich-markup-tip">
 									支持 **加粗**、[color=#e8467c]彩色[/color]、[ruby=zhùyīn]注音[/ruby]
@@ -389,7 +389,7 @@
 								<div class="jump-editor">
 									<el-select
 										:model-value="jumpTargetOf(dialogue)"
-										size="mini"
+										size="small"
 										clearable
 										placeholder="不跳转，按顺序播放"
 										class="jump-select"
@@ -417,13 +417,13 @@
 										<div class="choice-row">
 											<el-input
 												v-model="opt.choice_text"
-												size="mini"
+												size="small"
 												placeholder="选项文案"
 												class="choice-text-input"
 											/>
 											<el-select
 												v-model="opt.target_content_id"
-												size="mini"
+												size="small"
 												placeholder="跳转到"
 												class="choice-target-select"
 											>
@@ -435,7 +435,7 @@
 												></el-option>
 											</el-select>
 											<el-button
-												size="mini"
+												size="small"
 												type="danger"
 												icon="Delete"
 												@click="removeChoice(dialogue, oi)"
@@ -456,11 +456,11 @@
 												:show-file-list="false"
 												:http-request="(o) => handleChoiceImageUpload(o, opt)"
 											>
-												<el-button size="mini">{{ opt.image_url ? '更换配图' : '选项配图' }}</el-button>
+												<el-button size="small">{{ opt.image_url ? '更换配图' : '选项配图' }}</el-button>
 											</el-upload>
 											<el-button
 												v-if="opt.image_url"
-												size="mini"
+												size="small"
 												plain
 												@click="clearChoiceImage(opt)"
 											>清除配图</el-button>
@@ -470,7 +470,7 @@
 										<div class="choice-conditions">
 											<div class="choice-cond-head" v-if="(opt.cond_items || []).length > 1">
 												<span class="choice-cond-label">条件关系</span>
-												<el-radio-group v-model="opt.cond_mode" size="mini">
+												<el-radio-group v-model="opt.cond_mode" size="small">
 													<el-radio-button value="and">全部满足</el-radio-button>
 													<el-radio-button value="or">任一满足</el-radio-button>
 												</el-radio-group>
@@ -482,7 +482,7 @@
 											>
 												<el-select
 													v-model="c.variable"
-													size="mini"
+													size="small"
 													clearable
 													placeholder="无条件"
 													class="condition-var"
@@ -496,7 +496,7 @@
 												</el-select>
 												<el-select
 													v-model="c.op"
-													size="mini"
+													size="small"
 													class="condition-op"
 													:disabled="!c.variable"
 												>
@@ -509,14 +509,14 @@
 												</el-select>
 												<el-input-number
 													v-model="c.value"
-													size="mini"
+													size="small"
 													:step="1"
 													:disabled="!c.variable"
 													class="condition-value"
 												/>
 												<el-button
 													v-if="(opt.cond_items || []).length > 1"
-													size="mini"
+													size="small"
 													type="danger"
 													plain
 													icon="Delete"
@@ -524,7 +524,7 @@
 												/>
 											</div>
 											<div class="choice-cond-actions">
-												<el-button size="mini" icon="Plus" @click="addChoiceCondition(dialogue, oi)">添加条件</el-button>
+												<el-button size="small" icon="Plus" @click="addChoiceCondition(dialogue, oi)">添加条件</el-button>
 												<span class="condition-tip" v-if="hasChoiceCondition(opt)">
 													{{ opt.cond_mode === 'or' && (opt.cond_items || []).length > 1 ? '任一条件成立时显示' : '条件全部成立时显示' }}
 												</span>
@@ -533,9 +533,9 @@
 									</div>
 
 									<div class="choice-actions">
-										<el-button size="mini" icon="Plus" @click="addChoice(dialogue)">添加选项</el-button>
+										<el-button size="small" icon="Plus" @click="addChoice(dialogue)">添加选项</el-button>
 										<el-button
-											size="mini"
+											size="small"
 											type="primary"
 											:disabled="!dialogue.content_id"
 											@click="saveChoices(dialogue, index)"
@@ -560,7 +560,7 @@
 									>
 										<el-select
 											v-model="eff.variable_id"
-											size="mini"
+											size="small"
 											placeholder="变量"
 											class="effect-var"
 										>
@@ -573,12 +573,12 @@
 										</el-select>
 										<el-input-number
 											v-model="eff.delta"
-											size="mini"
+											size="small"
 											:step="1"
 											class="effect-delta"
 										/>
 										<el-button
-											size="mini"
+											size="small"
 											type="danger"
 											icon="Delete"
 											@click="removeEffect(dialogue, ei)"
@@ -586,9 +586,9 @@
 									</div>
 
 									<div class="effect-actions">
-										<el-button size="mini" icon="Plus" @click="addEffect(dialogue)"
+										<el-button size="small" icon="Plus" @click="addEffect(dialogue)"
 												   :disabled="!variables.length">添加数值</el-button>
-										<el-button size="mini" type="primary"
+										<el-button size="small" type="primary"
 												   :disabled="!dialogue.content_id"
 												   @click="saveDialogueEffects(dialogue)">保存数值</el-button>
 									</div>
@@ -603,7 +603,7 @@
 							
 							<el-form-item label="AI辅助">
 							    <el-button 
-							        size="mini" 
+							        size="small" 
 							        type="primary" 
 							        @click="openAIDialog(index)"
 							        class="ai-button"
@@ -619,12 +619,12 @@
 							        :http-request="(params) => handleVoiceUpload(params, index)"
 							        accept="audio/*"
 							        list-type="text">
-							        <el-button size="mini" type="primary">上传语音</el-button>
+							        <el-button size="small" type="primary">上传语音</el-button>
 							    </el-upload>
 							</el-form-item>
 							
 							<el-form-item>
-								<el-button size="mini" type="primary" @click="saveDialogue(index)">保存</el-button>
+								<el-button size="small" type="primary" @click="saveDialogue(index)">保存</el-button>
 							</el-form-item>
 						</el-form>
 					</div>
@@ -966,13 +966,13 @@
 			<div class="node-cond-hint">条件不满足时，顺序播放会跳过这条台词；不填变量表示无条件。</div>
 			<div v-if="nodeConditionItems.length > 1" class="scene-lock-mode">
 				<span class="scene-lock-mode-label">条件关系</span>
-				<el-radio-group v-model="nodeConditionMode" size="mini">
+				<el-radio-group v-model="nodeConditionMode" size="small">
 					<el-radio-button value="and">全部满足</el-radio-button>
 					<el-radio-button value="or">任一满足</el-radio-button>
 				</el-radio-group>
 			</div>
 			<div v-for="(c, ci) in nodeConditionItems" :key="ci" class="scene-lock-row">
-				<el-select v-model="c.variable" size="mini" clearable placeholder="变量" class="condition-var">
+				<el-select v-model="c.variable" size="small" clearable placeholder="变量" class="condition-var">
 					<el-option
 						v-for="v in variables"
 						:key="v.variable_id"
@@ -980,7 +980,7 @@
 						:value="v.name"
 					></el-option>
 				</el-select>
-				<el-select v-model="c.op" size="mini" class="condition-op" :disabled="!c.variable">
+				<el-select v-model="c.op" size="small" class="condition-op" :disabled="!c.variable">
 					<el-option label="≥" value=">=" />
 					<el-option label=">" value=">" />
 					<el-option label="≤" value="<=" />
@@ -990,15 +990,15 @@
 				</el-select>
 				<el-input-number
 					v-model="c.value"
-					size="mini"
+					size="small"
 					:step="1"
 					:disabled="!c.variable"
 					class="condition-value"
 				/>
-				<el-button size="mini" type="danger" plain icon="Delete" @click="removeNodeCondition(ci)" />
+				<el-button size="small" type="danger" plain icon="Delete" @click="removeNodeCondition(ci)" />
 			</div>
 			<div class="scene-lock-actions">
-				<el-button size="mini" icon="Plus" @click="addNodeCondition">添加条件</el-button>
+				<el-button size="small" icon="Plus" @click="addNodeCondition">添加条件</el-button>
 			</div>
 			<template #footer>
 				<el-button size="small" @click="nodeConditionVisible = false">取消</el-button>
