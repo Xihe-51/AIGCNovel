@@ -1123,8 +1123,7 @@
 	</template>
 
 <script setup>
-// @ts-nocheck
-// 本组件是从纯 JS 演进而来的大文件，暂不做类型检查；如需启用请逐段补类型后再删掉本行。
+// 本组件是从纯 JS 演进而来的大文件；当前仍是 JS 脚本，类型检查未开启，拆分/转 TS 见后续重构计划。
 import {
 	defineProps,
 	ref,
