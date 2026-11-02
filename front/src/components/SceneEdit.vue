@@ -636,126 +636,35 @@
 			</div>
 		</div>
 		
-		<!-- 右侧预览区域 -->
-		<div class="preview-panel">
-			<audio 
-				ref="backgroundMusic"
-				:src="scene.music_url ? BASE_URL + scene.music_url : ''" 
-				loop
-				class="hidden-audio"
-			>你的浏览器不支持音频播放</audio>
-
-			<button
-				v-if="scene.music_url"
-				class="bgm-toggle-btn"
-				:class="{ 'is-muted': bgmMuted }"
-				:title="bgmMuted ? '打开背景音乐试听' : '关闭背景音乐试听'"
-				@click="toggleBgm"
-			>{{ bgmMuted ? '试听 BGM' : '停止 BGM' }}</button>
-			
-			<button 
-				@click="togglePanel" 
-				class="panel-toggle-btn"
-				:class="isPanelOpen ? 'toggle-hidden' : 'toggle-visible'"
-			>
-				<el-icon :size="24" v-if="isPanelOpen"><ArrowLeft /></el-icon>
-				<el-icon :size="24" v-else><ArrowRight /></el-icon>
-			</button>
-			
-			<div
-					class="preview-container"
-					:class="{ 'fx-shake': activeEffect && activeEffect.effect === 'shake' }"
-					:style="{ '--fx-amp': (activeEffect && activeEffect.intensity ? activeEffect.intensity : 5) + 'px' }"
-				>
-					<div class="scene-background">
-						<img 
-							v-if="previewBgSrc && !previewBgFailed"
-							:src="previewBgSrc" 
-							alt="场景背景" 
-							class="background-image"
-							@error="previewBgFailed = true"
-						/>
-						<div v-else-if="previewBgSrc" class="bg-missing-tip">背景图文件已丢失，请在左侧场景设置里重新上传</div>
-					</div>
-					
-					<!-- 演出指令控制的立绘（左 / 中 / 右） -->
-					<div v-if="!loading && !error && hasPreviewSlots" class="preview-stage">
-						<div
-							v-for="pos in ['left', 'center', 'right']"
-							:key="pos"
-							v-show="previewSlots[pos]"
-							:class="['preview-stage-avatar', 'pos-' + pos]"
-						>
-							<img :src="previewSlots[pos]?.src" :style="previewSlots[pos]?.style" alt="" @error="hideBrokenImage" />
-						</div>
-					</div>
-
-					<!-- 回退：没有演出指令时，显示当前（或最近一位）说话角色的立绘 -->
-					<div v-else-if="!loading && !error && previewAvatarSrc" class="character-stand">
-						<img 
-							:src="previewAvatarSrc" 
-							alt="角色立绘" 
-							class="character-image"
-							@error="hideBrokenImage"
-						/>
-					</div>
-
-					<!-- 前景图层（演出指令） -->
-					<div v-if="!loading && !error && previewFgSrc" class="preview-foreground">
-						<img :src="previewFgSrc" alt="" @error="hideBrokenImage" />
-					</div>
-
-					<!-- 演出效果：天气覆盖层 / 闪光 -->
-					<div
-						v-if="activeEffect && activeEffect.effect === 'weather'"
-						class="fx-weather"
-						:class="'fx-' + (activeEffect.weather || 'rain')"
-					></div>
-					<div
-						v-if="activeEffect && activeEffect.effect === 'flash'"
-						:key="activeEffect.key"
-						class="fx-flash"
-						:style="{ background: activeEffect.color || '#ffffff', animationDuration: activeEffect.duration_ms + 'ms' }"
-					></div>
-				
-					<div v-if="loading" class="loading-indicator">
-					<span class="ui-spinner ui-spinner-lg"></span>
-					<p>加载场景中...</p>
-				</div>
-				
-				<div v-if="error" class="error-message">
-					<el-icon color="#F56C6C" size="24"><WarningFilled /></el-icon>
-					<p>错误: {{ error }}</p>
-				</div>
-				
-				<div v-if="!loading && !error" class="dialogue-display">
-					<div 
-						v-if="currentDialogueIndex < dialogues.length"
-						:class="['dialogue-box', `box-${currentDialogue?.content_type}`]"
-						@click="nextDialogue"
-					>
-						<span class="character-name">{{ getCharacterName(currentDialogue.character_id) }}</span>
-						<div class="dialogue-text" v-html="richPreviewHtml(currentDialogue?.content_text || '')"></div>
-						<div v-if="currentDialogue?.voice_url" class="dialogue-audio">
-							<audio :src="BASE_URL + currentDialogue.voice_url" controls autoplay>你的浏览器不支持音频播放</audio>
-						</div>
-						<div class="continue-indicator">
-							<el-icon size="20">></el-icon>
-						</div>
-					</div>
-					
-					<div v-if="currentDialogueIndex >= dialogues.length && dialogues.length > 0" class="dialogue-end">
-						<p>场景对话结束</p>
-						<el-button @click="restartDialogues">重新开始</el-button>
-					</div>
-					
-					<div v-if="dialogues.length === 0" class="no-dialogues-preview">
-						<p>该场景暂无对话内容</p>
-						<el-button @click="togglePanel">去添加对话</el-button>
-					</div>
-				</div>
-			</div>
-		</div>
+		<!-- 右侧预览区域：舞台渲染拆到 SceneStagePreview -->
+		<audio 
+			ref="backgroundMusic"
+			:src="scene.music_url ? BASE_URL + scene.music_url : ''" 
+			loop
+			class="hidden-audio"
+		>你的浏览器不支持音频播放</audio>
+		<SceneStagePreview
+			:bg-src="previewBgSrc"
+			:avatar-src="previewAvatarSrc"
+			:foreground-src="previewFgSrc"
+			:slots="previewSlots"
+			:has-slots="hasPreviewSlots"
+			:active-effect="activeEffect"
+			:loading="loading"
+			:error="error"
+			:dialogue-count="dialogues.length"
+			:dialogue-index="currentDialogueIndex"
+			:current-dialogue="currentDialogue"
+			:speaker-name="currentSpeakerName"
+			:dialogue-html="currentDialogueHtml"
+			:show-bgm="!!scene.music_url"
+			:bgm-muted="bgmMuted"
+			:is-panel-open="isPanelOpen"
+			@toggle-panel="togglePanel"
+			@toggle-bgm="toggleBgm"
+			@next="nextDialogue"
+			@restart="restartDialogues"
+		/>
 	</div>
 	
 	<!-- AI对话对话框 -->
@@ -1162,12 +1071,12 @@ import {
   Delete, 
   Top, 
   Bottom, 
-  WarningFilled,
   MagicStick,
   Promotion  
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { updateScene, uploadSceneFile, listSceneLocks, setSceneLock } from '@/api/scenes';
+import SceneStagePreview from '@/components/SceneStagePreview.vue';
 
 const props = defineProps({
 	sceneId: {
@@ -2237,6 +2146,9 @@ const stopSettingsAudio = () => {
 };
 
 const currentDialogue = computed(() => dialogues.value[currentDialogueIndex.value]);
+// 传给 StagePreview 的纯展示数据，避免子组件依赖角色/富文本逻辑
+const currentSpeakerName = computed(() => getCharacterName(currentDialogue.value?.character_id));
+const currentDialogueHtml = computed(() => richPreviewHtml(currentDialogue.value?.content_text || ''));
 
 // 切到剧情图等视图时暂停 BGM，回到脚本再继续
 watch(() => props.paused, (paused) => {
@@ -2278,8 +2190,11 @@ watch(
 const nextDialogue = () => {
 	if (currentDialogueIndex.value <= dialogues.value.length - 1) {
 		currentDialogueIndex.value++;
-		const audioElement = document.querySelector('.dialogue-box audio');
-		if (audioElement) audioElement.play().catch(e => console.log('自动播放失败:', e));
+		// 等新台词渲染后再取 audio，否则 play 的是上一条语音
+		nextTick(() => {
+			const audioElement = document.querySelector('.dialogue-box audio');
+			if (audioElement) audioElement.play().catch(e => console.log('自动播放失败:', e));
+		});
 	}
 };
 
@@ -2391,14 +2306,8 @@ const previewFgSrc = computed(() => {
 	return fg ? BASE_URL + fg : '';
 });
 
-// 素材文件被删/移动时浏览器会给 404，这里统一降级，避免出现裂图
-const previewBgFailed = ref(false);
+// 场景设置里的背景图 404 降级；舞台预览的裂图由 SceneStagePreview 自己处理
 const settingsBgFailed = ref(false);
-const hideBrokenImage = (e) => {
-	if (e && e.target) e.target.style.visibility = 'hidden';
-};
-
-watch(previewBgSrc, () => { previewBgFailed.value = false; });
 watch(() => scene.value.background_url, () => { settingsBgFailed.value = false; });
 
 /* 画面效果：当前节点最后一条 effect 指令在预览里触发一次 */
@@ -3602,19 +3511,6 @@ onBeforeUnmount(() => {
   line-height: 1.4;
 }
 
-.bg-missing-tip {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  color: #b37d8f;
-  background: linear-gradient(135deg, #fdf2f8 0%, #f8e6ee 100%);
-  text-align: center;
-  padding: 20px;
-  z-index: 1;
-}
 
 .bg-card-upload {
   position: absolute;
@@ -4189,313 +4085,6 @@ onBeforeUnmount(() => {
   border: 1px dashed #f8e1e8;
 }
 
-.preview-panel { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
-
-.bgm-toggle-btn {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 50;
-  padding: 5px 10px;
-  border-radius: 14px;
-  border: 1px solid #ffc0d0;
-  background: rgba(255, 255, 255, 0.92);
-  color: #c81f4a;
-  font-size: 11px;
-  cursor: pointer;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
-}
-
-.bgm-toggle-btn.is-muted {
-  border-color: #d9d9e3;
-  color: #8a8a99;
-  background: rgba(248, 248, 250, 0.92);
-}
-
-.panel-toggle-btn {
-  position: absolute;
-  top: 50%;
-  /* 面板满宽后，圆形钮固定在中栏右侧边缘 */
-  left: calc(100% - 68px);
-  transform: translateY(-50%);
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #ffc0d0;
-  color: #c81f4a;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 50;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
-}
-
-.panel-toggle-btn:hover {
-  background: #ffffff;
-  transform: translateY(-50%) scale(1.12);
-  box-shadow: 0 6px 20px rgba(255, 123, 156, 0.18);
-}
-
-.toggle-hidden { left: calc(100% - 68px); }
-
-.preview-container { width: 100%; height: 100%; position: relative; overflow: hidden; }
-.scene-background { width: 100%; height: 100%; position: relative; z-index: 1; }
-
-.background-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: filter 0.4s ease;
-}
-
-.character-stand {
-  position: absolute;
-  bottom: 0;
-  left: 200px;
-  z-index: 2;
-  height: 80%;
-  width: auto;
-  pointer-events: none;
-  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.2));
-}
-
-.character-image {
-  height: 100%;
-  width: auto;
-  object-fit: contain;
-  transition: opacity 0.3s ease;
-  animation: preview-breathe 6s ease-in-out infinite;
-}
-
-@keyframes preview-breathe {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -8px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .character-image,
-  .preview-stage-avatar img { animation: none; }
-}
-
-/* 预览区：演出指令的三槽位立绘 */
-.preview-stage {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.preview-stage-avatar {
-  position: absolute;
-  bottom: 0;
-  height: 76%;
-}
-
-.preview-stage-avatar img {
-  height: 100%;
-  width: auto;
-  object-fit: contain;
-  display: block;
-  animation: preview-breathe 6s ease-in-out infinite;
-}
-
-.preview-stage-avatar.pos-left { left: 5%; }
-.preview-stage-avatar.pos-center { left: 50%; transform: translateX(-50%); }
-.preview-stage-avatar.pos-right { right: 5%; }
-
-/* 演出指令：前景图层（覆盖在立绘之上、对话框之下） */
-.preview-foreground {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-}
-
-.preview-foreground img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* 演出效果：闪光 / 震动 / 天气 */
-.fx-flash {
-  position: absolute;
-  inset: 0;
-  z-index: 9;
-  pointer-events: none;
-  animation-name: fxFlashFade;
-  animation-timing-function: ease-out;
-  animation-fill-mode: forwards;
-}
-
-@keyframes fxFlashFade {
-  0% { opacity: 0; }
-  12% { opacity: 0.92; }
-  100% { opacity: 0; }
-}
-
-.preview-container.fx-shake {
-  animation: fxShake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-}
-
-@keyframes fxShake {
-  10%, 90% { transform: translate3d(calc(var(--fx-amp) * -0.5), 0, 0); }
-  20%, 80% { transform: translate3d(var(--fx-amp), 0, 0); }
-  30%, 50%, 70% { transform: translate3d(calc(var(--fx-amp) * -1), 0, 0); }
-  40%, 60% { transform: translate3d(var(--fx-amp), 0, 0); }
-}
-
-.fx-weather {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.fx-weather.fx-rain {
-  background-image: repeating-linear-gradient(
-    105deg,
-    rgba(174, 214, 241, 0) 0 7px,
-    rgba(174, 214, 241, 0.5) 7px 9px
-  );
-  animation: fxRainFall 0.55s linear infinite;
-  opacity: 0.75;
-}
-
-@keyframes fxRainFall {
-  from { background-position: 0 0; }
-  to { background-position: 0 240px; }
-}
-
-.fx-weather.fx-snow {
-  background-image:
-    radial-gradient(circle, rgba(255, 255, 255, 0.95) 1.6px, transparent 2px),
-    radial-gradient(circle, rgba(255, 255, 255, 0.7) 1.2px, transparent 1.8px);
-  background-size: 120px 160px, 90px 120px;
-  animation: fxSnowFall 3s linear infinite;
-}
-
-@keyframes fxSnowFall {
-  from { background-position: 0 0, 40px 60px; }
-  to { background-position: 40px 200px, -20px 260px; }
-}
-
-.fx-weather.fx-wind {
-  background-image: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0 36px,
-    rgba(255, 255, 255, 0.35) 36px 72px
-  );
-  animation: fxWindBlow 0.9s linear infinite;
-  opacity: 0.35;
-}
-
-@keyframes fxWindBlow {
-  from { background-position: -20% 0; }
-  to { background-position: 120% 0; }
-}
-
-.loading-indicator {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 24px 32px;
-  border-radius: 16px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
-  z-index: 10;
-  backdrop-filter: blur(4px);
-}
-
-.error-message {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  background: rgba(247, 91, 91, 0.9);
-  color: white;
-  padding: 24px 32px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
-  z-index: 10;
-  backdrop-filter: blur(4px);
-}
-
-.dialogue-display { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; z-index: 3; }
-
-.dialogue-box {
-  background: rgba(255, 252, 254, 0.94);
-  border-radius: 12px;
-  padding: 20px;
-  max-width: 800px;
-  margin: 0 auto;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  transition: transform 0.25s, box-shadow 0.25s;
-  position: relative;
-  border: 1px solid rgba(255, 192, 208, 0.3);
-  backdrop-filter: blur(6px);
-}
-
-.dialogue-box:hover { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(0, 0, 0, 0.18); }
-
-.character-name {
-  font-weight: 700;
-  color: #c81f4a;
-  font-size: 16px;
-  margin-bottom: 10px;
-  display: inline-block;
-  padding-bottom: 4px;
-  border-bottom: 2px solid #ffc0d0;
-}
-
-.dialogue-text {
-  font-size: 18px;
-  line-height: 1.7;
-  color: #2c2c2c;
-  margin-bottom: 15px;
-  min-height: 100px;
-  font-weight: 400;
-}
-
-.dialogue-audio { display: none; }
-
-.continue-indicator {
-  position: absolute;
-  bottom: 18px;
-  right: 28px;
-  color: #ff7b9c;
-  animation: bounce 1.6s infinite ease-in-out;
-  font-weight: bold;
-}
-
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(6px); }
-}
-
-.dialogue-end, .no-dialogues-preview {
-  text-align: center;
-  background: rgba(255, 252, 254, 0.94);
-  padding: 28px;
-  border-radius: 20px;
-  max-width: 520px;
-  margin: 0 auto;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-  border: 1px solid rgba(255, 192, 208, 0.3);
-}
-
 .ai-dialog :deep(.el-dialog__body) { padding: 24px; max-height: 60vh; overflow-y: auto; }
 .ai-dialog-content { display: flex; flex-direction: column; gap: 24px; }
 
@@ -4703,14 +4292,10 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1200px) {
   .editor-panel { width: 60%; }
-  .character-stand { left: 24px; height: 72%; }
 }
 
 @media (max-width: 768px) {
   .editor-panel { width: 100%; }
-  .dialogue-text { font-size: 17px; }
-  .toggle-hidden { left: calc(100% - 68px); }
-  .character-stand { left: 12px; height: 62%; }
 }
 
 /* ===== 演出指令弹窗 ===== */
