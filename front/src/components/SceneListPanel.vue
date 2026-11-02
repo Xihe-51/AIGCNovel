@@ -270,6 +270,7 @@
 		assignSceneChapter,
 	} from '@/api/chapter'
 	import type { StoryChapter } from '@/api/chapter'
+	import { getProjectOutline } from '@/api/outline'
 	import { BASE_URL } from '@/utils/request'
 
 	const props = defineProps<{
@@ -803,6 +804,37 @@
 
 	const isActive = (id: number) => String(id) === String(props.activeSceneId ?? '')
 
+	const LAST_SCENE_PREFIX = 'aigc:create:lastScene:'
+	const readLastSceneId = () => {
+		try {
+			return localStorage.getItem(`${LAST_SCENE_PREFIX}${props.projectId}`) || ''
+		} catch (e) {
+			return ''
+		}
+	}
+
+	// 初始场景：优先上次编辑的场景；没有历史时跳过空场景，避免一打开就是空白剧本
+	const pickInitialScene = async () => {
+		const list = sortedScenes.value
+		if (!list.length) return null
+		const lastId = readLastSceneId()
+		const last = lastId ? list.find(s => String(s.scene_id) === lastId) : null
+		if (last) return last
+		try {
+			const outline = await getProjectOutline(Number(props.projectId))
+			const rows = [
+				...(outline.chapters || []).flatMap(ch => ch.scenes || []),
+				...(outline.ungrouped || []),
+			]
+			const counts = new Map(rows.map(r => [Number(r.scene_id), Number(r.node_count) || 0]))
+			const withNodes = list.find(s => (counts.get(Number(s.scene_id)) || 0) > 0)
+			if (withNodes) return withNodes
+		} catch (e) {
+			console.warn('读取大纲选择初始场景失败:', e)
+		}
+		return list[0]
+	}
+
 	const fetchScenes = async () => {
 		if (!props.projectId) {
 			error.value = '缺少项目ID，无法获取场景'
@@ -816,9 +848,10 @@
 			await fetchChapters()
 			// 重新拉取后重置缺图标记，文件补回来后缩略图能自动恢复
 			brokenThumbs.value = []
-			// 没有任何选中项时，默认落到第一个场景，避免中栏空白
+			// 没有任何选中项时：上次场景 → 第一个有内容的场景 → 第一个场景
 			if (!props.activeSceneId && sortedScenes.value.length) {
-				emit('select', String(sortedScenes.value[0].scene_id))
+				const initial = await pickInitialScene()
+				if (initial) emit('select', String(initial.scene_id))
 			}
 		} catch (e) {
 			console.error('获取场景失败:', e)

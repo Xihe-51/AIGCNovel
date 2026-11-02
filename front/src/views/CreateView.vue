@@ -193,8 +193,17 @@
 		router.push(`/project/${projectId}`)
 	}
 
+	// 记住每个项目最后编辑的场景，下次进入直接回到这里
+	const rememberScene = (sceneId: string) => {
+		if (!projectId || !sceneId) return
+		try {
+			localStorage.setItem(`aigc:create:lastScene:${projectId}`, String(sceneId))
+		} catch (e) {}
+	}
+
 	const onSelectScene = (sceneId: string) => {
 		activeSceneId.value = sceneId
+		rememberScene(sceneId)
 		focusContentId.value = null
 		view.value = 'script'
 		sceneDrawerVisible.value = false
@@ -217,7 +226,13 @@
 
 	const onSceneDeleted = (sceneId: string) => {
 		graphKey.value += 1
-		if (activeSceneId.value === sceneId) activeSceneId.value = ''
+		if (activeSceneId.value === sceneId) {
+			activeSceneId.value = ''
+			try {
+				const key = `aigc:create:lastScene:${projectId}`
+				if (localStorage.getItem(key) === String(sceneId)) localStorage.removeItem(key)
+			} catch (e) {}
+		}
 	}
 
 	// 全项目替换后：刷新场景列表并重新拉取当前场景内容
@@ -238,6 +253,7 @@
 	// 右栏「素材 / 自检」点定位：切到对应场景（可带具体节点）
 	const onLocateAsset = (sceneId: number, contentId?: number | null) => {
 		activeSceneId.value = String(sceneId)
+		rememberScene(String(sceneId))
 		focusContentId.value = contentId ?? null
 		view.value = 'script'
 	}
@@ -273,6 +289,7 @@
 	// 全项目搜索点结果：切场景并定位到具体对话
 	const onLocateSearchResult = (sceneId: number, contentId: number | null) => {
 		activeSceneId.value = String(sceneId)
+		rememberScene(String(sceneId))
 		focusContentId.value = contentId
 		view.value = 'script'
 		sceneDrawerVisible.value = false

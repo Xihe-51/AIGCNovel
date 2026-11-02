@@ -3,15 +3,26 @@
 		<!-- 左侧编辑面板 - 默认隐藏 -->
 		<div :class="['editor-panel', isPanelOpen ? 'panel-open' : 'panel-closed']">
 			<div class="panel-header">
-				<h2 class="panel-title">场景编辑</h2>
-				<button @click="togglePanel" class="toggle-btn">
+				<div class="panel-tabs">
+					<button
+						type="button"
+						:class="['panel-tab', { 'is-active': panelTab === 'script' }]"
+						@click="panelTab = 'script'"
+					>脚本</button>
+					<button
+						type="button"
+						:class="['panel-tab', { 'is-active': panelTab === 'settings' }]"
+						@click="panelTab = 'settings'"
+					>场景设置</button>
+				</div>
+				<button @click="togglePanel" class="toggle-btn" :title="isPanelOpen ? '收起面板，预览舞台' : '展开编辑面板'">
 					<el-icon :size="20" v-if="isPanelOpen"><ArrowRight /></el-icon>
 					<el-icon :size="20" v-else><ArrowLeft /></el-icon>
 				</button>
 			</div>
 			
 			<!-- 场景设置部分 -->
-			<div class="panel-section">
+			<div v-show="panelTab === 'settings'" class="panel-section">
 				<h3 class="section-title">场景设置</h3>
 				
 				<el-form :model="scene" size="small" class="scene-form">
@@ -204,7 +215,7 @@
 			</div>
 			
 			<!-- 对话编辑部分 -->
-			<div class="panel-section">
+			<div v-show="panelTab === 'script'" class="panel-section">
 				<h3 class="section-title">对话编辑</h3>
 				
 				<div class="dialogue-controls">
@@ -1630,6 +1641,8 @@ const characters = ref([]);
 const loading = ref(true);
 const error = ref('');
 const isPanelOpen = ref(true);
+// 编辑面板默认进入「脚本」，场景设置收进第二个 tab，避免打开先看到大背景图
+const panelTab = ref('script');
 // 场景设置（标题/描述/背景/音乐/剧情锁）的独立保存状态：
 // 台词有 dirty，场景设置也必须有自己的 dirty，否则切场景会静默丢改动。
 const sceneDirty = ref(false);
@@ -3326,6 +3339,32 @@ onBeforeUnmount(() => {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.3px;
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+  background: #fdeef3;
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.panel-tab {
+  border: none;
+  background: transparent;
+  color: #a84463;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.panel-tab.is-active {
+  background: #fff;
+  color: #c81f4a;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(200, 31, 74, 0.12);
 }
 
 .toggle-btn {
