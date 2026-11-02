@@ -1,5 +1,9 @@
 <template>
-	<div class="cv-root">
+	<div v-if="guardState !== 'ok'" class="cv-guard">
+		<span class="ui-spinner ui-spinner-lg"></span>
+		<p>正在校验项目权限…</p>
+	</div>
+	<div v-else class="cv-root">
 		<!-- 顶栏 -->
 		<div class="cv-topbar">
 			<div class="cv-side cv-side-left">
@@ -154,6 +158,8 @@
 <script setup lang="ts">
 	import { ref, onMounted } from 'vue'
 	import { useRoute, useRouter } from 'vue-router'
+	import { ElMessage } from 'element-plus'
+	import { jwtDecode } from 'jwt-decode'
 	import { Tools, Files } from '@element-plus/icons-vue'
 	import { getProject } from '@/api/project'
 	import type { Project } from '@/api/project'
@@ -168,6 +174,18 @@
 	const router = useRouter()
 
 	const projectId = String(route.params.projectId || '')
+
+	// 创作页只允许项目作者进入；非作者直接跳播放器/首页，避免半残页面
+	const guardState = ref<'loading' | 'ok'>('loading')
+	const currentUserId = (() => {
+		try {
+			const token = localStorage.getItem('token') || ''
+			const decoded = token ? jwtDecode<{ identity?: string }>(token) : null
+			return decoded?.identity ? String(decoded.identity) : ''
+		} catch (e) {
+			return ''
+		}
+	})()
 
 	const project = ref<Project | null>(null)
 	const activeSceneId = ref<string>('')
@@ -309,16 +327,40 @@
 	}
 
 	onMounted(async () => {
-		if (!projectId) return
+		if (!projectId) {
+			router.replace('/home')
+			return
+		}
 		try {
-			project.value = await getProject(Number(projectId))
+			const p = await getProject(Number(projectId))
+			project.value = p
+			if (currentUserId && String(p.user_id) !== String(currentUserId)) {
+				ElMessage.warning('只有作者可以进入创作页')
+				router.replace(p.is_public ? `/view/${projectId}` : '/home')
+				return
+			}
+			guardState.value = 'ok'
 		} catch (e) {
 			console.error('获取项目信息失败:', e)
+			ElMessage.error('项目不存在或无权访问')
+			router.replace('/home')
 		}
 	})
 </script>
 
 <style scoped>
+	.cv-guard {
+		height: 100vh;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
+		background: #fff;
+		color: #a84463;
+		font-size: 13px;
+	}
+
 	.cv-root {
 		display: flex;
 		flex-direction: column;
