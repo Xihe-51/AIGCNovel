@@ -1,8 +1,17 @@
 <template>
 	<div class="tp-root">
+		<div class="tp-groups">
+			<button
+				v-for="g in tabGroups"
+				:key="g.key"
+				type="button"
+				:class="['tp-group', { 'is-active': activeGroup === g.key }]"
+				@click="selectGroup(g)"
+			>{{ g.label }}</button>
+		</div>
 		<div class="tp-tabs">
 			<button
-				v-for="t in tabs"
+				v-for="t in visibleTabs"
 				:key="t.key"
 				:class="['tp-tab', { 'is-active': tab === t.key }]"
 				@click="tab = t.key"
@@ -708,7 +717,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, onMounted, watch } from 'vue'
+	import { ref, computed, onMounted, watch } from 'vue'
 	import { useRouter } from 'vue-router'
 	import { ElMessage, ElMessageBox } from 'element-plus'
 	import type { UploadFile } from 'element-plus'
@@ -783,6 +792,40 @@
 	] as const
 
 	const tab = ref<'characters' | 'variables' | 'overview' | 'analytics' | 'achievements' | 'report' | 'versions' | 'terms' | 'appearance' | 'assets' | 'health' | 'ai' | 'effects'>('characters')
+
+	// 13 个工具按「内容 / 数据 / 质量 / 外观」分组，避免 300px 面板里横向滚动找 tab
+	const tabGroups = [
+		{ key: 'content', label: '内容', tabs: ['characters', 'variables', 'effects'] },
+		{ key: 'data', label: '数据', tabs: ['overview', 'analytics', 'report'] },
+		{ key: 'quality', label: '质量', tabs: ['health', 'achievements', 'terms', 'versions'] },
+		{ key: 'appearance', label: '外观', tabs: ['appearance', 'assets', 'ai'] }
+	] as const
+
+	const lastTabByGroup = ref<Record<string, string>>({
+		content: 'characters',
+		data: 'overview',
+		quality: 'health',
+		appearance: 'appearance'
+	})
+
+	const activeGroup = computed(() => {
+		const group = tabGroups.find(g => (g.tabs as readonly string[]).includes(tab.value))
+		return group ? group.key : 'content'
+	})
+
+	const visibleTabs = computed(() => {
+		const group = tabGroups.find(g => g.key === activeGroup.value)
+		if (!group) return []
+		return group.tabs
+			.map(key => tabs.find(t => t.key === key))
+			.filter((t): t is (typeof tabs)[number] => !!t)
+	})
+
+	const selectGroup = (group: (typeof tabGroups)[number]) => {
+		const last = lastTabByGroup.value[group.key]
+		const next = (group.tabs as readonly string[]).includes(last) ? last : group.tabs[0]
+		tab.value = next as typeof tab.value
+	}
 
 	const emit = defineEmits<{
 		(e: 'locate', sceneId: number, contentId?: number | null): void
@@ -1477,6 +1520,8 @@
 	})
 
 	watch(tab, (t) => {
+		const group = tabGroups.find(g => (g.tabs as readonly string[]).includes(t))
+		if (group) lastTabByGroup.value[group.key] = t
 		if (t === 'overview') loadOverview()
 		if (t === 'analytics') loadAnalytics()
 		if (t === 'achievements') loadAchievements()
@@ -1494,23 +1539,48 @@
 		height: 100%;
 	}
 
+	.tp-groups {
+		flex-shrink: 0;
+		display: flex;
+		gap: 4px;
+		padding: 8px 10px 0;
+	}
+
+	.tp-group {
+		flex: 1;
+		padding: 6px 0;
+		border: none;
+		border-radius: 8px;
+		background: #f8f2f5;
+		color: #8a6b76;
+		font-size: 12px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.tp-group:hover {
+		color: #c81f4a;
+	}
+
+	.tp-group.is-active {
+		background: #fdeef3;
+		color: #c81f4a;
+		font-weight: 600;
+	}
+
 	.tp-tabs {
 		flex-shrink: 0;
 		display: flex;
 		gap: 2px;
-		padding: 8px 10px 0;
+		padding: 6px 10px 0;
 		border-bottom: 1px solid #f5e4ea;
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.tp-tabs::-webkit-scrollbar {
-		display: none;
+		flex-wrap: wrap;
 	}
 
 	.tp-tab {
-		flex: 0 0 auto;
-		padding: 7px 6px 9px;
+		flex: 1 1 0;
+		min-width: 52px;
+		padding: 7px 4px 9px;
 		border: none;
 		background: transparent;
 		color: #a6828f;
@@ -1519,6 +1589,7 @@
 		border-bottom: 2px solid transparent;
 		transition: color 0.15s, border-color 0.15s;
 		white-space: nowrap;
+		text-align: center;
 	}
 
 	.tp-tab:hover {
