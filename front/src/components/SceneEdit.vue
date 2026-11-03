@@ -662,6 +662,7 @@
 			:is-panel-open="isPanelOpen"
 			:editable="stageEditing"
 			:can-edit="!!currentDialogue?.content_id"
+			:dialogue-key="currentDialogue?.content_id || ''"
 			@toggle-panel="togglePanel"
 			@toggle-bgm="toggleBgm"
 			@toggle-edit="stageEditing = !stageEditing"
@@ -669,6 +670,7 @@
 			@restart="restartDialogues"
 			@avatar-move="handleAvatarMove"
 			@avatar-transform="handleAvatarTransform"
+			@avatar-add="handleAvatarAdd"
 		/>
 	</div>
 	
@@ -2375,9 +2377,15 @@ const handleAvatarMove = async ({ position, x, y }) => {
 	const nx = Math.round(clamp(x) * 10) / 10;
 	const ny = Math.round(clamp(y) * 10) / 10;
 	const contentId = Number(dialogue.content_id);
-	const existing = previewDirectives.value
+	const hideExists = previewDirectives.value.some(d =>
+		d.directive_type === 'avatar' &&
+		(d.payload?.position || 'center') === pos &&
+		d.payload?.action === 'hide'
+	);
+	const existing = hideExists ? null : previewDirectives.value
 		.filter(d => d.directive_type === 'avatar')
 		.filter(d => (d.payload?.position || 'center') === pos)
+		.filter(d => d.payload?.action !== 'hide')
 		.pop();
 	try {
 		if (existing) {
@@ -2431,9 +2439,15 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y })
 	};
 	if (x !== undefined && x !== null) patch.x = clamp(Number(x) || 0, -100, 100);
 	if (y !== undefined && y !== null) patch.y = clamp(Number(y) || 0, -100, 100);
-	const existing = previewDirectives.value
+	const hideExists = previewDirectives.value.some(d =>
+		d.directive_type === 'avatar' &&
+		(d.payload?.position || 'center') === pos &&
+		d.payload?.action === 'hide'
+	);
+	const existing = hideExists ? null : previewDirectives.value
 		.filter(d => d.directive_type === 'avatar')
 		.filter(d => (d.payload?.position || 'center') === pos)
+		.filter(d => d.payload?.action !== 'hide')
 		.pop();
 	try {
 		if (existing) {
@@ -2468,6 +2482,10 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y })
 		console.error('保存立绘属性失败:', e);
 		ElMessage.error('保存立绘属性失败: ' + (e.message || '未知错误'));
 	}
+};
+
+const handleAvatarAdd = (position) => {
+	handleAvatarTransform({ position, scale: 1, opacity: 1, rotate: 0, x: 0, y: 0 });
 };
 
 // 演出弹窗增删了指令后，如果改的正是预览中的那条对话，立刻刷新预览

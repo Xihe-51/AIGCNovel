@@ -11,12 +11,28 @@
 		<button
 			class="stage-edit-btn"
 			:class="{ 'is-active': editable }"
-			:disabled="!canEdit"
-			:title="canEdit ? (editable ? '退出舞台编辑' : '拖动立绘调整位置') : '先保存当前台词再编辑舞台'"
+			:disabled="!editable && !canEdit"
+			:title="editable ? '退出舞台编辑' : (canEdit ? '拖动立绘调整位置' : '先保存当前台词再编辑舞台')"
 			@click="$emit('toggle-edit')"
 		>{{ editable ? '退出舞台编辑' : '舞台编辑' }}</button>
 
 		<div v-if="editable && canEdit" class="stage-edit-hint">拖动立绘调整位置 · 松手自动保存</div>
+
+		<div v-if="editable" class="stage-layers">
+			<div class="stage-layers-title">图层</div>
+			<button
+				v-for="layer in layerItems"
+				:key="layer.key"
+				type="button"
+				:class="['stage-layer', { 'is-active': selectedPos === layer.key, 'is-empty': !layer.exists }]"
+				:disabled="!layer.selectable"
+				:title="layer.selectable && !layer.exists ? '点击添加立绘' : ''"
+				@click="onLayerClick(layer)"
+			>
+				<span>{{ layer.label }}</span>
+				<span class="stage-layer-state">{{ layer.exists ? (layer.selectable ? '可选中' : '已设置') : (layer.selectable ? '空 · 添加' : '空') }}</span>
+			</button>
+		</div>
 
 		<div v-if="editable && canEdit && selectedPos" class="stage-inspector" @pointerdown.stop>
 			<div class="stage-inspector-title">{{ positionLabel(selectedPos) }}立绘</div>
@@ -70,7 +86,7 @@
 					v-for="pos in ['left', 'center', 'right']"
 					:key="pos"
 					v-show="slots[pos]"
-					:class="['preview-stage-avatar', 'pos-' + pos]"
+					:class="['preview-stage-avatar', 'pos-' + pos, { 'is-selected': selectedPos === pos }]"
 					@pointerdown="startDrag($event, pos)"
 				>
 					<img :src="slots[pos]?.src" :style="slots[pos]?.style" alt="" @error="hideImage" />
@@ -81,7 +97,7 @@
 			<div
 				v-else-if="!loading && !error && avatarSrc"
 				class="character-stand"
-				:class="{ 'is-editing': editable }"
+				:class="['character-stand', { 'is-editing': editable, 'is-selected': selectedPos === 'center' }]"
 				@pointerdown="startDrag($event, 'center')"
 			>
 				<img
@@ -185,6 +201,7 @@
 		isPanelOpen?: boolean
 		editable?: boolean
 		canEdit?: boolean
+		dialogueKey?: string | number | null
 	}>(), {
 		bgSrc: '',
 		avatarSrc: '',
@@ -204,6 +221,7 @@
 		isPanelOpen: true,
 		editable: false,
 		canEdit: false,
+		dialogueKey: '',
 	})
 
 	const emit = defineEmits<{
@@ -214,6 +232,7 @@
 		(e: 'restart'): void
 		(e: 'avatar-move', payload: { position: string; x: number; y: number }): void
 		(e: 'avatar-transform', payload: { position: string; scale?: number; opacity?: number; rotate?: number; x?: number; y?: number }): void
+		(e: 'avatar-add', position: string): void
 	}>()
 
 	const bgFailed = ref(false)
@@ -272,6 +291,28 @@
 
 	watch(selectedSlot, () => { if (selectedPos.value) syncLocal() }, { deep: true })
 	watch(() => props.editable, (v) => { if (!v) selectedPos.value = null })
+	watch(() => props.dialogueKey, () => { selectedPos.value = null })
+
+	const layerItems = computed(() => [
+		{ key: 'background', label: '背景', exists: !!props.bgSrc, selectable: false },
+		{ key: 'left', label: '左立绘', exists: !!props.slots.left, selectable: true },
+		{ key: 'center', label: '中立绘', exists: !!props.slots.center, selectable: true },
+		{ key: 'right', label: '右立绘', exists: !!props.slots.right, selectable: true },
+		{ key: 'foreground', label: '前景', exists: !!props.foregroundSrc, selectable: false },
+		{ key: 'dialogue', label: '对话框', exists: props.dialogueCount > 0, selectable: false },
+	])
+
+	const onLayerClick = (layer: { key: string; exists: boolean; selectable: boolean }) => {
+		if (!layer.selectable) return
+		if (layer.exists) {
+			selectSlot(layer.key)
+			return
+		}
+		// 空槽位：先选中，再让父组件用当前说话角色补一条 avatar 指令
+		selectedPos.value = layer.key
+		syncLocal()
+		emit('avatar-add', layer.key)
+	}
 
 	interface DragState {
 		pos: string
@@ -320,12 +361,26 @@
 		const img = host.querySelector('img') as HTMLImageElement | null
 		const rect = (img || host).getBoundingClientRect()
 		const slot = props.slots[pos]
+		// 回退立绘（没有指令）在舞台上是 left:200px 的默认位；第一次拖拽要先把
+		// 它相对“中间槽位基准”的偏移算进 baseX，否则保存后会突然跳到正中。
+		let baseX = Number(slot?.x) || 0
+		let baseY = Number(slot?.y) || 0
+		if (!slot) {
+			const stage = host.closest('.preview-container') as HTMLElement | null
+			const stageRect = stage ? stage.getBoundingClientRect() : null
+			if (stageRect && rect.width) {
+				const stageCenter = stageRect.left + stageRect.width / 2
+				const avatarCenter = rect.left + rect.width / 2
+				baseX = ((avatarCenter - stageCenter) / rect.width) * 100
+				baseY = 0
+			}
+		}
 		drag = {
 			pos,
 			startX: e.clientX,
 			startY: e.clientY,
-			baseX: Number(slot?.x) || 0,
-			baseY: Number(slot?.y) || 0,
+			baseX,
+			baseY,
 			dx: 0,
 			dy: 0,
 			w: rect.width || 1,
@@ -413,6 +468,71 @@
 		font-size: 11px;
 		pointer-events: none;
 		white-space: nowrap;
+	}
+
+	.stage-layers {
+		position: absolute;
+		top: 52px;
+		left: 12px;
+		z-index: 60;
+		width: 150px;
+		padding: 8px;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.96);
+		border: 1px solid #ffc0d0;
+		box-shadow: 0 8px 24px rgba(61, 43, 50, 0.16);
+	}
+
+	.stage-layers-title {
+		margin: 0 2px 6px;
+		font-size: 11px;
+		font-weight: 600;
+		color: #c81f4a;
+	}
+
+	.stage-layer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		padding: 5px 6px;
+		border: none;
+		border-radius: 7px;
+		background: transparent;
+		color: #5d4650;
+		font-size: 11px;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.stage-layer:hover:not(:disabled) {
+		background: #fdeef3;
+	}
+
+	.stage-layer.is-active {
+		background: #fdeef3;
+		color: #c81f4a;
+		font-weight: 600;
+	}
+
+	.stage-layer:disabled {
+		cursor: default;
+		color: #b9a7ae;
+	}
+
+	.stage-layer.is-empty {
+		opacity: 0.7;
+	}
+
+	.stage-layer-state {
+		font-size: 9px;
+		color: #b99aa5;
+	}
+
+	.preview-stage-avatar.is-selected,
+	.character-stand.is-selected {
+		outline: 2px dashed #e8467c;
+		outline-offset: 4px;
 	}
 
 	.stage-inspector {
