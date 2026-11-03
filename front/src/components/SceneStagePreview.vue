@@ -18,6 +18,26 @@
 
 		<div v-if="editable && canEdit" class="stage-edit-hint">拖动立绘调整位置 · 松手自动保存</div>
 
+		<div v-if="editable && canEdit && selectedPos" class="stage-inspector" @pointerdown.stop>
+			<div class="stage-inspector-title">{{ positionLabel(selectedPos) }}立绘</div>
+			<div class="stage-inspector-row">
+				<span>缩放</span>
+				<el-input-number v-model="localScale" :min="0.2" :max="3" :step="0.1" :precision="1" size="small" @change="applyTransform" />
+			</div>
+			<div class="stage-inspector-row">
+				<span>透明度</span>
+				<el-input-number v-model="localOpacity" :min="0" :max="1" :step="0.1" :precision="1" size="small" @change="applyTransform" />
+			</div>
+			<div class="stage-inspector-row">
+				<span>旋转</span>
+				<el-input-number v-model="localRotate" :min="-45" :max="45" :step="1" :precision="0" size="small" @change="applyTransform" />
+			</div>
+			<div class="stage-inspector-actions">
+				<button type="button" class="stage-inspector-btn" @click="resetTransform">重置</button>
+				<button type="button" class="stage-inspector-btn is-ghost" @click="selectedPos = null">关闭</button>
+			</div>
+		</div>
+
 		<button
 			class="panel-toggle-btn"
 			:class="isPanelOpen ? 'toggle-hidden' : 'toggle-visible'"
@@ -131,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, watch, onBeforeUnmount } from 'vue'
+	import { ref, computed, watch, onBeforeUnmount } from 'vue'
 	import { ArrowLeft, ArrowRight, WarningFilled } from '@element-plus/icons-vue'
 	import { BASE_URL } from '@/utils/request'
 
@@ -140,6 +160,9 @@
 		style?: Record<string, any>
 		x?: number
 		y?: number
+		scale?: number
+		opacity?: number
+		rotate?: number
 		position?: string
 	}
 
@@ -190,6 +213,7 @@
 		(e: 'next'): void
 		(e: 'restart'): void
 		(e: 'avatar-move', payload: { position: string; x: number; y: number }): void
+		(e: 'avatar-transform', payload: { position: string; scale?: number; opacity?: number; rotate?: number; x?: number; y?: number }): void
 	}>()
 
 	const bgFailed = ref(false)
@@ -199,6 +223,55 @@
 		const img = e.target as HTMLImageElement | null
 		if (img) img.style.visibility = 'hidden'
 	}
+
+	// 选中图层 + 属性条（画布 v2）
+	const selectedPos = ref<string | null>(null)
+	const localScale = ref(1)
+	const localOpacity = ref(1)
+	const localRotate = ref(0)
+	const selectedSlot = computed(() => (selectedPos.value ? props.slots[selectedPos.value] : null))
+	const positionLabel = (pos: string) => ({ left: '左', center: '中', right: '右' }[pos] || pos)
+
+	const syncLocal = () => {
+		const slot = selectedSlot.value
+		localScale.value = Number(slot?.scale) || 1
+		localOpacity.value = slot?.opacity === undefined || slot?.opacity === null ? 1 : Number(slot.opacity)
+		localRotate.value = Number(slot?.rotate) || 0
+	}
+
+	const selectSlot = (pos: string) => {
+		if (!props.editable || !props.canEdit) return
+		selectedPos.value = pos
+		syncLocal()
+	}
+
+	const applyTransform = () => {
+		if (!selectedPos.value) return
+		emit('avatar-transform', {
+			position: selectedPos.value,
+			scale: Number(localScale.value) || 1,
+			opacity: localOpacity.value === undefined || localOpacity.value === null ? 1 : Number(localOpacity.value),
+			rotate: Number(localRotate.value) || 0,
+		})
+	}
+
+	const resetTransform = () => {
+		if (!selectedPos.value) return
+		localScale.value = 1
+		localOpacity.value = 1
+		localRotate.value = 0
+		emit('avatar-transform', {
+			position: selectedPos.value,
+			scale: 1,
+			opacity: 1,
+			rotate: 0,
+			x: 0,
+			y: 0,
+		})
+	}
+
+	watch(selectedSlot, () => { if (selectedPos.value) syncLocal() }, { deep: true })
+	watch(() => props.editable, (v) => { if (!v) selectedPos.value = null })
 
 	interface DragState {
 		pos: string
@@ -241,6 +314,7 @@
 
 	const startDrag = (e: PointerEvent, pos: string) => {
 		if (!props.editable || !props.canEdit) return
+		selectSlot(pos)
 		const host = e.currentTarget as HTMLElement | null
 		if (!host) return
 		const img = host.querySelector('img') as HTMLImageElement | null
@@ -339,6 +413,63 @@
 		font-size: 11px;
 		pointer-events: none;
 		white-space: nowrap;
+	}
+
+	.stage-inspector {
+		position: absolute;
+		top: 52px;
+		right: 12px;
+		z-index: 60;
+		width: 208px;
+		padding: 10px 12px 12px;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.96);
+		border: 1px solid #ffc0d0;
+		box-shadow: 0 8px 24px rgba(61, 43, 50, 0.16);
+	}
+
+	.stage-inspector-title {
+		margin-bottom: 8px;
+		font-size: 12px;
+		font-weight: 600;
+		color: #c81f4a;
+	}
+
+	.stage-inspector-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin-bottom: 6px;
+		font-size: 11px;
+		color: #6b4a56;
+	}
+
+	.stage-inspector-row :deep(.el-input-number) {
+		width: 104px;
+	}
+
+	.stage-inspector-actions {
+		display: flex;
+		gap: 6px;
+		margin-top: 8px;
+	}
+
+	.stage-inspector-btn {
+		flex: 1;
+		padding: 5px 0;
+		border: 1px solid #f0c8d6;
+		border-radius: 7px;
+		background: #fff2f6;
+		color: #c81f4a;
+		font-size: 11px;
+		cursor: pointer;
+	}
+
+	.stage-inspector-btn.is-ghost {
+		background: #fff;
+		border-color: #e5e0e3;
+		color: #8a6b76;
 	}
 
 	.preview-container.is-editing {

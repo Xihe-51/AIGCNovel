@@ -668,6 +668,7 @@
 			@next="nextDialogue"
 			@restart="restartDialogues"
 			@avatar-move="handleAvatarMove"
+			@avatar-transform="handleAvatarTransform"
 		/>
 	</div>
 	
@@ -2284,6 +2285,9 @@ const previewSlots = computed(() => {
 			},
 			x,
 			y,
+			scale,
+			opacity,
+			rotate,
 			position: pos
 		};
 	}
@@ -2404,6 +2408,65 @@ const handleAvatarMove = async ({ position, x, y }) => {
 	} catch (e) {
 		console.error('保存立绘位置失败:', e);
 		ElMessage.error('保存立绘位置失败: ' + (e.message || '未知错误'));
+	}
+};
+
+// 画布 v2：属性条改缩放/透明度/旋转，写回同一条 avatar 指令
+const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y }) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) {
+		ElMessage.warning('请先保存当前台词，再调整立绘属性');
+		return;
+	}
+	const pid = Number(projectId.value);
+	if (!pid) return;
+	const pos = position || 'center';
+	const contentId = Number(dialogue.content_id);
+	const clamp = (v, min, max) => Math.max(min, Math.min(max, Number(v)));
+	const opRaw = opacity === undefined || opacity === null ? 1 : Number(opacity);
+	const patch = {
+		scale: clamp(Number.isFinite(Number(scale)) ? Number(scale) : 1, 0.2, 3),
+		opacity: clamp(Number.isFinite(opRaw) ? opRaw : 1, 0, 1),
+		rotate: clamp(Number.isFinite(Number(rotate)) ? Number(rotate) : 0, -45, 45)
+	};
+	if (x !== undefined && x !== null) patch.x = clamp(Number(x) || 0, -100, 100);
+	if (y !== undefined && y !== null) patch.y = clamp(Number(y) || 0, -100, 100);
+	const existing = previewDirectives.value
+		.filter(d => d.directive_type === 'avatar')
+		.filter(d => (d.payload?.position || 'center') === pos)
+		.pop();
+	try {
+		if (existing) {
+			await updateDirective(pid, existing.directive_id, {
+				payload: { ...(existing.payload || {}), ...patch }
+			});
+		} else {
+			const speaker = previewSpeaker.value || dialogue;
+			if (!speaker?.character_id) {
+				ElMessage.warning('当前台词没有角色，无法添加立绘');
+				return;
+			}
+			await createDirective(pid, {
+				content_id: contentId,
+				directive_type: 'avatar',
+				payload: {
+					position: pos,
+					character_id: speaker.character_id,
+					avatar_id: speaker.avatar_id || null,
+					x: patch.x ?? 0,
+					y: patch.y ?? 0,
+					scale: patch.scale,
+					opacity: patch.opacity,
+					rotate: patch.rotate
+				}
+			});
+		}
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		ElMessage.success('立绘属性已保存');
+	} catch (e) {
+		console.error('保存立绘属性失败:', e);
+		ElMessage.error('保存立绘属性失败: ' + (e.message || '未知错误'));
 	}
 };
 
