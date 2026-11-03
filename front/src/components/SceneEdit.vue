@@ -2279,12 +2279,34 @@ const previewSlots = computed(() => {
 		const scale = Number(p.scale) || 1;
 		const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
 		const rotate = Number(p.rotate) || 0;
-		slots[pos] = {
-			src,
-			style: {
+		const coord = p.coord === 'stage' ? 'stage' : 'sprite';
+		let style;
+		let boxStyle;
+		if (coord === 'stage') {
+			// 舞台坐标：x = 中心 %，y = 底边 %；槽位本身做锚定，图片只做缩放/旋转
+			boxStyle = {
+				left: `${x}%`,
+				top: `${y}%`,
+				bottom: 'auto',
+				right: 'auto',
+				transform: 'translate(-50%, -100%)'
+			};
+			style = {
+				transform: `scale(${scale}) rotate(${rotate}deg)`,
+				opacity
+			};
+		} else {
+			// 旧 sprite 坐标：保持原语义，第一次拖拽时再迁移
+			style = {
 				transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
 				opacity
-			},
+			};
+		}
+		slots[pos] = {
+			src,
+			style,
+			boxStyle,
+			coord,
 			x,
 			y,
 			scale,
@@ -2364,7 +2386,7 @@ const loadPreviewDirectives = async (contentId) => {
 };
 
 // 舞台拖拽：把像素位移折算成指令里的 x/y 百分比，写回当前台词的 avatar 指令
-const handleAvatarMove = async ({ position, x, y }) => {
+const handleAvatarMove = async ({ position, x, y, coord }) => {
 	const dialogue = currentDialogue.value;
 	if (!dialogue?.content_id) {
 		ElMessage.warning('请先保存当前台词，再调整立绘位置');
@@ -2373,7 +2395,8 @@ const handleAvatarMove = async ({ position, x, y }) => {
 	const pid = Number(projectId.value);
 	if (!pid) return;
 	const pos = position || 'center';
-	const clamp = (v) => Math.max(-100, Math.min(100, Number(v) || 0));
+	const isStage = coord === 'stage';
+	const clamp = (v) => Math.max(isStage ? 0 : -100, Math.min(100, Number(v) || 0));
 	const nx = Math.round(clamp(x) * 10) / 10;
 	const ny = Math.round(clamp(y) * 10) / 10;
 	const contentId = Number(dialogue.content_id);
@@ -2390,7 +2413,12 @@ const handleAvatarMove = async ({ position, x, y }) => {
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
-				payload: { ...(existing.payload || {}), x: nx, y: ny }
+				payload: {
+					...(existing.payload || {}),
+					x: nx,
+					y: ny,
+					...(isStage ? { coord: 'stage' } : {})
+				}
 			});
 		} else {
 			const speaker = previewSpeaker.value || dialogue;
@@ -2406,7 +2434,8 @@ const handleAvatarMove = async ({ position, x, y }) => {
 					character_id: speaker.character_id,
 					avatar_id: speaker.avatar_id || null,
 					x: nx,
-					y: ny
+					y: ny,
+					...(isStage ? { coord: 'stage' } : {})
 				}
 			});
 		}
@@ -2420,7 +2449,9 @@ const handleAvatarMove = async ({ position, x, y }) => {
 };
 
 // 画布 v2：属性条改缩放/透明度/旋转，写回同一条 avatar 指令
-const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y }) => {
+const stageDefaultX = (pos) => (pos === 'left' ? 20 : pos === 'right' ? 80 : 50);
+
+const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, reset }) => {
 	const dialogue = currentDialogue.value;
 	if (!dialogue?.content_id) {
 		ElMessage.warning('请先保存当前台词，再调整立绘属性');
@@ -2437,8 +2468,6 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y })
 		opacity: clamp(Number.isFinite(opRaw) ? opRaw : 1, 0, 1),
 		rotate: clamp(Number.isFinite(Number(rotate)) ? Number(rotate) : 0, -45, 45)
 	};
-	if (x !== undefined && x !== null) patch.x = clamp(Number(x) || 0, -100, 100);
-	if (y !== undefined && y !== null) patch.y = clamp(Number(y) || 0, -100, 100);
 	const hideExists = previewDirectives.value.some(d =>
 		d.directive_type === 'avatar' &&
 		(d.payload?.position || 'center') === pos &&
@@ -2449,6 +2478,15 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y })
 		.filter(d => (d.payload?.position || 'center') === pos)
 		.filter(d => d.payload?.action !== 'hide')
 		.pop();
+	const isStage = !existing || existing.payload?.coord === 'stage';
+	const clampXY = (v) => Math.max(isStage ? 0 : -100, Math.min(100, Number(v) || 0));
+	if (reset) {
+		patch.x = isStage ? stageDefaultX(pos) : 0;
+		patch.y = isStage ? 100 : 0;
+	} else {
+		if (x !== undefined && x !== null) patch.x = clampXY(x);
+		if (y !== undefined && y !== null) patch.y = clampXY(y);
+	}
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
@@ -2467,8 +2505,9 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y })
 					position: pos,
 					character_id: speaker.character_id,
 					avatar_id: speaker.avatar_id || null,
-					x: patch.x ?? 0,
-					y: patch.y ?? 0,
+					coord: 'stage',
+					x: patch.x ?? stageDefaultX(pos),
+					y: patch.y ?? 100,
 					scale: patch.scale,
 					opacity: patch.opacity,
 					rotate: patch.rotate
@@ -2485,7 +2524,7 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y })
 };
 
 const handleAvatarAdd = (position) => {
-	handleAvatarTransform({ position, scale: 1, opacity: 1, rotate: 0, x: 0, y: 0 });
+	handleAvatarTransform({ position, scale: 1, opacity: 1, rotate: 0, reset: true });
 };
 
 // 演出弹窗增删了指令后，如果改的正是预览中的那条对话，立刻刷新预览

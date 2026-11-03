@@ -210,6 +210,7 @@
 							:key="pos"
 							v-show="stageAvatars[pos]"
 							:class="['stage-avatar', 'pos-' + pos]"
+							:style="stageAvatars[pos]?.boxStyle"
 						>
 							<img :src="stageAvatars[pos]?.src" :style="stageAvatars[pos]?.style" :class="{ 'sprite-motion': playerSettings.spriteMotion }" alt="" decoding="async" />
 						</div>
@@ -2618,13 +2619,28 @@ const applyDirectives = (dialogue) => {
 					const scale = Number(p.scale) || 1;
 					const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
 					const rotate = Number(p.rotate) || 0;
-					next[pos] = {
-						src,
-						style: {
+					const coord = p.coord === 'stage' ? 'stage' : 'sprite';
+					let style;
+					let boxStyle;
+					if (coord === 'stage') {
+						boxStyle = {
+							left: `${x}%`,
+							top: `${y}%`,
+							bottom: 'auto',
+							right: 'auto',
+							transform: 'translate(-50%, -100%)'
+						};
+						style = {
+							transform: `scale(${scale}) rotate(${rotate}deg)`,
+							opacity
+						};
+					} else {
+						style = {
 							transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
 							opacity
-						}
-					};
+						};
+					}
+					next[pos] = { src, style, boxStyle };
 				}
 			}
 		} else if (d.directive_type === 'background') {

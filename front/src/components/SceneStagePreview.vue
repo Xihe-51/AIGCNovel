@@ -87,6 +87,7 @@
 					:key="pos"
 					v-show="slots[pos]"
 					:class="['preview-stage-avatar', 'pos-' + pos, { 'is-selected': selectedPos === pos }]"
+					:style="slots[pos]?.boxStyle"
 					@pointerdown="startDrag($event, pos)"
 				>
 					<img :src="slots[pos]?.src" :style="slots[pos]?.style" alt="" @error="hideImage" />
@@ -174,6 +175,8 @@
 	interface StageSlot {
 		src: string
 		style?: Record<string, any>
+		boxStyle?: Record<string, any>
+		coord?: 'stage' | 'sprite'
 		x?: number
 		y?: number
 		scale?: number
@@ -230,8 +233,8 @@
 		(e: 'toggle-edit'): void
 		(e: 'next'): void
 		(e: 'restart'): void
-		(e: 'avatar-move', payload: { position: string; x: number; y: number }): void
-		(e: 'avatar-transform', payload: { position: string; scale?: number; opacity?: number; rotate?: number; x?: number; y?: number }): void
+		(e: 'avatar-move', payload: { position: string; x: number; y: number; coord?: string }): void
+		(e: 'avatar-transform', payload: { position: string; scale?: number; opacity?: number; rotate?: number; x?: number; y?: number; reset?: boolean }): void
 		(e: 'avatar-add', position: string): void
 	}>()
 
@@ -284,8 +287,7 @@
 			scale: 1,
 			opacity: 1,
 			rotate: 0,
-			x: 0,
-			y: 0,
+			reset: true,
 		})
 	}
 
@@ -322,10 +324,9 @@
 		baseY: number
 		dx: number
 		dy: number
-		w: number
-		h: number
+		unitW: number
+		unitH: number
 		el: HTMLElement
-		baseTransform: string
 		moved: boolean
 	}
 
@@ -336,7 +337,8 @@
 		drag.dx = e.clientX - drag.startX
 		drag.dy = e.clientY - drag.startY
 		if (Math.abs(drag.dx) + Math.abs(drag.dy) > 3) drag.moved = true
-		drag.el.style.transform = `translate(${drag.dx}px, ${drag.dy}px) ${drag.baseTransform}`
+		// 用独立的 translate 属性做拖拽位移，不覆盖槽位本身的 transform
+		drag.el.style.translate = `${drag.dx}px ${drag.dy}px`
 	}
 
 	const onDragEnd = () => {
@@ -346,11 +348,11 @@
 		if (!drag) return
 		const d = drag
 		drag = null
-		d.el.style.transform = d.baseTransform
+		d.el.style.translate = ''
 		if (!d.moved) return
-		const x = Math.round((d.baseX + d.dx / d.w * 100) * 10) / 10
-		const y = Math.round((d.baseY + d.dy / d.h * 100) * 10) / 10
-		emit('avatar-move', { position: d.pos, x, y })
+		const x = Math.round((d.baseX + d.dx / d.unitW * 100) * 10) / 10
+		const y = Math.round((d.baseY + d.dy / d.unitH * 100) * 10) / 10
+		emit('avatar-move', { position: d.pos, x, y, coord: 'stage' })
 	}
 
 	const startDrag = (e: PointerEvent, pos: string) => {
@@ -360,20 +362,18 @@
 		if (!host) return
 		const img = host.querySelector('img') as HTMLImageElement | null
 		const rect = (img || host).getBoundingClientRect()
+		const stage = host.closest('.preview-container') as HTMLElement | null
+		const stageRect = stage ? stage.getBoundingClientRect() : null
 		const slot = props.slots[pos]
-		// 回退立绘（没有指令）在舞台上是 left:200px 的默认位；第一次拖拽要先把
-		// 它相对“中间槽位基准”的偏移算进 baseX，否则保存后会突然跳到正中。
-		let baseX = Number(slot?.x) || 0
-		let baseY = Number(slot?.y) || 0
-		if (!slot) {
-			const stage = host.closest('.preview-container') as HTMLElement | null
-			const stageRect = stage ? stage.getBoundingClientRect() : null
-			if (stageRect && rect.width) {
-				const stageCenter = stageRect.left + stageRect.width / 2
-				const avatarCenter = rect.left + rect.width / 2
-				baseX = ((avatarCenter - stageCenter) / rect.width) * 100
-				baseY = 0
-			}
+		let baseX = 50
+		let baseY = 100
+		if (slot?.coord === 'stage') {
+			baseX = Number(slot.x) || 0
+			baseY = Number(slot.y) || 0
+		} else if (stageRect && rect.width) {
+			// 旧 sprite 坐标 / 回退立绘：第一次拖拽时把当前视觉位置换算成舞台坐标
+			baseX = ((rect.left + rect.width / 2 - stageRect.left) / stageRect.width) * 100
+			baseY = ((rect.bottom - stageRect.top) / stageRect.height) * 100
 		}
 		drag = {
 			pos,
@@ -383,10 +383,9 @@
 			baseY,
 			dx: 0,
 			dy: 0,
-			w: rect.width || 1,
-			h: rect.height || 1,
+			unitW: stageRect?.width || rect.width || 1,
+			unitH: stageRect?.height || rect.height || 1,
 			el: host,
-			baseTransform: String(slot?.style?.transform || ''),
 			moved: false,
 		}
 		try { host.setPointerCapture?.(e.pointerId) } catch (err) { /* 合成事件没有活动指针，忽略 */ }
@@ -711,7 +710,12 @@
 	.preview-stage-avatar {
 		position: absolute;
 		bottom: 0;
-		height: 76%;
+		height: 78%;
+		z-index: 1;
+	}
+
+	.preview-stage-avatar.is-selected {
+		z-index: 6;
 	}
 
 	.preview-stage-avatar img {
@@ -722,9 +726,9 @@
 		animation: preview-breathe 6s ease-in-out infinite;
 	}
 
-	.preview-stage-avatar.pos-left { left: 5%; }
+	.preview-stage-avatar.pos-left { left: 4%; }
 	.preview-stage-avatar.pos-center { left: 50%; transform: translateX(-50%); }
-	.preview-stage-avatar.pos-right { right: 5%; }
+	.preview-stage-avatar.pos-right { right: 4%; }
 
 	.preview-foreground {
 		position: absolute;
