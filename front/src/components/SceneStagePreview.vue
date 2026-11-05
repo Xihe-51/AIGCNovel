@@ -24,14 +24,24 @@
 				v-for="layer in layerItems"
 				:key="layer.key"
 				type="button"
-				:class="['stage-layer', { 'is-active': selectedPos === layer.key, 'is-empty': !layer.exists }]"
+				:class="['stage-layer', { 'is-active': selectedPos === layer.key, 'is-empty': !layer.exists, 'is-hidden': layer.isAvatar && !layer.visible }]"
 				:disabled="!layer.selectable"
 				:title="layer.selectable && !layer.exists ? '点击添加立绘' : ''"
 				@click="onLayerClick(layer)"
 			>
 				<span>{{ layer.label }}</span>
-				<span class="stage-layer-state">{{ layer.exists ? (layer.selectable ? '可选中' : '已设置') : (layer.selectable ? '空 · 添加' : '空') }}</span>
+				<span class="stage-layer-state">{{ layer.stateLabel }}</span>
+				<span v-if="layer.isAvatar && layer.exists" class="stage-layer-ops">
+					<span
+						class="stage-layer-op"
+						:title="layer.visible ? '隐藏' : '显示'"
+						@click.stop="$emit('avatar-visibility', layer.key, !layer.visible)"
+					>{{ layer.visible ? '◉' : '○' }}</span>
+					<span class="stage-layer-op" title="上移一层" @click.stop="$emit('avatar-order', layer.key, 'up')">↑</span>
+					<span class="stage-layer-op" title="下移一层" @click.stop="$emit('avatar-order', layer.key, 'down')">↓</span>
+				</span>
 			</button>
+			<button type="button" class="stage-layer-undo" :disabled="!canUndo" @click="$emit('undo')">↶ 撤销上一步</button>
 		</div>
 
 		<div v-if="editable && canEdit && selectedPos" class="stage-inspector" @pointerdown.stop>
@@ -85,9 +95,9 @@
 				<div
 					v-for="pos in ['left', 'center', 'right']"
 					:key="pos"
-					v-show="slots[pos]"
+					v-show="slots[pos] && slots[pos]?.visible !== false"
 					:class="['preview-stage-avatar', 'pos-' + pos, { 'is-selected': selectedPos === pos }]"
-					:style="slots[pos]?.boxStyle"
+					:style="slotBoxStyle(pos)"
 					@pointerdown="startDrag($event, pos)"
 				>
 					<img :src="slots[pos]?.src" :style="slots[pos]?.style" alt="" @error="hideImage" />
@@ -177,6 +187,8 @@
 		style?: Record<string, any>
 		boxStyle?: Record<string, any>
 		coord?: 'stage' | 'sprite'
+		visible?: boolean
+		z?: number
 		x?: number
 		y?: number
 		scale?: number
@@ -205,6 +217,8 @@
 		editable?: boolean
 		canEdit?: boolean
 		dialogueKey?: string | number | null
+		canUndo?: boolean
+		avatarLayers?: { position: string; label: string; exists: boolean; visible: boolean; z: number }[]
 	}>(), {
 		bgSrc: '',
 		avatarSrc: '',
@@ -225,6 +239,8 @@
 		editable: false,
 		canEdit: false,
 		dialogueKey: '',
+		canUndo: false,
+		avatarLayers: () => [],
 	})
 
 	const emit = defineEmits<{
@@ -236,6 +252,9 @@
 		(e: 'avatar-move', payload: { position: string; x: number; y: number; coord?: string }): void
 		(e: 'avatar-transform', payload: { position: string; scale?: number; opacity?: number; rotate?: number; x?: number; y?: number; reset?: boolean }): void
 		(e: 'avatar-add', position: string): void
+		(e: 'avatar-visibility', position: string, visible: boolean): void
+		(e: 'avatar-order', position: string, direction: 'up' | 'down'): void
+		(e: 'undo'): void
 	}>()
 
 	const bgFailed = ref(false)
@@ -295,14 +314,40 @@
 	watch(() => props.editable, (v) => { if (!v) selectedPos.value = null })
 	watch(() => props.dialogueKey, () => { selectedPos.value = null })
 
-	const layerItems = computed(() => [
-		{ key: 'background', label: '背景', exists: !!props.bgSrc, selectable: false },
-		{ key: 'left', label: '左立绘', exists: !!props.slots.left, selectable: true },
-		{ key: 'center', label: '中立绘', exists: !!props.slots.center, selectable: true },
-		{ key: 'right', label: '右立绘', exists: !!props.slots.right, selectable: true },
-		{ key: 'foreground', label: '前景', exists: !!props.foregroundSrc, selectable: false },
-		{ key: 'dialogue', label: '对话框', exists: props.dialogueCount > 0, selectable: false },
-	])
+	const avatarLayerInfo = (pos: string) => props.avatarLayers.find(l => l.position === pos)
+	const slotBoxStyle = (pos: string) => {
+		const base = props.slots[pos]?.boxStyle || {}
+		// 选中层临时提到最上，方便拖动被遮挡的立绘
+		return selectedPos.value === pos ? { ...base, zIndex: 60 } : base
+	}
+	const layerItems = computed(() => {
+		const item = (key: string, label: string, exists: boolean, selectable: boolean) => {
+			const info = selectable ? avatarLayerInfo(key) : null
+			const visible = info ? info.visible : true
+			return {
+				key,
+				label,
+				exists,
+				selectable,
+				isAvatar: selectable,
+				visible,
+				z: info ? info.z : 0,
+				stateLabel: !exists
+					? (selectable ? '空 · 添加' : '空')
+					: !visible
+						? '已隐藏'
+						: (selectable ? (info && info.z ? `层级 ${info.z}` : '可选中') : '已设置'),
+			}
+		}
+		return [
+			item('background', '背景', !!props.bgSrc, false),
+			item('left', '左立绘', !!props.slots.left, true),
+			item('center', '中立绘', !!props.slots.center, true),
+			item('right', '右立绘', !!props.slots.right, true),
+			item('foreground', '前景', !!props.foregroundSrc, false),
+			item('dialogue', '对话框', props.dialogueCount > 0, false),
+		]
+	})
 
 	const onLayerClick = (layer: { key: string; exists: boolean; selectable: boolean }) => {
 		if (!layer.selectable) return
@@ -474,7 +519,7 @@
 		top: 52px;
 		left: 12px;
 		z-index: 60;
-		width: 150px;
+		width: 186px;
 		padding: 8px;
 		border-radius: 12px;
 		background: rgba(255, 255, 255, 0.96);
@@ -526,6 +571,60 @@
 	.stage-layer-state {
 		font-size: 9px;
 		color: #b99aa5;
+		flex-shrink: 0;
+	}
+
+	.stage-layer.is-hidden {
+		opacity: 0.55;
+	}
+
+	.stage-layer.is-hidden .stage-layer-state {
+		color: #c81f4a;
+	}
+
+	.stage-layer-ops {
+		display: inline-flex;
+		gap: 2px;
+		margin-left: 4px;
+	}
+
+	.stage-layer-op {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		border-radius: 4px;
+		background: #fff2f6;
+		color: #c81f4a;
+		font-size: 11px;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.stage-layer-op:hover {
+		background: #fbd9e4;
+	}
+
+	.stage-layer-undo {
+		width: 100%;
+		margin-top: 6px;
+		padding: 5px 0;
+		border: 1px solid #f0c8d6;
+		border-radius: 7px;
+		background: #fff;
+		color: #a84463;
+		font-size: 11px;
+		cursor: pointer;
+	}
+
+	.stage-layer-undo:hover:not(:disabled) {
+		background: #fdeef3;
+	}
+
+	.stage-layer-undo:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 
 	.preview-stage-avatar.is-selected,
@@ -712,10 +811,6 @@
 		bottom: 0;
 		height: 78%;
 		z-index: 1;
-	}
-
-	.preview-stage-avatar.is-selected {
-		z-index: 6;
 	}
 
 	.preview-stage-avatar img {

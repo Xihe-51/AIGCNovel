@@ -2620,6 +2620,8 @@ const applyDirectives = (dialogue) => {
 					const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
 					const rotate = Number(p.rotate) || 0;
 					const coord = p.coord === 'stage' ? 'stage' : 'sprite';
+					const visible = p.visible !== false;
+					const zIndex = 10 + (Number(p.z) || 0);
 					let style;
 					let boxStyle;
 					if (coord === 'stage') {
@@ -2628,18 +2630,21 @@ const applyDirectives = (dialogue) => {
 							top: `${y}%`,
 							bottom: 'auto',
 							right: 'auto',
-							transform: 'translate(-50%, -100%)'
+							transform: 'translate(-50%, -100%)',
+							zIndex
 						};
 						style = {
 							transform: `scale(${scale}) rotate(${rotate}deg)`,
 							opacity
 						};
 					} else {
+						boxStyle = { zIndex };
 						style = {
 							transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
 							opacity
 						};
 					}
+					if (!visible) boxStyle.display = 'none';
 					next[pos] = { src, style, boxStyle };
 				}
 			}

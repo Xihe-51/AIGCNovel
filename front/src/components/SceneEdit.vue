@@ -663,6 +663,8 @@
 			:editable="stageEditing"
 			:can-edit="!!currentDialogue?.content_id"
 			:dialogue-key="currentDialogue?.content_id || ''"
+			:can-undo="canUndoAvatar"
+			:avatar-layers="avatarLayers"
 			@toggle-panel="togglePanel"
 			@toggle-bgm="toggleBgm"
 			@toggle-edit="stageEditing = !stageEditing"
@@ -671,6 +673,9 @@
 			@avatar-move="handleAvatarMove"
 			@avatar-transform="handleAvatarTransform"
 			@avatar-add="handleAvatarAdd"
+			@avatar-visibility="handleAvatarVisibility"
+			@avatar-order="handleAvatarOrder"
+			@undo="undoAvatar"
 		/>
 	</div>
 	
@@ -2280,6 +2285,10 @@ const previewSlots = computed(() => {
 		const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
 		const rotate = Number(p.rotate) || 0;
 		const coord = p.coord === 'stage' ? 'stage' : 'sprite';
+		// 显隐与层级：visible=false 仍保留槽位对象，图层列表可再次显示
+		const visible = p.visible !== false;
+		const z = Number(p.z) || 0;
+		const zIndex = 10 + z;
 		let style;
 		let boxStyle;
 		if (coord === 'stage') {
@@ -2289,7 +2298,8 @@ const previewSlots = computed(() => {
 				top: `${y}%`,
 				bottom: 'auto',
 				right: 'auto',
-				transform: 'translate(-50%, -100%)'
+				transform: 'translate(-50%, -100%)',
+				zIndex
 			};
 			style = {
 				transform: `scale(${scale}) rotate(${rotate}deg)`,
@@ -2297,6 +2307,7 @@ const previewSlots = computed(() => {
 			};
 		} else {
 			// 旧 sprite 坐标：保持原语义，第一次拖拽时再迁移
+			boxStyle = { zIndex };
 			style = {
 				transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
 				opacity
@@ -2307,6 +2318,8 @@ const previewSlots = computed(() => {
 			style,
 			boxStyle,
 			coord,
+			visible,
+			z,
 			x,
 			y,
 			scale,
@@ -2385,6 +2398,122 @@ const loadPreviewDirectives = async (contentId) => {
 	}
 };
 
+/* ===== 画布 v3：图层显隐 / 层级 / 撤销 ===== */
+// 撤销栈保存当前台词的 avatar 指令快照，显隐/层级/拖拽/属性变更前入栈
+const avatarUndoStack = ref([]);
+const canUndoAvatar = computed(() => avatarUndoStack.value.length > 0);
+
+const snapshotAvatarDirectives = () => {
+	const rows = previewDirectives.value
+		.filter(d => d.directive_type === 'avatar')
+		.map(d => ({ directive_id: d.directive_id, order_num: d.order_num, payload: { ...(d.payload || {}) } }));
+	avatarUndoStack.value.push(rows);
+	if (avatarUndoStack.value.length > 20) avatarUndoStack.value.shift();
+};
+
+const undoAvatar = async () => {
+	const snapshot = avatarUndoStack.value.pop();
+	if (!snapshot) return;
+	const pid = Number(projectId.value);
+	const contentId = Number(currentDialogue.value?.content_id || 0);
+	if (!pid || !contentId) return;
+	try {
+		const current = await listNodeDirectives(pid, contentId);
+		const currentAvatars = current.filter(d => d.directive_type === 'avatar');
+		// 删除当前多出来的，再按快照逐条恢复 payload/order_num
+		const snapshotIds = new Set(snapshot.map(r => r.directive_id));
+		for (const d of currentAvatars) {
+			if (!snapshotIds.has(d.directive_id)) await deleteDirective(pid, d.directive_id);
+		}
+		for (const row of snapshot) {
+			const live = currentAvatars.find(d => d.directive_id === row.directive_id);
+			if (live) {
+				await updateDirective(pid, row.directive_id, { payload: row.payload, order_num: row.order_num });
+			} else {
+				await createDirective(pid, {
+					content_id: contentId,
+					directive_type: 'avatar',
+					payload: row.payload
+				});
+			}
+		}
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		ElMessage.success('已撤销上一步');
+	} catch (e) {
+		console.error('撤销失败:', e);
+		ElMessage.error('撤销失败: ' + (e.message || '未知错误'));
+	}
+};
+
+// 供图层列表展示：三个槽位是否存在、是否可见、当前层级
+const avatarLayers = computed(() => {
+	return ['left', 'center', 'right'].map(pos => {
+		const slot = previewSlots.value[pos];
+		const label = { left: '左立绘', center: '中立绘', right: '右立绘' }[pos];
+		return {
+			position: pos,
+			label,
+			exists: !!slot,
+			visible: slot ? slot.visible !== false : true,
+			z: slot ? (Number(slot.z) || 0) : 0,
+		};
+	});
+});
+
+// 找当前台词某个槽位最后一条可显示 avatar 指令
+const findAvatarDirective = (pos) => previewDirectives.value
+	.filter(d => d.directive_type === 'avatar')
+	.filter(d => (d.payload?.position || 'center') === pos)
+	.filter(d => d.payload?.action !== 'hide')
+	.pop();
+
+const handleAvatarVisibility = async (position, visible) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	const existing = findAvatarDirective(position);
+	if (!existing) { ElMessage.warning('该槽位还没有立绘'); return; }
+	snapshotAvatarDirectives();
+	try {
+		await updateDirective(pid, existing.directive_id, {
+			payload: { ...(existing.payload || {}), visible }
+		});
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		ElMessage.success(visible ? '立绘已显示' : '立绘已隐藏');
+	} catch (e) {
+		avatarUndoStack.value.pop();
+		console.error('切换立绘显隐失败:', e);
+		ElMessage.error('切换显隐失败: ' + (e.message || '未知错误'));
+	}
+};
+
+const handleAvatarOrder = async (position, direction) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	const existing = findAvatarDirective(position);
+	if (!existing) { ElMessage.warning('该槽位还没有立绘'); return; }
+	const delta = direction === 'up' ? 1 : -1;
+	const nextZ = Math.max(-5, Math.min(20, (Number(existing.payload?.z) || 0) + delta));
+	snapshotAvatarDirectives();
+	try {
+		await updateDirective(pid, existing.directive_id, {
+			payload: { ...(existing.payload || {}), z: nextZ }
+		});
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		ElMessage.success(`层级已${direction === 'up' ? '上移' : '下移'}（${nextZ}）`);
+	} catch (e) {
+		avatarUndoStack.value.pop();
+		console.error('调整层级失败:', e);
+		ElMessage.error('调整层级失败: ' + (e.message || '未知错误'));
+	}
+};
+
 // 舞台拖拽：把像素位移折算成指令里的 x/y 百分比，写回当前台词的 avatar 指令
 const handleAvatarMove = async ({ position, x, y, coord }) => {
 	const dialogue = currentDialogue.value;
@@ -2410,6 +2539,7 @@ const handleAvatarMove = async ({ position, x, y, coord }) => {
 		.filter(d => (d.payload?.position || 'center') === pos)
 		.filter(d => d.payload?.action !== 'hide')
 		.pop();
+	snapshotAvatarDirectives();
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
@@ -2443,6 +2573,7 @@ const handleAvatarMove = async ({ position, x, y, coord }) => {
 		await loadDirectives(contentId);
 		ElMessage.success('立绘位置已保存');
 	} catch (e) {
+		avatarUndoStack.value.pop();
 		console.error('保存立绘位置失败:', e);
 		ElMessage.error('保存立绘位置失败: ' + (e.message || '未知错误'));
 	}
@@ -2487,6 +2618,7 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 		if (x !== undefined && x !== null) patch.x = clampXY(x);
 		if (y !== undefined && y !== null) patch.y = clampXY(y);
 	}
+	snapshotAvatarDirectives();
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
@@ -2518,6 +2650,7 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 		await loadDirectives(contentId);
 		ElMessage.success('立绘属性已保存');
 	} catch (e) {
+		avatarUndoStack.value.pop();
 		console.error('保存立绘属性失败:', e);
 		ElMessage.error('保存立绘属性失败: ' + (e.message || '未知错误'));
 	}
@@ -2535,7 +2668,11 @@ const syncPreviewIfCurrent = (contentId) => {
 
 watch(
 	() => (currentDialogue.value ? currentDialogue.value.content_id : null),
-	(id) => { loadPreviewDirectives(id); },
+	(id, prev) => {
+		// 切换台词时清空舞台撤销栈，避免把上一条台词的快照撤销到当前台词
+		if (prev !== undefined && String(prev) !== String(id)) avatarUndoStack.value = [];
+		loadPreviewDirectives(id);
+	},
 	{ immediate: true }
 );
 
