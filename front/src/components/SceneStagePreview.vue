@@ -24,10 +24,16 @@
 				v-for="layer in layerItems"
 				:key="layer.key"
 				type="button"
-				:class="['stage-layer', { 'is-active': selectedPos === layer.key, 'is-empty': !layer.exists, 'is-hidden': layer.isAvatar && !layer.visible }]"
+				:class="['stage-layer', { 'is-active': selectedPos === layer.key, 'is-empty': !layer.exists, 'is-hidden': layer.isAvatar && !layer.visible, 'is-dragging': dragLayerKey === layer.key }]"
 				:disabled="!layer.selectable"
-				:title="layer.selectable && !layer.exists ? '点击添加立绘' : ''"
+				:draggable="layer.isAvatar && layer.exists"
+				:title="layer.selectable && !layer.exists ? '点击添加立绘' : (layer.isAvatar && layer.exists ? '拖动可调整层级' : '')"
 				@click="onLayerClick(layer)"
+				@dragstart="onLayerDragStart($event, layer)"
+				@dragover.prevent="onLayerDragOver($event, layer)"
+				@dragleave="dragOverKey = null"
+				@drop.prevent="onLayerDrop($event, layer)"
+				@dragend="onLayerDragEnd"
 			>
 				<span>{{ layer.label }}</span>
 				<span class="stage-layer-state">{{ layer.stateLabel }}</span>
@@ -42,6 +48,12 @@
 				</span>
 			</button>
 			<button type="button" class="stage-layer-undo" :disabled="!canUndo" @click="$emit('undo')">↶ 撤销上一步</button>
+			<button
+				type="button"
+				class="stage-layer-undo"
+				:class="{ 'is-on': gridSnap > 0 }"
+				@click="$emit('toggle-grid')"
+			>{{ gridSnap > 0 ? '⊞ 网格吸附：开' : '⊞ 网格吸附：关' }}</button>
 		</div>
 
 		<div v-if="editable && canEdit && selectedPos" class="stage-inspector" @pointerdown.stop>
@@ -218,6 +230,10 @@
 		canEdit?: boolean
 		dialogueKey?: string | number | null
 		canUndo?: boolean
+		gridSnap?: number
+		stageVisibility?: Record<string, boolean>
+		bgAvailable?: boolean
+		fgAvailable?: boolean
 		avatarLayers?: { position: string; label: string; exists: boolean; visible: boolean; z: number }[]
 	}>(), {
 		bgSrc: '',
@@ -240,6 +256,10 @@
 		canEdit: false,
 		dialogueKey: '',
 		canUndo: false,
+		gridSnap: 0,
+		stageVisibility: () => ({ background: true, foreground: true, dialogue: true }),
+		bgAvailable: false,
+		fgAvailable: false,
 		avatarLayers: () => [],
 	})
 
@@ -254,7 +274,10 @@
 		(e: 'avatar-add', position: string): void
 		(e: 'avatar-visibility', position: string, visible: boolean): void
 		(e: 'avatar-order', position: string, direction: 'up' | 'down'): void
+		(e: 'avatar-reorder', from: string, to: string): void
+		(e: 'stage-visibility', layerKey: string, visible: boolean): void
 		(e: 'undo'): void
+		(e: 'toggle-grid'): void
 	}>()
 
 	const bgFailed = ref(false)
@@ -322,35 +345,47 @@
 	}
 	const layerItems = computed(() => {
 		const item = (key: string, label: string, exists: boolean, selectable: boolean) => {
-			const info = selectable ? avatarLayerInfo(key) : null
-			const visible = info ? info.visible : true
+			const info = selectable && ['left', 'center', 'right'].includes(key) ? avatarLayerInfo(key) : null
+			const visible = info
+				? info.visible
+				: (props.stageVisibility[key] !== false)
 			return {
 				key,
 				label,
 				exists,
 				selectable,
-				isAvatar: selectable,
+				isAvatar: ['left', 'center', 'right'].includes(key),
 				visible,
 				z: info ? info.z : 0,
 				stateLabel: !exists
-					? (selectable ? '空 · 添加' : '空')
+					? '空'
 					: !visible
 						? '已隐藏'
-						: (selectable ? (info && info.z ? `层级 ${info.z}` : '可选中') : '已设置'),
+						: (info ? (info.z ? `层级 ${info.z}` : '可选中') : '已设置'),
 			}
 		}
 		return [
-			item('background', '背景', !!props.bgSrc, false),
-			item('left', '左立绘', !!props.slots.left, true),
-			item('center', '中立绘', !!props.slots.center, true),
-			item('right', '右立绘', !!props.slots.right, true),
-			item('foreground', '前景', !!props.foregroundSrc, false),
-			item('dialogue', '对话框', props.dialogueCount > 0, false),
+			item('background', '背景', props.bgAvailable, true),
+			// 立绘按层级从高到低展示，列表顺序即舞台前后顺序
+			...['left', 'center', 'right']
+				.map((key, idx) => ({
+					item: item(key, { left: '左立绘', center: '中立绘', right: '右立绘' }[key] || key, !!props.slots[key], true),
+					idx
+				}))
+				.sort((a, b) => (b.item.z - a.item.z) || (a.idx - b.idx))
+				.map(x => x.item),
+			item('foreground', '前景', props.fgAvailable, true),
+			item('dialogue', '对话框', props.dialogueCount > 0, true),
 		]
 	})
 
-	const onLayerClick = (layer: { key: string; exists: boolean; selectable: boolean }) => {
+	const onLayerClick = (layer: any) => {
 		if (!layer.selectable) return
+		if (!layer.isAvatar) {
+			// 背景/前景/对话框：点击切换显隐
+			emit('stage-visibility', layer.key, !layer.visible)
+			return
+		}
 		if (layer.exists) {
 			selectSlot(layer.key)
 			return
@@ -359,6 +394,32 @@
 		selectedPos.value = layer.key
 		syncLocal()
 		emit('avatar-add', layer.key)
+	}
+
+	// 图层列表拖拽排序：把源图层拖到目标图层的位置，交换两者层级
+	const dragLayerKey = ref<string | null>(null)
+	const dragOverKey = ref<string | null>(null)
+	const onLayerDragStart = (e: DragEvent, layer: any) => {
+		if (!layer.isAvatar || !layer.exists) { e.preventDefault(); return }
+		dragLayerKey.value = layer.key
+		e.dataTransfer?.setData('text/plain', layer.key)
+		if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+	}
+	const onLayerDragOver = (_e: DragEvent, layer: any) => {
+		if (!dragLayerKey.value || !layer.isAvatar || !layer.exists) return
+		if (layer.key !== dragLayerKey.value) dragOverKey.value = layer.key
+	}
+	const onLayerDrop = (_e: DragEvent, layer: any) => {
+		const from = dragLayerKey.value
+		const to = layer.key
+		dragLayerKey.value = null
+		dragOverKey.value = null
+		if (!from || !to || from === to || !layer.isAvatar || !layer.exists) return
+		emit('avatar-reorder', from, to)
+	}
+	const onLayerDragEnd = () => {
+		dragLayerKey.value = null
+		dragOverKey.value = null
 	}
 
 	interface DragState {
@@ -395,8 +456,16 @@
 		drag = null
 		d.el.style.translate = ''
 		if (!d.moved) return
-		const x = Math.round((d.baseX + d.dx / d.unitW * 100) * 10) / 10
-		const y = Math.round((d.baseY + d.dy / d.unitH * 100) * 10) / 10
+		const rawX = d.baseX + d.dx / d.unitW * 100
+		const rawY = d.baseY + d.dy / d.unitH * 100
+		// 网格吸附：开启后对齐到 gridStep 的整数倍，便于对齐左右/居中
+		const snap = (v: number) => {
+			const step = Number(props.gridSnap) || 0
+			if (step <= 0) return v
+			return Math.round(v / step) * step
+		}
+		const x = Math.round(snap(rawX) * 10) / 10
+		const y = Math.round(snap(rawY) * 10) / 10
 		emit('avatar-move', { position: d.pos, x, y, coord: 'stage' })
 	}
 
@@ -578,6 +647,18 @@
 		opacity: 0.55;
 	}
 
+	.stage-layer.is-dragging {
+		opacity: 0.4;
+	}
+
+	.stage-layer[draggable='true'] {
+		cursor: grab;
+	}
+
+	.stage-layer[draggable='true']:active {
+		cursor: grabbing;
+	}
+
 	.stage-layer.is-hidden .stage-layer-state {
 		color: #c81f4a;
 	}
@@ -625,6 +706,13 @@
 	.stage-layer-undo:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
+	}
+
+	.stage-layer-undo.is-on {
+		background: #fdeef3;
+		border-color: #e8467c;
+		color: #c81f4a;
+		font-weight: 600;
 	}
 
 	.preview-stage-avatar.is-selected,

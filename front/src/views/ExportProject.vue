@@ -230,7 +230,7 @@
 					</div>
 
 					<!-- 演出指令：前景图层（覆盖在立绘之上、对话框之下） -->
-					<div v-if="fgShown" class="stage-foreground">
+					<div v-if="fgShown && stageLayerVisible.foreground !== false" class="stage-foreground">
 						<img
 							:src="fgShown"
 							alt=""
@@ -312,7 +312,7 @@
 				</div>
 				
 				<!-- 对话显示区域（位于最上层） -->
-				<div v-if="!loading && !error && showDialogueBox" class="dialogue-display">
+				<div v-if="!loading && !error && showDialogueBox && stageLayerVisible.dialogue !== false" class="dialogue-display">
 					<!-- 当前对话 -->
 					<div 
 						v-if="currentDialogueIndex < currentSceneDialogues.length"
@@ -514,7 +514,7 @@
 				</div>
 				
 				<!-- 对话框隐藏时显示的显示按钮 -->
-				<div v-if="!loading && !error && !showDialogueBox" class="show-dialogue-btn" @click="toggleDialogueBox">
+				<div v-if="!loading && !error && !showDialogueBox && stageLayerVisible.dialogue !== false" class="show-dialogue-btn" @click="toggleDialogueBox">
 					<el-tooltip content="显示对话框" placement="top">
 						<el-icon size="30">
 							<View />
@@ -1670,12 +1670,16 @@ const startPreview = () => {
 };
 
 // ==================== 音频混音：BGM 淡入 + 语音闪避 ====================
-let bgmFadeRaf = null;
+// 用 setInterval + Date.now() 计时而非 requestAnimationFrame：
+// 后台标签页 rAF 会被完全暂停，淡入会卡在中间音量（甚至 0，音频仍在播）。
+// setInterval 后台虽被节流，但每个 tick 按真实经过时间推进，回来后会直接补到终值。
+let bgmFadeTimer = null;
+let bgmFadeTarget = 0;
 let bgmDuckActive = false;
 
 const cancelBgmFade = () => {
-	if (bgmFadeRaf) cancelAnimationFrame(bgmFadeRaf);
-	bgmFadeRaf = null;
+	if (bgmFadeTimer) clearInterval(bgmFadeTimer);
+	bgmFadeTimer = null;
 };
 
 // 目标音量：用户设置 × 闪避系数（语音播放时压到 35%）
@@ -1689,18 +1693,32 @@ const fadeBgmTo = (target, duration = 600) => {
 	cancelBgmFade();
 	const from = Number(audio.volume) || 0;
 	const to = Math.max(0, Math.min(1, target));
-	if (duration <= 0) {
+	bgmFadeTarget = to;
+	if (duration <= 0 || Math.abs(to - from) < 0.001) {
 		audio.volume = to;
 		return;
 	}
-	const startAt = performance.now();
-	const step = (now) => {
-		const t = Math.min(1, (now - startAt) / duration);
+	const startAt = Date.now();
+	const tick = () => {
+		const t = Math.min(1, (Date.now() - startAt) / duration);
 		audio.volume = from + (to - from) * t;
-		if (t < 1) bgmFadeRaf = requestAnimationFrame(step);
-		else bgmFadeRaf = null;
+		if (t >= 1) {
+			cancelBgmFade();
+			audio.volume = to;   // 终值兜底
+		}
 	};
-	bgmFadeRaf = requestAnimationFrame(step);
+	bgmFadeTimer = setInterval(tick, 40);
+	tick();  // 立即走一步，避免等第一个 interval
+};
+
+// 标签页重新可见时，若淡入还没结束就直接补到终值，不依赖被暂停的定时器
+const onBgmVisibilityChange = () => {
+	if (document.visibilityState !== 'visible') return;
+	const audio = backgroundMusic.value;
+	if (audio && bgmFadeTimer) {
+		cancelBgmFade();
+		audio.volume = bgmFadeTarget;
+	}
 };
 
 // 播放背景音乐（同一首持续播放时只微调音量，不重头播放）
@@ -2420,12 +2438,15 @@ const bgTransition = ref('fade');
 const bgDuration = ref(400);
 const fgFromDirective = ref('');
 const directivesByContent = ref({});
+// 节点级舞台层可见性（背景/前景/对话框），由 stage 指令控制
+const stageLayerVisible = ref({ background: true, foreground: true, dialogue: true });
 
 const hasStageAvatars = computed(() =>
 	stagePositions.some(p => !!stageAvatars.value[p])
 );
 
 const stageBackground = computed(() => {
+	if (stageLayerVisible.value.background === false) return '';
 	if (bgFromDirective.value) return BASE_URL + bgFromDirective.value;
 	return currentScene.value?.background_url
 		? BASE_URL + currentScene.value.background_url
@@ -2462,6 +2483,7 @@ const resetStage = () => {
 	bgTransition.value = 'fade';
 	bgDuration.value = 400;
 	fgFromDirective.value = '';
+	stageLayerVisible.value = { background: true, foreground: true, dialogue: true };
 	clearWait();
 	clearEffect();
 };
@@ -2558,6 +2580,17 @@ const swapBackground = (url) => {
 };
 
 watch(stageBackground, (url) => {
+	// 背景层被 stage 指令隐藏时，直接清空当前背景，避免残留
+	if (!url) {
+		if (bgSwapTimer) {
+			clearTimeout(bgSwapTimer);
+			bgSwapTimer = null;
+		}
+		bgFading.value = false;
+		bgBlackout.value = false;
+		bgShown.value = '';
+		return;
+	}
 	if (!bgShown.value) {
 		bgShown.value = url;
 		return;
@@ -2677,6 +2710,13 @@ const applyDirectives = (dialogue) => {
 			waitMs += Math.max(0, Number(p.ms) || 0);
 		} else if (d.directive_type === 'effect') {
 			lastEffect = p;
+		} else if (d.directive_type === 'stage') {
+			// 节点级舞台层显隐：背景 / 前景 / 对话框
+			const vis = { ...stageLayerVisible.value };
+			if (typeof p.background === 'boolean') vis.background = p.background;
+			if (typeof p.foreground === 'boolean') vis.foreground = p.foreground;
+			if (typeof p.dialogue === 'boolean') vis.dialogue = p.dialogue;
+			stageLayerVisible.value = vis;
 		}
 	}
 	stageAvatars.value = next;
@@ -3313,6 +3353,8 @@ onMounted(() => {
 	updateOrientation();
 	window.addEventListener('resize', updateOrientation);
 	window.addEventListener('orientationchange', updateOrientation);
+	// 后台标签页 rAF/定时器被暂停后，回到前台补一次 BGM 终值
+	document.addEventListener('visibilitychange', onBgmVisibilityChange);
 });
 
 // 组件卸载时清理定时器、音频与全局事件，避免内存泄漏与操作已销毁组件
@@ -3357,6 +3399,7 @@ onUnmounted(() => {
 	document.removeEventListener('touchstart', playBackgroundMusic);
 	window.removeEventListener('resize', updateOrientation);
 	window.removeEventListener('orientationchange', updateOrientation);
+	document.removeEventListener('visibilitychange', onBgmVisibilityChange);
 });
 
 const backToHome = () => {

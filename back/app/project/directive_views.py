@@ -20,7 +20,7 @@ from ..models import ContentDirective, ProjectVariable, ScriptContent
 from . import project
 from .save_views import _owned_project
 
-DIRECTIVE_TYPES = {'avatar', 'background', 'music', 'sound', 'wait', 'effect'}
+DIRECTIVE_TYPES = {'avatar', 'background', 'music', 'sound', 'wait', 'effect', 'stage'}
 MAX_DIRECTIVES_PER_NODE = 32
 
 

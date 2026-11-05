@@ -664,6 +664,10 @@
 			:can-edit="!!currentDialogue?.content_id"
 			:dialogue-key="currentDialogue?.content_id || ''"
 			:can-undo="canUndoAvatar"
+			:grid-snap="stageGridSnap"
+			:stage-visibility="stageVisibility"
+			:bg-available="bgAvailable"
+			:fg-available="fgAvailable"
 			:avatar-layers="avatarLayers"
 			@toggle-panel="togglePanel"
 			@toggle-bgm="toggleBgm"
@@ -675,7 +679,10 @@
 			@avatar-add="handleAvatarAdd"
 			@avatar-visibility="handleAvatarVisibility"
 			@avatar-order="handleAvatarOrder"
+			@avatar-reorder="handleAvatarReorder"
+			@stage-visibility="handleStageVisibility"
 			@undo="undoAvatar"
+			@toggle-grid="stageGridSnap = stageGridSnap > 0 ? 0 : 5"
 		/>
 	</div>
 	
@@ -1565,6 +1572,8 @@ const isPanelOpen = ref(true);
 const panelTab = ref('script');
 // 舞台直接拖拽立绘（画布第一版）：拖动后写回 avatar 演出指令
 const stageEditing = ref(false);
+// 拖拽网格吸附：0 = 关闭，5 = 吸附到 5% 网格
+const stageGridSnap = ref(0);
 // 场景设置（标题/描述/背景/音乐/剧情锁）的独立保存状态：
 // 台词有 dirty，场景设置也必须有自己的 dirty，否则切场景会静默丢改动。
 const sceneDirty = ref(false);
@@ -1812,6 +1821,7 @@ const addDirective = async () => {
 		payload = { ms: Number(dirForm.value.ms) || 500 };
 	}
 
+	snapshotStageDirectives(directiveContentId.value);
 	try {
 		await createDirective(Number(projectId.value), {
 			content_id: directiveContentId.value,
@@ -1822,16 +1832,19 @@ const addDirective = async () => {
 		syncPreviewIfCurrent(directiveContentId.value);
 		ElMessage.success('已添加');
 	} catch (e) {
+		stageUndoStack.value.pop();
 		ElMessage.error('添加失败');
 	}
 };
 
 const removeDirective = async (d) => {
+	snapshotStageDirectives(directiveContentId.value);
 	try {
 		await deleteDirective(Number(projectId.value), d.directive_id);
 		await loadDirectives(directiveContentId.value);
 		syncPreviewIfCurrent(directiveContentId.value);
 	} catch (e) {
+		stageUndoStack.value.pop();
 		ElMessage.error('删除失败');
 	}
 };
@@ -2333,7 +2346,21 @@ const previewSlots = computed(() => {
 
 const hasPreviewSlots = computed(() => Object.values(previewSlots.value).some(Boolean));
 
+// 舞台层可见性（背景/前景/对话框）：由节点级 stage 指令控制，缺省全部可见
+const stageVisibility = computed(() => {
+	const base = { background: true, foreground: true, dialogue: true };
+	for (const d of previewDirectives.value) {
+		if (d.directive_type !== 'stage') continue;
+		const p = d.payload || {};
+		if (typeof p.background === 'boolean') base.background = p.background;
+		if (typeof p.foreground === 'boolean') base.foreground = p.foreground;
+		if (typeof p.dialogue === 'boolean') base.dialogue = p.dialogue;
+	}
+	return base;
+});
+
 const previewBgSrc = computed(() => {
+	if (!stageVisibility.value.background) return '';
 	let bg = '';
 	for (const d of previewDirectives.value) {
 		if (d.directive_type !== 'background') continue;
@@ -2345,7 +2372,28 @@ const previewBgSrc = computed(() => {
 	return scene.value.background_url ? BASE_URL + scene.value.background_url : defaultBackground;
 });
 
+// 背景/前景是否存在真实资源（与是否被隐藏无关，供图层列表判断"空/已设置"）
+const bgAvailable = computed(() => {
+	for (const d of previewDirectives.value) {
+		if (d.directive_type !== 'background') continue;
+		const p = d.payload || {};
+		if (p.layer === 'foreground') continue;
+		if (p.url) return true;
+	}
+	return !!scene.value.background_url;
+});
+
+const fgAvailable = computed(() => {
+	for (const d of previewDirectives.value) {
+		if (d.directive_type !== 'background') continue;
+		const p = d.payload || {};
+		if (p.layer === 'foreground' && p.url) return true;
+	}
+	return false;
+});
+
 const previewFgSrc = computed(() => {
+	if (!stageVisibility.value.foreground) return '';
 	let fg = '';
 	for (const d of previewDirectives.value) {
 		if (d.directive_type !== 'background') continue;
@@ -2398,47 +2446,131 @@ const loadPreviewDirectives = async (contentId) => {
 	}
 };
 
-/* ===== 画布 v3：图层显隐 / 层级 / 撤销 ===== */
-// 撤销栈保存当前台词的 avatar 指令快照，显隐/层级/拖拽/属性变更前入栈
-const avatarUndoStack = ref([]);
-const canUndoAvatar = computed(() => avatarUndoStack.value.length > 0);
+/* ===== 舞台撤销栈：覆盖当前台词全部演出指令（立绘/背景/音乐/音效/效果/停顿） ===== */
+// 每次写操作前对「当前台词的全部指令」做快照入栈；演出弹窗的增删改也走同一栈。
+// 栈顶一步持久化到 localStorage，刷新后若服务端指令未变，仍可撤销。
+const stageUndoStack = ref([]);
+const canUndoAvatar = computed(() => stageUndoStack.value.length > 0);
 
-const snapshotAvatarDirectives = () => {
-	const rows = previewDirectives.value
-		.filter(d => d.directive_type === 'avatar')
-		.map(d => ({ directive_id: d.directive_id, order_num: d.order_num, payload: { ...(d.payload || {}) } }));
-	avatarUndoStack.value.push(rows);
-	if (avatarUndoStack.value.length > 20) avatarUndoStack.value.shift();
+const stageUndoStorageKey = (contentId) => `aigc:stageUndo:${projectId.value}:${contentId}`;
+const directivesFingerprint = (rows) => JSON.stringify(
+	rows.map(r => [r.directive_id, r.directive_type, r.order_num, r.payload]).sort()
+);
+
+const persistStageUndo = () => {
+	const top = stageUndoStack.value[stageUndoStack.value.length - 1];
+	if (!top || !top.contentId) return;
+	try {
+		// 只持久化栈顶：刷新后恢复一步，避免旧快照覆盖服务端新改动
+		localStorage.setItem(stageUndoStorageKey(top.contentId), JSON.stringify(top));
+	} catch (e) {
+		console.warn('持久化撤销栈失败:', e);
+	}
+};
+
+// 写操作成功后调用：记录"操作后"指纹，刷新后据此判断快照是否仍然有效
+const markStageUndoApplied = () => {
+	const top = stageUndoStack.value[stageUndoStack.value.length - 1];
+	if (!top) return;
+	top.after = directivesFingerprint(previewDirectives.value.map(d => ({
+		directive_id: d.directive_id,
+		directive_type: d.directive_type,
+		order_num: d.order_num,
+		payload: d.payload || {}
+	})));
+	persistStageUndo();
+};
+
+const clearPersistedStageUndo = (contentId) => {
+	if (!contentId) return;
+	try { localStorage.removeItem(stageUndoStorageKey(contentId)); } catch (e) {}
+};
+
+// 刷新/切台词后：校验服务端指令指纹与快照基线一致才恢复，否则丢弃
+const restorePersistedStageUndo = (contentId) => {
+	if (!contentId) return;
+	try {
+		const raw = localStorage.getItem(stageUndoStorageKey(contentId));
+		if (!raw) return;
+		const saved = JSON.parse(raw);
+		if (!saved || !Array.isArray(saved.rows)) { clearPersistedStageUndo(contentId); return; }
+		const baseline = saved.baseline;
+		const after = saved.after;
+		const current = directivesFingerprint(previewDirectives.value.map(d => ({
+			directive_id: d.directive_id,
+			directive_type: d.directive_type,
+			order_num: d.order_num,
+			payload: d.payload || {}
+		})));
+		// 当前服务端应处于"操作后"状态；若仍处于"操作前"说明没生效，也无需撤销
+		const valid = (after && current === after) || (!after && current === baseline);
+		if (!valid) {
+			// 服务端已被其它修改，快照失效
+			clearPersistedStageUndo(contentId);
+			return;
+		}
+		// 同一 contentId 只保留一条持久化快照，避免重复
+		stageUndoStack.value = stageUndoStack.value.filter(e => String(e.contentId) !== String(contentId));
+		stageUndoStack.value.push({ contentId: Number(contentId), rows: saved.rows });
+	} catch (e) {
+		console.warn('恢复撤销栈失败:', e);
+	}
+};
+
+const snapshotStageDirectives = (contentId) => {
+	const cid = Number(contentId || currentDialogue.value?.content_id || 0);
+	const source = cid && String(cid) === String(currentDialogue.value?.content_id || '')
+		? previewDirectives.value
+		: directives.value;
+	const rows = source.map(d => ({
+		directive_id: d.directive_id,
+		directive_type: d.directive_type,
+		order_num: d.order_num,
+		payload: { ...(d.payload || {}) }
+	}));
+	// baseline = 快照时刻服务端状态指纹；刷新后据此校验快照是否还有效
+	const entry = { contentId: cid, rows, baseline: directivesFingerprint(rows) };
+	stageUndoStack.value.push(entry);
+	if (stageUndoStack.value.length > 20) stageUndoStack.value.shift();
+	persistStageUndo();
 };
 
 const undoAvatar = async () => {
-	const snapshot = avatarUndoStack.value.pop();
-	if (!snapshot) return;
+	const entry = stageUndoStack.value.pop();
+	if (!entry) return;
 	const pid = Number(projectId.value);
-	const contentId = Number(currentDialogue.value?.content_id || 0);
+	const contentId = Number(entry.contentId || currentDialogue.value?.content_id || 0);
 	if (!pid || !contentId) return;
+	const snapshot = entry.rows;
 	try {
 		const current = await listNodeDirectives(pid, contentId);
-		const currentAvatars = current.filter(d => d.directive_type === 'avatar');
-		// 删除当前多出来的，再按快照逐条恢复 payload/order_num
+		// 删除当前多出来的，再按快照逐条恢复 payload/order_num/type
 		const snapshotIds = new Set(snapshot.map(r => r.directive_id));
-		for (const d of currentAvatars) {
+		for (const d of current) {
 			if (!snapshotIds.has(d.directive_id)) await deleteDirective(pid, d.directive_id);
 		}
 		for (const row of snapshot) {
-			const live = currentAvatars.find(d => d.directive_id === row.directive_id);
+			const live = current.find(d => d.directive_id === row.directive_id);
 			if (live) {
-				await updateDirective(pid, row.directive_id, { payload: row.payload, order_num: row.order_num });
+				await updateDirective(pid, row.directive_id, {
+					payload: row.payload,
+					order_num: row.order_num,
+					directive_type: row.directive_type
+				});
 			} else {
 				await createDirective(pid, {
 					content_id: contentId,
-					directive_type: 'avatar',
+					directive_type: row.directive_type,
 					payload: row.payload
 				});
 			}
 		}
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
+		// 撤销后栈顶变化：同步持久化（空栈则清除）
+		const top = stageUndoStack.value[stageUndoStack.value.length - 1];
+		if (top) persistStageUndo();
+		else clearPersistedStageUndo(contentId);
 		ElMessage.success('已撤销上一步');
 	} catch (e) {
 		console.error('撤销失败:', e);
@@ -2475,16 +2607,17 @@ const handleAvatarVisibility = async (position, visible) => {
 	const contentId = Number(dialogue.content_id);
 	const existing = findAvatarDirective(position);
 	if (!existing) { ElMessage.warning('该槽位还没有立绘'); return; }
-	snapshotAvatarDirectives();
+	snapshotStageDirectives();
 	try {
 		await updateDirective(pid, existing.directive_id, {
 			payload: { ...(existing.payload || {}), visible }
 		});
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
+		markStageUndoApplied();
 		ElMessage.success(visible ? '立绘已显示' : '立绘已隐藏');
 	} catch (e) {
-		avatarUndoStack.value.pop();
+		stageUndoStack.value.pop();
 		console.error('切换立绘显隐失败:', e);
 		ElMessage.error('切换显隐失败: ' + (e.message || '未知错误'));
 	}
@@ -2499,18 +2632,78 @@ const handleAvatarOrder = async (position, direction) => {
 	if (!existing) { ElMessage.warning('该槽位还没有立绘'); return; }
 	const delta = direction === 'up' ? 1 : -1;
 	const nextZ = Math.max(-5, Math.min(20, (Number(existing.payload?.z) || 0) + delta));
-	snapshotAvatarDirectives();
+	snapshotStageDirectives();
 	try {
 		await updateDirective(pid, existing.directive_id, {
 			payload: { ...(existing.payload || {}), z: nextZ }
 		});
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
+		markStageUndoApplied();
 		ElMessage.success(`层级已${direction === 'up' ? '上移' : '下移'}（${nextZ}）`);
 	} catch (e) {
-		avatarUndoStack.value.pop();
+		stageUndoStack.value.pop();
 		console.error('调整层级失败:', e);
 		ElMessage.error('调整层级失败: ' + (e.message || '未知错误'));
+	}
+};
+
+// 图层列表拖拽排序：把 from 放到 to 的位置，交换两者层级 z
+const handleAvatarReorder = async (from, to) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	const fromDir = findAvatarDirective(from);
+	const toDir = findAvatarDirective(to);
+	if (!fromDir || !toDir) { ElMessage.warning('两个图层都要有立绘才能排序'); return; }
+	const fromZ = Number(fromDir.payload?.z) || 0;
+	const toZ = Number(toDir.payload?.z) || 0;
+	// 交换层级；若两者相同，把 from 提到 to 之上
+	const nextFromZ = fromZ === toZ ? toZ + 1 : toZ;
+	const nextToZ = fromZ === toZ ? toZ - 1 : fromZ;
+	snapshotStageDirectives();
+	try {
+		await updateDirective(pid, fromDir.directive_id, {
+			payload: { ...(fromDir.payload || {}), z: nextFromZ }
+		});
+		await updateDirective(pid, toDir.directive_id, {
+			payload: { ...(toDir.payload || {}), z: nextToZ }
+		});
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		markStageUndoApplied();
+		ElMessage.success('图层层级已调整');
+	} catch (e) {
+		stageUndoStack.value.pop();
+		console.error('图层排序失败:', e);
+		ElMessage.error('图层排序失败: ' + (e.message || '未知错误'));
+	}
+};
+
+// 背景/前景/对话框显隐：写入节点级 stage 指令
+const handleStageVisibility = async (layerKey, visible) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	const existing = previewDirectives.value.filter(d => d.directive_type === 'stage').pop();
+	const next = { ...(existing?.payload || {}), [layerKey]: visible };
+	snapshotStageDirectives();
+	try {
+		if (existing) {
+			await updateDirective(pid, existing.directive_id, { payload: next });
+		} else {
+			await createDirective(pid, { content_id: contentId, directive_type: 'stage', payload: next });
+		}
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		markStageUndoApplied();
+		ElMessage.success(visible ? '已显示' : '已隐藏');
+	} catch (e) {
+		stageUndoStack.value.pop();
+		console.error('切换舞台层显隐失败:', e);
+		ElMessage.error('切换显隐失败: ' + (e.message || '未知错误'));
 	}
 };
 
@@ -2539,7 +2732,7 @@ const handleAvatarMove = async ({ position, x, y, coord }) => {
 		.filter(d => (d.payload?.position || 'center') === pos)
 		.filter(d => d.payload?.action !== 'hide')
 		.pop();
-	snapshotAvatarDirectives();
+	snapshotStageDirectives();
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
@@ -2571,9 +2764,10 @@ const handleAvatarMove = async ({ position, x, y, coord }) => {
 		}
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
+		markStageUndoApplied();
 		ElMessage.success('立绘位置已保存');
 	} catch (e) {
-		avatarUndoStack.value.pop();
+		stageUndoStack.value.pop();
 		console.error('保存立绘位置失败:', e);
 		ElMessage.error('保存立绘位置失败: ' + (e.message || '未知错误'));
 	}
@@ -2618,7 +2812,7 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 		if (x !== undefined && x !== null) patch.x = clampXY(x);
 		if (y !== undefined && y !== null) patch.y = clampXY(y);
 	}
-	snapshotAvatarDirectives();
+	snapshotStageDirectives();
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
@@ -2648,9 +2842,10 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 		}
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
+		markStageUndoApplied();
 		ElMessage.success('立绘属性已保存');
 	} catch (e) {
-		avatarUndoStack.value.pop();
+		stageUndoStack.value.pop();
 		console.error('保存立绘属性失败:', e);
 		ElMessage.error('保存立绘属性失败: ' + (e.message || '未知错误'));
 	}
@@ -2670,8 +2865,10 @@ watch(
 	() => (currentDialogue.value ? currentDialogue.value.content_id : null),
 	(id, prev) => {
 		// 切换台词时清空舞台撤销栈，避免把上一条台词的快照撤销到当前台词
-		if (prev !== undefined && String(prev) !== String(id)) avatarUndoStack.value = [];
-		loadPreviewDirectives(id);
+		if (prev !== undefined && String(prev) !== String(id)) stageUndoStack.value = [];
+		loadPreviewDirectives(id).then(() => {
+			if (id) restorePersistedStageUndo(id);
+		});
 	},
 	{ immediate: true }
 );
