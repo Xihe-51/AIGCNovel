@@ -30,3 +30,4 @@ import app.project.meta_views
 import app.project.compiler_views
 import app.project.reader_views
 import app.project.translation_views
+import app.project.static_export_views

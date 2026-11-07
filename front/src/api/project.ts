@@ -237,6 +237,30 @@ export const exportProjectAudioScript = async (projectId: number, endingId?: num
 };
 
 /**
+ * 导出可独立部署的静态网页包（zip：离线播放器 + 作品数据 + 素材）
+ */
+export const exportProjectStaticPackage = async (projectId: number): Promise<Blob> => {
+  try {
+    const response = await request.get(`/project/project/${projectId}/static_export`, {
+      responseType: 'blob',
+    });
+    return response.data as Blob;
+  } catch (error: any) {
+    // 后端错误以 JSON 返回，但 responseType=blob 时需要手动解析出提示
+    const data = error?.response?.data;
+    let message = '';
+    if (data instanceof Blob) {
+      try {
+        message = JSON.parse(await data.text())?.message || '';
+      } catch {
+        message = '';
+      }
+    }
+    throw new Error(message || error?.message || '导出静态网页包失败');
+  }
+};
+
+/**
  * 由 JSON 包导入项目（新建，归属当前用户）
  */
 export const importProject = async (bundle: Record<string, unknown>): Promise<Project> => {

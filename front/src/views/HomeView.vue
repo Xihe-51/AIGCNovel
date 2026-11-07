@@ -95,6 +95,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="json">导出 JSON 包</el-dropdown-item>
+                    <el-dropdown-item command="static">导出静态网页包</el-dropdown-item>
                     <el-dropdown-item command="txt">导出剧本 TXT</el-dropdown-item>
                     <el-dropdown-item command="docx">导出剧本 DOCX</el-dropdown-item>
                     <el-dropdown-item command="novel">导出主线小说 DOCX</el-dropdown-item>
@@ -917,13 +918,17 @@ const handleExport = async (project: Project, format: string) => {
     } else if (format === 'docx') {
       const blob = await projectApi.exportProjectDocx(project.project_id)
       downloadFile(blob, `${project.title}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    } else if (format === 'static') {
+      ElMessage.info('正在打包静态网页，包含素材时可能需要一点时间')
+      const blob = await projectApi.exportProjectStaticPackage(project.project_id)
+      downloadFile(blob, `${project.title}-网页版.zip`, 'application/zip')
     } else {
       const bundle = await projectApi.exportProjectBundle(project.project_id)
       downloadFile(JSON.stringify(bundle, null, 2), `${project.title}.json`, 'application/json')
     }
     ElMessage.success('导出成功')
-  } catch (error) {
-    ElMessage.error('导出失败')
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + (error?.message || '请稍后重试'))
   }
 }
 

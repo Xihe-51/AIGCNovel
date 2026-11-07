@@ -982,6 +982,7 @@ import { listVariables, listEffects, getProjectMeta, saveProjectMeta } from '@/a
 import { listDirectives } from '@/api/directive'
 import { listEndings, unlockEnding } from '@/api/ending'
 import { listMusicGallery, unlockMusic } from '@/api/gallery'
+import { getGallery } from '@/api/cg'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
 import { PLAYER_LANGUAGES } from '@/api/translation'
@@ -2642,6 +2643,8 @@ const checkEndingForCurrent = () => {
 
 const triggerEnding = async (ending) => {
 	triggeredEndings.value.add(ending.ending_id);
+	const endingRow = endings.value.find(e => Number(e.ending_id) === Number(ending.ending_id));
+	if (endingRow) endingRow.unlocked = true;
 	logPlayEvent('ending', {
 		ending_id: Number(ending.ending_id) || null,
 		content_id: Number(currentDialogue.value?.content_id) || null,

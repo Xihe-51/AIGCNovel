@@ -191,6 +191,18 @@ def _delete_endings_for_contents(content_ids):
     ).delete(synchronize_session=False)
 
 
+def _is_project_upload(file_url, project_id):
+    """判断文件是否属于该项目自己的上传目录（static/project/<id>/）。
+
+    删除项目时只能清理本项目目录下的文件：场景/角色/CG 可能引用其他项目
+    或市场素材的地址，直接按 URL 删除会误删别人的素材。
+    """
+    rel = str(file_url or '').lstrip('/')
+    if rel.startswith('static/'):
+        rel = rel[len('static/'):]
+    return rel.startswith(f'project/{int(project_id)}/')
+
+
 def _safe_delete_file(file_url):
     """
     安全删除文件
@@ -493,9 +505,9 @@ def delete_project(project_id, user_id):
         # 场景的背景和音乐
         scenes = Scene.query.filter_by(project_id=project_id).all()
         for scene in scenes:
-            if scene.background_url:
+            if _is_project_upload(scene.background_url, project_id):
                 files_to_delete.append(scene.background_url)
-            if scene.music_url:
+            if _is_project_upload(scene.music_url, project_id):
                 files_to_delete.append(scene.music_url)
 
         # 角色头像
@@ -503,12 +515,12 @@ def delete_project(project_id, user_id):
         for character in characters:
             avatars = CharacterAvatar.query.filter_by(character_id=character.character_id).all()
             for avatar in avatars:
-                if avatar.image_url:
+                if _is_project_upload(avatar.image_url, project_id):
                     files_to_delete.append(avatar.image_url)
 
         # CG 图鉴图片（仅删除项目内上传的，市场素材文件不属于本项目）
         for cg in ProjectCG.query.filter_by(project_id=project_id).all():
-            if cg.image_url and not cg.resource_id:
+            if cg.image_url and not cg.resource_id and _is_project_upload(cg.image_url, project_id):
                 files_to_delete.append(cg.image_url)
 
         # 2. 先删除分支路径：branch_paths 同时外键引用 script_contents 的起点/终点，

@@ -1,13 +1,22 @@
 import axios from "axios"
 import { jwtDecode } from "jwt-decode";
 
-const BASE_URL = "http://127.0.0.1:8088";
+let BASE_URL = "http://127.0.0.1:8088";
 // const BASE_URL = "http://192.168.0.103:5000";
 export { BASE_URL }
 
 const request = axios.create({
   baseURL: BASE_URL
 })
+
+/**
+ * 静态网页发布包：媒体资源已随包导出为相对路径，接口由本地适配层接管。
+ * 必须在播放器组件挂载前调用。
+ */
+export const enableStaticMode = () => {
+  BASE_URL = ''
+  request.defaults.baseURL = ''
+}
 
 // 请求拦截器 - 添加认证信息和用户ID
 request.interceptors.request.use(
