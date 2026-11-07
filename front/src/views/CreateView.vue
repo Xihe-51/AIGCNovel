@@ -32,6 +32,9 @@
 			</div>
 
 			<div class="cv-side cv-side-right">
+				<button type="button" class="cv-debug" title="把小说或文本剧本编译成可玩草稿" @click="compilerVisible = true">
+					导入小说
+				</button>
 				<button type="button" class="cv-publish-btn" title="发布前体检并生成分享链接" @click="publishVisible = true">
 					发布
 				</button>
@@ -147,11 +150,18 @@
 		</el-drawer>
 
 		<PublishWizard
-			v-model="publishVisible"
-			:project-id="projectId"
-			@published="onPublished"
-			@rolledback="onProjectRestored"
-		/>
+				v-model="publishVisible"
+				:project-id="projectId"
+				@published="onPublished"
+				@rolledback="onProjectRestored"
+			/>
+
+			<StoryCompilerDialog
+				v-model="compilerVisible"
+				:project-id="projectId"
+				@applied="onCompilerApplied"
+				@locate="onCompilerLocate"
+			/>
 	</div>
 </template>
 
@@ -169,6 +179,7 @@
 	import OutlineView from '@/components/OutlineView.vue'
 	import PublishWizard from '@/components/PublishWizard.vue'
 	import CreateToolPanel from '@/components/CreateToolPanel.vue'
+	import StoryCompilerDialog from '@/components/StoryCompilerDialog.vue'
 
 	const route = useRoute()
 	const router = useRouter()
@@ -194,6 +205,8 @@
 	const debugPlay = ref(false)
 	// 发布向导
 	const publishVisible = ref(false)
+	// 小说导入编译器
+	const compilerVisible = ref(false)
 	// 全项目搜索命中的节点，传给 SceneEdit 定位并滚动
 	const focusContentId = ref<number | null>(null)
 	// 从脚本跳剧情图时高亮的节点
@@ -268,6 +281,27 @@
 		graphKey.value += 1
 	}
 
+	// 小说导入写入后：刷新场景列表，跳到首条导入内容
+	const onCompilerApplied = (payload: { sceneId: number; contentId: number | null }) => {
+		reloadSceneLists()
+		scriptReloadKey.value += 1
+		graphKey.value += 1
+		if (!payload?.sceneId) return
+		activeSceneId.value = String(payload.sceneId)
+		rememberScene(String(payload.sceneId))
+		focusContentId.value = payload.contentId ?? null
+		view.value = 'script'
+	}
+
+	// 历史编译定位：只切换场景与高亮，不刷新项目数据
+	const onCompilerLocate = (payload: { sceneId: number; contentId: number | null }) => {
+		if (!payload?.sceneId) return
+		activeSceneId.value = String(payload.sceneId)
+		rememberScene(String(payload.sceneId))
+		focusContentId.value = payload.contentId ?? null
+		view.value = 'script'
+	}
+
 	// 右栏「素材 / 自检」点定位：切到对应场景（可带具体节点）
 	const onLocateAsset = (sceneId: number, contentId?: number | null) => {
 		activeSceneId.value = String(sceneId)
@@ -321,7 +355,8 @@
 	const openPlayer = () => {
 		const url = router.resolve({
 			path: `/view/${projectId}`,
-			query: debugPlay.value ? { debug: '1' } : {},
+			// 作者试玩默认带演出模式入口，可直接在预览里改台词/背景/BGM/差分
+			query: { edit: '1', ...(debugPlay.value ? { debug: '1' } : {}) },
 		}).href
 		window.open(url, '_blank')
 	}

@@ -21,12 +21,30 @@ export interface PlayAnalyticsSummary {
   avg_duration_seconds: number
   avg_duration_text: string
   event_count: number
+  top_dropoff?: {
+    scene_id: number
+    title: string
+    drop_offs: number
+    rate: number
+  } | null
 }
 
 export interface PlayAnalyticsScene {
   scene_id: number
   title: string
   order_num: number
+  reached: number
+  rate: number
+  drop_offs: number
+  drop_rate: number
+}
+
+export interface PlayAnalyticsChapter {
+  chapter_id: number
+  title: string
+  order_num: number
+  scene_count: number
+  first_scene_id: number
   reached: number
   rate: number
 }
@@ -45,12 +63,15 @@ export interface PlayChoiceGroup {
   scene_title: string
   node_text: string
   total: number
+  least_percent: number
   options: PlayChoiceOption[]
 }
 
 export interface PlayEndingStat {
   ending_id: number
   title: string
+  content_id?: number | null
+  scene_id?: number | null
   count: number
   rate: number
 }
@@ -58,6 +79,7 @@ export interface PlayEndingStat {
 export interface PlayAnalytics {
   summary: PlayAnalyticsSummary
   scenes: PlayAnalyticsScene[]
+  chapters: PlayAnalyticsChapter[]
   choices: PlayChoiceGroup[]
   endings: PlayEndingStat[]
 }

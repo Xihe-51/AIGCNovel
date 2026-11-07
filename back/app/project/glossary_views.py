@@ -5,9 +5,11 @@ import re
 from flask import jsonify, request
 
 from .. import db
-from ..models import BranchPath, ProjectTerm, Scene, ScriptContent
+from ..models import (BranchPath, BranchPathTranslation, ContentTranslation, ProjectTerm,
+                      Scene, SceneTranslation, ScriptContent)
 from . import project
 from .save_views import _owned_project
+from .translation_views import LANGUAGE_LABELS
 
 _VARIANT_SPLIT = re.compile(r'[,，、;；\n]')
 
@@ -125,34 +127,66 @@ def _scan_sources(project_id):
     scenes = {int(s.scene_id): s for s in
               Scene.query.filter_by(project_id=project_id).all()}
     sources = []
-    for c in (ScriptContent.query.filter_by(project_id=project_id)
-              .order_by(ScriptContent.scene_id.asc(), ScriptContent.order_num.asc()).all()):
-        text = c.content_text or ''
-        if not text.strip():
-            continue
+    contents = (ScriptContent.query.filter_by(project_id=project_id)
+                .order_by(ScriptContent.scene_id.asc(), ScriptContent.order_num.asc()).all())
+    content_ids = [c.content_id for c in contents]
+    translations = {}
+    if content_ids:
+        for t in (ContentTranslation.query
+                  .filter(ContentTranslation.content_id.in_(content_ids)).all()):
+            translations.setdefault(int(t.content_id), []).append(t)
+
+    for c in contents:
         scene = scenes.get(int(c.scene_id))
-        sources.append({
-            'kind': '台词' if c.content_type == '对话' else (c.content_type or '文本'),
-            'scene_id': int(c.scene_id),
-            'scene_title': scene.title if scene else '',
-            'content_id': int(c.content_id),
-            'text': text,
-        })
+        text = c.content_text or ''
+        if text.strip():
+            sources.append({
+                'kind': '台词' if c.content_type == '对话' else (c.content_type or '文本'),
+                'scene_id': int(c.scene_id),
+                'scene_title': scene.title if scene else '',
+                'content_id': int(c.content_id),
+                'text': text,
+            })
+        # 译文也纳入术语扫描：同一词条在译文里同样不应出现误用别名
+        for t in translations.get(int(c.content_id), []):
+            translated = (t.text or '').strip()
+            if not translated:
+                continue
+            sources.append({
+                'kind': f"译文 · {LANGUAGE_LABELS.get(t.language, t.language)}",
+                'scene_id': int(c.scene_id),
+                'scene_title': scene.title if scene else '',
+                'content_id': int(c.content_id),
+                'text': translated,
+            })
     for b in (BranchPath.query.filter_by(project_id=project_id)
               .order_by(BranchPath.path_id.asc()).all()):
         text = b.choice_text or ''
-        if not text.strip():
-            continue
-        # 选项本身没有 scene_id，按源节点反查所属场景
-        src = ScriptContent.query.filter_by(content_id=b.source_content_id).first()
-        scene = scenes.get(int(src.scene_id)) if src else None
-        sources.append({
-            'kind': '选项',
-            'scene_id': int(src.scene_id) if src else 0,
-            'scene_title': scene.title if scene else '',
-            'content_id': int(b.source_content_id) if b.source_content_id else None,
-            'text': text,
-        })
+        if text.strip():
+            # 选项本身没有 scene_id，按源节点反查所属场景
+            src = ScriptContent.query.filter_by(content_id=b.source_content_id).first()
+            scene = scenes.get(int(src.scene_id)) if src else None
+            sources.append({
+                'kind': '选项',
+                'scene_id': int(src.scene_id) if src else 0,
+                'scene_title': scene.title if scene else '',
+                'content_id': int(b.source_content_id) if b.source_content_id else None,
+                'text': text,
+            })
+        # 选项译文同样参与别名扫描
+        for bt in BranchPathTranslation.query.filter_by(path_id=b.path_id).all():
+            translated = (bt.text or '').strip()
+            if not translated:
+                continue
+            src = ScriptContent.query.filter_by(content_id=b.source_content_id).first()
+            scene = scenes.get(int(src.scene_id)) if src else None
+            sources.append({
+                'kind': f"译文 · {LANGUAGE_LABELS.get(bt.language, bt.language)} · 选项",
+                'scene_id': int(src.scene_id) if src else 0,
+                'scene_title': scene.title if scene else '',
+                'content_id': int(b.source_content_id) if b.source_content_id else None,
+                'text': translated,
+            })
     for s in scenes.values():
         for field, label in ((s.title, '场景名'), (s.description, '场景描述')):
             if field and str(field).strip():
@@ -162,6 +196,19 @@ def _scan_sources(project_id):
                     'scene_title': s.title or '',
                     'content_id': None,
                     'text': str(field),
+                })
+        # 场景名/描述的译文
+        for st in SceneTranslation.query.filter_by(scene_id=s.scene_id).all():
+            for field, label in ((st.title, '场景名'), (st.description, '场景描述')):
+                translated = (field or '').strip()
+                if not translated:
+                    continue
+                sources.append({
+                    'kind': f"译文 · {LANGUAGE_LABELS.get(st.language, st.language)} · {label}",
+                    'scene_id': int(s.scene_id),
+                    'scene_title': s.title or '',
+                    'content_id': None,
+                    'text': translated,
                 })
     return sources
 

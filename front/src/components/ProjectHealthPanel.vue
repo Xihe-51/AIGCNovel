@@ -5,6 +5,7 @@
 			<div class="hp-actions">
 				<button class="hp-run" @click="openPatrol">自动巡检</button>
 				<button class="hp-run" @click="openRegression">全分支试玩</button>
+				<button class="hp-run" @click="openReaders">合成读者</button>
 				<button class="hp-run" :disabled="loading" @click="exportReport">导出报告</button>
 				<button class="hp-run" :disabled="loading" @click="runCheck">
 					{{ loading ? '检查中…' : '重新检查' }}
@@ -214,7 +215,7 @@
 					</div>
 				</div>
 				<div v-if="regression.summary.capped" class="pt-note">
-					分支过多，已截断推演（最多 3000 个状态）。
+					分支过多，已截断推演（运行上限会随项目节点数调整）。
 				</div>
 
 				<div class="pt-section-title">未达成结局（{{ regression.endings.missed.length }}）</div>
@@ -291,6 +292,82 @@
 				<el-button type="primary" :loading="regressing" @click="runRegression">重新推演</el-button>
 			</template>
 		</el-dialog>
+
+		<el-dialog
+			v-model="readersVisible"
+			title="合成读者报告（规则版）"
+			width="820px"
+			append-to-body
+		>
+			<div v-if="readersLoading" class="hp-note">正在模拟速通 / 全收集 / 恋爱线 / 低耐心四类读者…</div>
+			<div v-else-if="readersError" class="hp-error">{{ readersError }}</div>
+			<template v-else-if="readersData">
+				<div class="sr-grid">
+					<div v-for="r in readersData.readers" :key="r.key" class="sr-card">
+						<div class="sr-card-head">
+							<span class="sr-name">{{ r.name }}</span>
+							<span :class="['sr-stop', stopClass(r.stop_reason)]">{{ stopLabel(r.stop_reason) }}</span>
+						</div>
+						<div class="sr-desc">{{ r.description }}</div>
+						<div class="sr-stats">
+							{{ r.stats.node_count }} 个节点 · {{ r.stats.choice_count }} 次选择 · 约 {{ r.stats.est_minutes }} 分钟
+						</div>
+						<div class="sr-outcome">
+							<template v-if="r.ending">结局：{{ r.ending.title }}</template>
+							<template v-else-if="r.dropoff">流失于：{{ r.dropoff.scene_title }} · {{ r.dropoff.text }}</template>
+							<template v-else>{{ stopLabel(r.stop_reason) }}</template>
+						</div>
+						<div class="sr-route">
+							<div
+								v-for="(n, ni) in r.route"
+								:key="ni"
+								class="sr-route-node"
+								@click="locate(n.scene_id, n.content_id)"
+							>
+								<span class="sr-route-scene">{{ n.scene_title }}</span>
+								<span class="sr-route-text">{{ n.character_name ? n.character_name + '：' : '' }}{{ n.text }}</span>
+							</div>
+							<div v-if="r.route_truncated" class="sr-route-more">路线过长，仅展示前 80 个节点</div>
+						</div>
+					</div>
+				</div>
+
+				<section v-if="readersData.aggregate.ignored_options.length" class="sr-section">
+					<h4 class="hp-section-title">被所有读者冷落的选项（{{ readersData.aggregate.ignored_option_count }}）</h4>
+					<div
+						v-for="opt in readersData.aggregate.ignored_options"
+						:key="opt.path_id"
+						class="pt-dead"
+						@click="opt.scene_id && locate(opt.scene_id, opt.content_id)"
+					>
+						<span class="pt-end dead">冷落</span>
+						<span class="pt-dead-text">{{ opt.scene_title }} · {{ opt.choice_text }}（{{ opt.source_text }}）</span>
+					</div>
+				</section>
+
+				<section v-if="readersData.aggregate.impossible_choices.length" class="sr-section">
+					<h4 class="hp-section-title">明显永假的条件（{{ readersData.aggregate.impossible_choice_count }}）</h4>
+					<div
+						v-for="opt in readersData.aggregate.impossible_choices"
+						:key="opt.path_id"
+						class="pt-dead"
+						@click="opt.scene_id && locate(opt.scene_id, opt.content_id)"
+					>
+						<span class="pt-end dead">永假</span>
+						<span class="pt-dead-text">{{ opt.scene_title }} · {{ opt.choice_text }}：{{ opt.conditions }}</span>
+					</div>
+				</section>
+
+				<div class="sr-note">
+					合成读者是规则模拟，不代表真实玩家；请把结论当作可定位的检查清单，而不是评分。
+					<span v-if="readersData.aggregate.endings_seen.length">本次触达结局：{{ readersData.aggregate.endings_seen.join('、') }}</span>
+				</div>
+			</template>
+			<template #footer>
+				<el-button @click="readersVisible = false">关闭</el-button>
+				<el-button type="primary" :loading="readersLoading" @click="runReaders">重新模拟</el-button>
+			</template>
+		</el-dialog>
 	</div>
 </template>
 
@@ -303,6 +380,8 @@
 	import type { StoryPatrol } from '@/api/patrol'
 	import { getStoryRegression } from '@/api/patrol'
 	import type { StoryRegression } from '@/api/patrol'
+	import { getSyntheticReaders } from '@/api/readers'
+	import type { SyntheticReaders } from '@/api/readers'
 	import type { StoryIssue } from '@/api/branch'
 
 	const props = defineProps<{
@@ -468,6 +547,44 @@
 	const openRegression = () => {
 		regressionVisible.value = true
 		runRegression()
+	}
+
+	// ---- 规则版合成读者 ----
+	const readersVisible = ref(false)
+	const readersLoading = ref(false)
+	const readersData = ref<SyntheticReaders | null>(null)
+	const readersError = ref('')
+
+	const stopLabel = (reason: string) => {
+		if (reason === 'ending') return '达成结局'
+		if (reason === 'dropoff') return '中途流失'
+		if (reason === 'dead_end') return '走进死路'
+		return '未达结局'
+	}
+
+	const stopClass = (reason: string) => {
+		if (reason === 'ending') return 'is-good'
+		if (reason === 'dead_end') return 'is-bad'
+		return 'is-warn'
+	}
+
+	const runReaders = async () => {
+		if (!props.projectId || readersLoading.value) return
+		readersLoading.value = true
+		readersError.value = ''
+		try {
+			readersData.value = await getSyntheticReaders(Number(props.projectId))
+		} catch (e: any) {
+			readersData.value = null
+			readersError.value = '模拟失败：' + (e?.response?.data?.message || e?.message || '未知错误')
+		} finally {
+			readersLoading.value = false
+		}
+	}
+
+	const openReaders = () => {
+		readersVisible.value = true
+		runReaders()
 	}
 
 	onMounted(runCheck)
@@ -816,5 +933,130 @@
 		padding: 6px 8px;
 		margin-bottom: 6px;
 		line-height: 1.6;
+	}
+
+	.sr-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 10px;
+	}
+
+	.sr-card {
+		border: 1px solid #f0d0dc;
+		border-radius: 10px;
+		padding: 9px 10px;
+		background: #fffafc;
+		min-width: 0;
+	}
+
+	.sr-card-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.sr-name {
+		font-size: 13px;
+		font-weight: 700;
+		color: #c81f4a;
+	}
+
+	.sr-stop {
+		font-size: 10px;
+		padding: 1px 6px;
+		border-radius: 4px;
+	}
+
+	.sr-stop.is-good {
+		background: #f0fdf4;
+		color: #15803d;
+	}
+
+	.sr-stop.is-bad {
+		background: #fef2f2;
+		color: #b91c1c;
+	}
+
+	.sr-stop.is-warn {
+		background: #fffbeb;
+		color: #b45309;
+	}
+
+	.sr-desc {
+		font-size: 11px;
+		color: #8b6b78;
+		margin-top: 3px;
+	}
+
+	.sr-stats {
+		font-size: 11px;
+		color: #4b5563;
+		margin-top: 5px;
+	}
+
+	.sr-outcome {
+		font-size: 11px;
+		color: #374151;
+		margin-top: 3px;
+		font-weight: 600;
+	}
+
+	.sr-route {
+		margin-top: 6px;
+		max-height: 150px;
+		overflow-y: auto;
+		border-top: 1px dashed #f0d0dc;
+		padding-top: 5px;
+	}
+
+	.sr-route-node {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		font-size: 11px;
+		line-height: 1.6;
+		cursor: pointer;
+		border-radius: 4px;
+		padding: 1px 3px;
+	}
+
+	.sr-route-node:hover {
+		background: #fff2f6;
+	}
+
+	.sr-route-scene {
+		flex-shrink: 0;
+		font-size: 10px;
+		color: #b07a8c;
+		max-width: 90px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.sr-route-text {
+		color: #4b5563;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.sr-route-more,
+	.sr-note {
+		font-size: 10px;
+		color: #9ca3af;
+		margin-top: 5px;
+		line-height: 1.6;
+	}
+
+	.sr-section {
+		margin-top: 12px;
+	}
+
+	@media (max-width: 760px) {
+		.sr-grid {
+			grid-template-columns: 1fr;
+		}
 	}
 </style>

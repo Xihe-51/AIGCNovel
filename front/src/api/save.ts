@@ -38,3 +38,56 @@ export async function deleteSave(projectId: number, slot: number) {
   const response = await request.delete(`/project/saves/${projectId}/${slot}`);
   return response.data;
 }
+
+// ==================== 存档检查器（作者侧） ====================
+
+export interface ProjectSaveItem extends SaveSlotInfo {
+  save_id: number;
+  user_id: number;
+  username: string;
+  slot_label: string;
+  thumbnail_url: string | null;
+  scene_title: string | null;
+  /** 存档位置折算后的场景与节点，可直接定位到创作页 */
+  scene_id: number | null;
+  content_id: number | null;
+  scene_order: number | null;
+  resolved_scene_title: string | null;
+  content_text: string | null;
+  variables_count: number;
+  history_count: number;
+  playthrough: number;
+  triggered_endings: number[];
+}
+
+export interface ProjectSaveList {
+  total: number;
+  players: number;
+  items: ProjectSaveItem[];
+}
+
+export interface ProjectSaveDetail extends ProjectSaveItem {
+  state: any;
+}
+
+/** 作者查看项目内所有玩家存档 */
+export async function listProjectSaves(projectId: number): Promise<ProjectSaveList> {
+  const response = await request.get(`/project/save_inspector/${projectId}`);
+  return (response.data as any).data as ProjectSaveList;
+}
+
+/** 作者读取任意玩家存档的完整快照 */
+export async function getProjectSave(
+  projectId: number,
+  userId: number,
+  slot: number
+): Promise<ProjectSaveDetail> {
+  const response = await request.get(`/project/save_inspector/${projectId}/${userId}/${slot}`);
+  return (response.data as any).data as ProjectSaveDetail;
+}
+
+/** 作者删除任意玩家的存档位 */
+export async function deleteProjectSave(projectId: number, userId: number, slot: number) {
+  const response = await request.delete(`/project/save_inspector/${projectId}/${userId}/${slot}`);
+  return response.data;
+}

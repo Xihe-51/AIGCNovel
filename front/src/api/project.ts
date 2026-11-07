@@ -215,6 +215,28 @@ export const exportProjectDocx = async (projectId: number): Promise<Blob> => {
 };
 
 /**
+ * 导出主线小说 Word 文档
+ */
+export const exportProjectNovel = async (projectId: number, endingId?: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'novel_docx', ending_id: endingId || undefined },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * 导出有声剧脚本 Word 文档
+ */
+export const exportProjectAudioScript = async (projectId: number, endingId?: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'audio_script', ending_id: endingId || undefined },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
  * 由 JSON 包导入项目（新建，归属当前用户）
  */
 export const importProject = async (bundle: Record<string, unknown>): Promise<Project> => {

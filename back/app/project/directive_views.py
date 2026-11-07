@@ -22,6 +22,22 @@ from .save_views import _owned_project
 
 DIRECTIVE_TYPES = {'avatar', 'background', 'music', 'sound', 'wait', 'effect', 'stage'}
 MAX_DIRECTIVES_PER_NODE = 32
+MAX_AVATAR_LAYERS = 8
+
+
+def _avatar_layer_id(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    return str(payload.get('layer_id') or payload.get('position') or 'center')
+
+
+def _avatar_layer_ids(content_id, exclude_id=None):
+    """当前节点已存在的立绘图层 id 集合（兼容旧 position 数据）。"""
+    rows = ContentDirective.query.filter_by(content_id=int(content_id)).filter(
+        ContentDirective.directive_type == 'avatar').all()
+    return {
+        _avatar_layer_id(r.payload) for r in rows
+        if exclude_id is None or int(r.directive_id) != int(exclude_id)
+    }
 
 
 def _dir_to_dict(row):
@@ -101,6 +117,15 @@ def create_directive(project_id):
     if err:
         return err
 
+    if directive_type == 'avatar':
+        layer_id = _avatar_layer_id(payload)
+        existing_layers = _avatar_layer_ids(content_id)
+        if layer_id not in existing_layers and len(existing_layers) >= MAX_AVATAR_LAYERS:
+            return jsonify({
+                'success': False,
+                'message': f'单个节点最多 {MAX_AVATAR_LAYERS} 个立绘图层'
+            }), 400
+
     count = ContentDirective.query.filter_by(
         project_id=project_id, content_id=int(content_id)).count()
     if count >= MAX_DIRECTIVES_PER_NODE:
@@ -132,6 +157,17 @@ def update_directive(project_id, directive_id):
         return jsonify({'success': False, 'message': '指令不存在'}), 404
 
     data = request.get_json(silent=True) or {}
+    next_type = str(data.get('directive_type') or row.directive_type).strip()
+    next_payload = data.get('payload', row.payload or {})
+    if next_type == 'avatar' and isinstance(next_payload, dict):
+        layer_id = _avatar_layer_id(next_payload)
+        existing_layers = _avatar_layer_ids(row.content_id, exclude_id=row.directive_id)
+        if layer_id not in existing_layers and len(existing_layers) >= MAX_AVATAR_LAYERS:
+            return jsonify({
+                'success': False,
+                'message': f'单个节点最多 {MAX_AVATAR_LAYERS} 个立绘图层'
+            }), 400
+
     if 'payload' in data:
         if not isinstance(data['payload'], dict):
             return jsonify({'success': False, 'message': 'payload 必须是对象'}), 400

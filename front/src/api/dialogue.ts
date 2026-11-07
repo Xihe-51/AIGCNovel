@@ -10,6 +10,8 @@ export interface Scene {
   music_url: string;
   order_num: number;
   created_at: string;
+  /** 场景标题/描述译文：{ zh-TW: { title, description } } */
+  translations?: Record<string, { title?: string; description?: string }>;
 }
 
 export interface Dialogue {
@@ -20,7 +22,11 @@ export interface Dialogue {
   avatar_id?: number;
   content_type: '对话' | '描述' | '选择';
   content_text: string;
+  /** 逐句译文：{ zh-TW: '…', en: '…', ja: '…' }，缺失时回退 content_text */
+  translations?: Record<string, string>;
   voice_url?: string;
+  /** 配音导演：台词情绪（平静/犹豫/生气/哭腔/低声） */
+  emotion?: string;
   branch_condition?: any;
   avatar_type?: string;
   order_num: number;
@@ -37,6 +43,17 @@ export interface Character {
   created_at: string;
 }
 
+export interface CharacterAvatarLayer {
+  layer_id: number;
+  avatar_id: number;
+  image_url: string;
+  layer_name?: string;
+  layer_type: string;
+  order: number;
+  config?: any;
+  created_at?: string;
+}
+
 export interface CharacterAvatar {
   avatar_id: number;
   character_id: number;
@@ -45,6 +62,7 @@ export interface CharacterAvatar {
   costume?: string;
   is_default: boolean;
   created_at: string;
+  layers?: CharacterAvatarLayer[];
 }
 
 /**

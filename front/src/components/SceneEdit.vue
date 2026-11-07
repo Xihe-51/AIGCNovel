@@ -43,6 +43,27 @@
 					</div>
 
 					<div class="field-block">
+						<div class="field-label">场景标题 / 描述译文</div>
+						<div class="dlg-translation-bar">
+							<el-button
+								size="small"
+								plain
+								:disabled="!scene.scene_id"
+								title="翻译场景标题与描述"
+								@click="openSceneTranslationDialog"
+							>
+								场景译文
+								<span v-if="sceneTranslationCount" class="dlg-translation-count">{{ sceneTranslationCount }}</span>
+							</el-button>
+							<span
+								v-for="lang in translatedSceneLanguages"
+								:key="lang.code"
+								class="dlg-translation-tag"
+							>{{ lang.label }}</span>
+						</div>
+					</div>
+
+					<div class="field-block">
 						<div class="field-label">播放条件（剧情锁）</div>
 						<div class="scene-lock">
 							<div v-if="sceneLockItems.length > 1" class="scene-lock-mode">
@@ -223,7 +244,7 @@
 						<el-icon :size="16"><Plus /></el-icon> 添加对话
 					</el-button>
 					<el-button size="small" @click="openScriptImport">导入剧本</el-button>
-					<el-button size="small" :disabled="!canUndo" @click="undo">撤销</el-button>
+					<el-button size="small" :disabled="!canUndoAny" @click="undoLast">撤销</el-button>
 					<el-button size="small" :disabled="!canRedo" @click="redo">重做</el-button>
 					<el-button size="small" type="warning" @click="reorderDialogues">
 						<el-icon :size="16"><RefreshLeft /></el-icon> 按当前顺序保存排序
@@ -379,6 +400,44 @@
 								<div class="rich-markup-tip">
 									支持 **加粗**、[color=#e8467c]彩色[/color]、[ruby=zhùyīn]注音[/ruby]
 								</div>
+								<div class="dlg-translation-bar">
+									<el-button
+										size="small"
+										plain
+										:disabled="!dialogue.content_id"
+										:title="dialogue.content_id ? '编辑这条台词的逐句译文' : '先保存台词，再添加译文'"
+										@click="openTranslationDialog(dialogue)"
+									>
+										译文
+										<span v-if="translationCount(dialogue)" class="dlg-translation-count">{{ translationCount(dialogue) }}</span>
+									</el-button>
+									<span
+										v-for="lang in translatedLanguages(dialogue)"
+										:key="lang.code"
+										class="dlg-translation-tag"
+									>{{ lang.label }}</span>
+									<span v-if="!dialogue.content_id" class="dlg-translation-hint">保存后可添加译文</span>
+								</div>
+							</el-form-item>
+
+							<el-form-item
+								label="情绪"
+								class="dlg-inline"
+								v-if="dialogue.content_type !== '选择'"
+							>
+								<el-select
+									v-model="dialogue.emotion"
+									clearable
+									placeholder="默认（平静）"
+									style="width: 100%"
+								>
+									<el-option
+										v-for="e in emotionOptions"
+										:key="e"
+										:label="e"
+										:value="e"
+									></el-option>
+								</el-select>
 							</el-form-item>
 
 							<!-- 非「选择」节点：播完本节点后自动跳转 -->
@@ -434,6 +493,15 @@
 													:value="t.content_id"
 												></el-option>
 											</el-select>
+											<el-button
+												size="small"
+												:disabled="!opt.path_id"
+												:title="opt.path_id ? '编辑这个选项的译文' : '先保存选择项，再添加译文'"
+												@click="openChoiceTranslationDialog(opt)"
+											>
+												译
+												<span v-if="choiceTranslationCount(opt)" class="dlg-translation-count">{{ choiceTranslationCount(opt) }}</span>
+											</el-button>
 											<el-button
 												size="small"
 												type="danger"
@@ -646,6 +714,7 @@
 		<SceneStagePreview
 			:bg-src="previewBgSrc"
 			:avatar-src="previewAvatarSrc"
+			:avatar-sources="previewAvatarSources"
 			:foreground-src="previewFgSrc"
 			:slots="previewSlots"
 			:has-slots="hasPreviewSlots"
@@ -669,17 +738,23 @@
 			:bg-available="bgAvailable"
 			:fg-available="fgAvailable"
 			:avatar-layers="avatarLayers"
+			:max-layers="MAX_AVATAR_LAYERS"
 			@toggle-panel="togglePanel"
 			@toggle-bgm="toggleBgm"
 			@toggle-edit="stageEditing = !stageEditing"
 			@next="nextDialogue"
 			@restart="restartDialogues"
-			@avatar-move="handleAvatarMove"
+			@avatar-group-move="handleAvatarGroupMove"
 			@avatar-transform="handleAvatarTransform"
-			@avatar-add="handleAvatarAdd"
+			@avatar-add-new="handleAvatarAddNew"
+			@avatar-remove="handleAvatarRemove"
+			@avatar-rename="handleAvatarRename"
 			@avatar-visibility="handleAvatarVisibility"
 			@avatar-order="handleAvatarOrder"
 			@avatar-reorder="handleAvatarReorder"
+			@asset-drop="onStageAssetDrop"
+			@avatar-replace-asset="onAvatarReplaceAsset"
+			@reload-assets="hotReloadAssets"
 			@stage-visibility="handleStageVisibility"
 			@undo="undoAvatar"
 			@toggle-grid="stageGridSnap = stageGridSnap > 0 ? 0 : 5"
@@ -780,21 +855,77 @@
 				</el-select>
 
 				<template v-if="newDirectiveType === 'avatar'">
-					<el-select v-model="dirForm.character_id" size="small" placeholder="角色" class="dir-field">
+					<el-select
+						v-model="dirForm.character_id"
+						size="small"
+						placeholder="角色"
+						class="dir-field"
+						@change="onDirCharacterChange"
+					>
 						<el-option v-for="c in characters" :key="c.character_id" :label="c.name" :value="c.character_id" />
 					</el-select>
-					<el-select v-model="dirForm.position" size="small" class="dir-field-sm">
-						<el-option label="左侧" value="left" />
-						<el-option label="中间" value="center" />
-						<el-option label="右侧" value="right" />
+
+					<!-- 表情/姿势轮盘：点缩略图快速切换该角色的立绘 -->
+					<div v-if="dirCharacterAvatars.length" class="expr-wheel">
+						<button
+							v-for="a in dirCharacterAvatars"
+							:key="a.avatar_id"
+							type="button"
+							class="expr-option"
+							:class="{ selected: dirForm.avatar_id === a.avatar_id }"
+							:title="avatarOptionLabel(a)"
+							@click="dirForm.avatar_id = a.avatar_id"
+						>
+							<img :src="BASE_URL + a.image_url" alt="" />
+							<span class="expr-name">{{ a.avatar_type }}</span>
+							<span v-if="a.layers && a.layers.length" class="expr-badge">{{ a.layers.length }}差分</span>
+						</button>
+					</div>
+					<p v-else-if="dirForm.character_id" class="expr-empty">该角色还没有立绘，请先去角色管理上传。</p>
+
+					<!-- 素材直出：把素材库图片拖进来，不绑角色也能作为独立立绘层 -->
+					<div
+						class="dir-asset-drop"
+						:class="{ 'is-over': dirAssetOver, 'has-image': !!dirForm.image_url }"
+						@dragover.prevent="onDirAssetDragOver"
+						@dragleave="dirAssetOver = false"
+						@drop.prevent="onDirAssetDrop"
+					>
+						<img v-if="dirForm.image_url" :src="assetSrc(dirForm.image_url)" alt="" />
+						<span class="dir-asset-tip">
+							{{ dirForm.image_url ? '已选择素材图片（选择角色会清除）' : '也可把素材库图片拖到这里，作为独立立绘层' }}
+						</span>
+						<button
+							v-if="dirForm.image_url"
+							type="button"
+							class="dir-asset-clear"
+							@click.prevent="dirForm.image_url = ''"
+						>清除</button>
+					</div>
+
+					<el-select v-model="dirForm.layer_id" size="small" class="dir-field-sm">
+						<el-option label="＋ 新建图层" value="__new__" />
+						<el-option
+							v-for="l in avatarLayerOptions"
+							:key="l.layer_id"
+							:label="`${l.label}（层级 ${l.order}）`"
+							:value="l.layer_id"
+						/>
 					</el-select>
+					<el-input
+						v-if="dirForm.layer_id === '__new__'"
+						v-model="dirForm.layer_name"
+						size="small"
+						class="dir-field-sm"
+						placeholder="新图层名"
+					/>
 					<el-select v-model="dirForm.action" size="small" class="dir-field-sm">
 						<el-option label="显示" value="show" />
 						<el-option label="隐藏" value="hide" />
 					</el-select>
 					<div class="dir-avatar-fine">
-						<el-input-number v-model="dirForm.x" :min="-100" :max="100" :controls="false" size="small" placeholder="X%" title="水平偏移（%）" />
-						<el-input-number v-model="dirForm.y" :min="-100" :max="100" :controls="false" size="small" placeholder="Y%" title="垂直偏移（%）" />
+						<el-input-number v-model="dirForm.x" :min="0" :max="100" :controls="false" size="small" placeholder="X%" title="图层中心 X（%）" />
+						<el-input-number v-model="dirForm.y" :min="0" :max="100" :controls="false" size="small" placeholder="Y%" title="图层底边 Y（%）" />
 						<el-input-number v-model="dirForm.scale" :min="0.2" :max="3" :step="0.1" :controls="false" size="small" placeholder="缩放" title="缩放倍数" />
 						<el-input-number v-model="dirForm.opacity" :min="0" :max="1" :step="0.1" :controls="false" size="small" placeholder="透明 0-1" title="不透明度" />
 						<el-input-number v-model="dirForm.rotate" :min="-45" :max="45" :controls="false" size="small" placeholder="旋转°" title="旋转角度" />
@@ -992,6 +1123,10 @@
 				<input v-model="voiceBatchUseCharacter" type="checkbox" :disabled="voiceBatchRunning" />
 				<span>优先使用角色默认音色（角色未设置时用上面的音色）</span>
 			</label>
+			<label class="voice-batch-check">
+				<input v-model="voiceBatchUseEmotion" type="checkbox" :disabled="voiceBatchRunning" />
+				<span>按台词情绪调整语速/音调（生气更快、低声更慢、哭腔更轻）</span>
+			</label>
 			<div v-if="voiceBatchRunning" class="voice-batch-progress">
 				正在生成 {{ voiceBatchDone }} / {{ voiceBatchTotal }}
 				<div class="voice-batch-bar">
@@ -1010,6 +1145,128 @@
 				<el-button type="primary" :loading="voiceBatchRunning" @click="runVoiceBatch">
 					{{ voiceBatchRunning ? '生成中…' : '开始生成' }}
 				</el-button>
+			</template>
+		</el-dialog>
+
+		<!-- 逐句译文：一条台词在多种语言下的文本，缺失时播放器回退原文 -->
+		<el-dialog
+			v-model="translationDialogVisible"
+			title="逐句译文"
+			width="520px"
+			append-to-body
+		>
+			<div v-if="translationTarget" class="dlg-translation-dialog">
+				<div class="dlg-translation-original">
+					<span class="dlg-translation-label">简体中文（原文）</span>
+					<p>{{ translationTarget.content_text || '（空）' }}</p>
+				</div>
+				<div class="dlg-translation-row">
+					<span class="dlg-translation-label">目标语言</span>
+					<el-select v-model="translationLang" size="small" style="width: 160px" @change="onTranslationLangChange">
+						<el-option
+							v-for="lang in TRANSLATION_LANGUAGES"
+							:key="lang.code"
+							:label="lang.label"
+							:value="lang.code"
+						/>
+					</el-select>
+					<button type="button" class="dlg-translation-copy" @click="translationText = translationTarget.content_text || ''">
+						复制原文
+					</button>
+				</div>
+				<el-input
+					v-model="translationText"
+					type="textarea"
+					:rows="5"
+					placeholder="留空保存会删除该语言译文；缺失时播放器自动回退原文"
+				/>
+				<p class="dlg-translation-tip">
+					保存后，播放器切到 {{ translationLabel(translationLang) }} 时优先显示这条译文。
+				</p>
+			</div>
+			<template #footer>
+				<el-button @click="translationDialogVisible = false">取消</el-button>
+				<el-button type="primary" :loading="translationSaving" @click="saveTranslation">保存译文</el-button>
+			</template>
+		</el-dialog>
+
+		<!-- 场景标题/描述译文 -->
+		<el-dialog
+			v-model="sceneTransVisible"
+			title="场景译文"
+			width="520px"
+			append-to-body
+		>
+			<div class="dlg-translation-dialog">
+				<div class="dlg-translation-original">
+					<span class="dlg-translation-label">简体中文（原文）</span>
+					<p>{{ scene.title || '（无标题）' }}</p>
+					<p v-if="scene.description" class="scene-trans-original-desc">{{ scene.description }}</p>
+				</div>
+				<div class="dlg-translation-row">
+					<span class="dlg-translation-label">目标语言</span>
+					<el-select v-model="sceneTransLang" size="small" style="width: 160px" @change="onSceneTransLangChange">
+						<el-option
+							v-for="lang in TRANSLATION_LANGUAGES"
+							:key="lang.code"
+							:label="lang.label"
+							:value="lang.code"
+						/>
+					</el-select>
+				</div>
+				<el-input v-model="sceneTransTitle" placeholder="译后标题" />
+				<el-input
+					v-model="sceneTransDescription"
+					type="textarea"
+					:rows="4"
+					placeholder="译后描述（可空）"
+				/>
+				<p class="dlg-translation-tip">
+					播放器切到 {{ translationLabel(sceneTransLang) }} 时优先显示译文；全部留空保存会清除该语言译文。
+				</p>
+			</div>
+			<template #footer>
+				<el-button @click="sceneTransVisible = false">取消</el-button>
+				<el-button type="primary" :loading="sceneTransSaving" @click="saveSceneTranslations">保存译文</el-button>
+			</template>
+		</el-dialog>
+
+		<!-- 选项译文 -->
+		<el-dialog
+			v-model="choiceTransVisible"
+			title="选项译文"
+			width="480px"
+			append-to-body
+		>
+			<div class="dlg-translation-dialog">
+				<div class="dlg-translation-original">
+					<span class="dlg-translation-label">简体中文（原文）</span>
+					<p>{{ choiceTransTarget?.choice_text || '（空）' }}</p>
+				</div>
+				<div class="dlg-translation-row">
+					<span class="dlg-translation-label">目标语言</span>
+					<el-select v-model="choiceTransLang" size="small" style="width: 160px" @change="onChoiceTransLangChange">
+						<el-option
+							v-for="lang in TRANSLATION_LANGUAGES"
+							:key="lang.code"
+							:label="lang.label"
+							:value="lang.code"
+						/>
+					</el-select>
+				</div>
+				<el-input
+					v-model="choiceTransText"
+					type="textarea"
+					:rows="3"
+					placeholder="留空保存会清除该语言译文"
+				/>
+				<p class="dlg-translation-tip">
+					播放器切到 {{ translationLabel(choiceTransLang) }} 时优先显示这条选项译文。
+				</p>
+			</div>
+			<template #footer>
+				<el-button @click="choiceTransVisible = false">取消</el-button>
+				<el-button type="primary" :loading="choiceTransSaving" @click="saveChoiceTranslation">保存译文</el-button>
 			</template>
 		</el-dialog>
 
@@ -1079,6 +1336,7 @@ import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/b
 import { listVariables, listEffects, saveContentEffects } from '@/api/variable'
 import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
 import { createProjectVersion } from '@/api/version'
+import { saveContentTranslation, saveSceneTranslation, saveBranchTranslation, TRANSLATION_LANGUAGES, translationLabel } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import { 
   ArrowLeft, 
@@ -1150,8 +1408,8 @@ const pushHistory = (snapshot) => {
 	const snap = snapshot || cloneDialogues();
 	const str = JSON.stringify(snap);
 	const top = undoStack.value[undoStack.value.length - 1];
-	if (top && JSON.stringify(top) === str) return;
-	undoStack.value.push(snap);
+	if (top && JSON.stringify(top.snapshot) === str) return;
+	undoStack.value.push({ at: Date.now(), snapshot: snap });
 	if (undoStack.value.length > MAX_HISTORY) undoStack.value.shift();
 	redoStack.value = [];
 };
@@ -1171,17 +1429,16 @@ const applySnapshot = (snap) => {
 
 const undo = () => {
 	if (!undoStack.value.length) return;
-	redoStack.value.push(cloneDialogues());
-	applySnapshot(undoStack.value.pop());
+	redoStack.value.push({ at: Date.now(), snapshot: cloneDialogues() });
+	applySnapshot(undoStack.value.pop().snapshot);
 };
 
 const redo = () => {
 	if (!redoStack.value.length) return;
-	undoStack.value.push(cloneDialogues());
-	applySnapshot(redoStack.value.pop());
+	undoStack.value.push({ at: Date.now(), snapshot: cloneDialogues() });
+	applySnapshot(redoStack.value.pop().snapshot);
 };
 
-const canUndo = computed(() => undoStack.value.length > 0);
 const canRedo = computed(() => redoStack.value.length > 0);
 
 const saveDraftNow = () => {
@@ -1274,7 +1531,7 @@ const onWindowKeydown = (e) => {
 	if (inField) return;
 	if (key === 'z') {
 		e.preventDefault();
-		e.shiftKey ? redo() : undo();
+		e.shiftKey ? redo() : undoLast();
 	} else if (key === 'y') {
 		e.preventDefault();
 		redo();
@@ -1373,10 +1630,13 @@ const voiceOptions = [
 	{ value: 'BV705_streaming', label: '通用女声 · 活泼' },
 	{ value: 'BV701_streaming', label: '通用男声 · 磁性' },
 ];
+// 配音导演：台词情绪标签（与后端 EMOTION_OPTIONS 一致）
+const emotionOptions = ['平静', '犹豫', '生气', '哭腔', '低声'];
 const voiceBatchVisible = ref(false);
 const voiceBatchVoice = ref('BV001_streaming');
 const voiceBatchOverwrite = ref(false);
 const voiceBatchUseCharacter = ref(true);
+const voiceBatchUseEmotion = ref(true);
 const voiceBatchRunning = ref(false);
 const voiceBatchDone = ref(0);
 const voiceBatchTotal = ref(0);
@@ -1446,8 +1706,9 @@ const runVoiceBatch = async () => {
 				const text = String(dialogue.content_text || '').trim();
 				const voiceType = (voiceBatchUseCharacter.value && characterVoiceFor(dialogue))
 					|| voiceBatchVoice.value;
+				const emotion = voiceBatchUseEmotion.value ? (dialogue.emotion || '') : '';
 				const info = await submitAndWait(
-					() => generateVoice({ text, voice_type: voiceType }),
+					() => generateVoice({ text, voice_type: voiceType, emotion }),
 					{ onProgress: (s) => { if (s.progress?.stage) voiceBatchCurrent.value = s.progress.stage; } }
 				);
 				const sourceUrl = info?.file || info?.generated_text;
@@ -1631,12 +1892,16 @@ const directives = ref([]);
 const directiveContentId = ref(null);
 const directiveTarget = ref('');
 const newDirectiveType = ref('avatar');
+const dirAssetOver = ref(false);
 const dirForm = ref({
 	character_id: null,
-	position: 'center',
+	avatar_id: null,
+	image_url: '',
+	layer_id: '__new__',
+	layer_name: '',
 	action: 'show',
-	x: 0,
-	y: 0,
+	x: 50,
+	y: 100,
 	scale: 1,
 	opacity: 1,
 	rotate: 0,
@@ -1665,8 +1930,8 @@ const directiveSummary = (d) => {
 	const p = d.payload || {};
 	if (d.directive_type === 'avatar') {
 		const c = characters.value.find(x => x.character_id === p.character_id);
-		const posMap = { left: '左侧', center: '中间', right: '右侧' };
-		const base = `${c ? c.name : '角色'} · ${posMap[p.position] || '中间'} · ${p.action === 'hide' ? '隐藏' : '显示'}`;
+		const layerName = p.layer_name || layerNameOf(p);
+		const base = `${c ? c.name : '角色'} · ${layerName} · ${p.action === 'hide' ? '隐藏' : '显示'}`;
 		const extra = [];
 		if (Number(p.scale) && Number(p.scale) !== 1) extra.push(`缩放 ${p.scale}`);
 		if (p.opacity !== undefined && Number(p.opacity) < 1) extra.push(`透明 ${Math.round(Number(p.opacity) * 100)}%`);
@@ -1737,13 +2002,18 @@ const openDirectiveDialog = async (index) => {
 	const kind = d.content_type === '描述' ? '旁白' : (d.content_type || '对话');
 	directiveTarget.value = `${kind}：${(d.content_text || '').slice(0, 18) || '（空）'}`;
 	newDirectiveType.value = 'avatar';
-	// 新增立绘指令时默认选中当前说话的角色
+	// 新增立绘指令时默认选中当前说话的角色；优先复用该角色已有图层
+	const matchedLayer = avatarLayerOptions.value.find(l => l.character_id === d.character_id);
+	const defaultAvatarId = d.avatar_id || defaultAvatarIdOf(d.character_id);
 	dirForm.value = {
 		character_id: d.character_id || null,
-		position: 'center',
+		avatar_id: defaultAvatarId,
+		image_url: '',
+		layer_id: matchedLayer ? matchedLayer.layer_id : '__new__',
+		layer_name: matchedLayer ? matchedLayer.label : nextLayerName(),
 		action: 'show',
-		x: 0,
-		y: 0,
+		x: nextFreeStageX(),
+		y: 100,
 		scale: 1,
 		opacity: 1,
 		rotate: 0,
@@ -1771,16 +2041,34 @@ const addDirective = async () => {
 	const t = newDirectiveType.value;
 	let payload = {};
 	if (t === 'avatar') {
-		if (!dirForm.value.character_id) {
-			ElMessage.warning('请选择角色');
+		if (!dirForm.value.character_id && !dirForm.value.image_url) {
+			ElMessage.warning('请选择角色，或拖入一张素材图片');
 			return;
 		}
+		const isNewLayer = !dirForm.value.layer_id || dirForm.value.layer_id === '__new__';
+		if (isNewLayer && avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
+			ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
+			return;
+		}
+		const layerId = isNewLayer
+			? `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+			: dirForm.value.layer_id;
+		const layerMeta = avatarLayerOptions.value.find(l => l.layer_id === layerId);
+		const layerName = layerMeta?.label || dirForm.value.layer_name?.trim() || nextLayerName();
+		const order = layerMeta ? layerMeta.order : nextLayerOrder();
+		const rawX = dirForm.value.x === '' || dirForm.value.x === null ? 50 : Number(dirForm.value.x);
+		const rawY = dirForm.value.y === '' || dirForm.value.y === null ? 100 : Number(dirForm.value.y);
 		payload = {
-			character_id: dirForm.value.character_id,
-			position: dirForm.value.position,
+			layer_id: layerId,
+			layer_name: layerName,
+			order,
+			character_id: dirForm.value.character_id || null,
+			avatar_id: dirForm.value.image_url ? null : (dirForm.value.avatar_id || null),
+			image_url: dirForm.value.image_url || null,
 			action: dirForm.value.action,
-			x: Number(dirForm.value.x) || 0,
-			y: Number(dirForm.value.y) || 0,
+			coord: 'stage',
+			x: Number.isFinite(rawX) ? Math.max(0, Math.min(100, rawX)) : 50,
+			y: Number.isFinite(rawY) ? Math.max(0, Math.min(100, rawY)) : 100,
 			scale: Number(dirForm.value.scale) || 1,
 			opacity: dirForm.value.opacity === '' || dirForm.value.opacity === null ? 1 : Number(dirForm.value.opacity),
 			rotate: Number(dirForm.value.rotate) || 0
@@ -2239,26 +2527,52 @@ const avatarOptionLabel = (avatar) => {
 	return avatar.is_default ? `${name}（默认）` : name;
 };
 
-const getAvatarUrl = (avatarId) => {
-	if (!avatarId) return '';
+// 资源热重载：预览图统一走 assetSrc，给项目内静态资源加时间戳绕过浏览器缓存
+const assetNonce = ref(0)
+const assetSrc = (url) => {
+	if (!url) return ''
+	const raw = String(url)
+	// data:/blob: 是内联内容，追加查询参数会直接破坏地址
+	if (/^(data:|blob:)/i.test(raw)) return raw
+	// 外链可能带签名或自身查询参数，不做热重载改写
+	if (/^https?:/i.test(raw)) return raw
+	const base = raw.startsWith('/assets/') || raw.startsWith('/src/')
+		? raw
+		: (raw.startsWith('/') ? BASE_URL + raw : `${BASE_URL}/${raw}`)
+	const sep = base.includes('?') ? '&' : '?'
+	return `${base}${sep}v=${assetNonce.value}`
+}
+
+// 立绘差分层：返回 [基础图, ...叠加层]；按 order 从小到大
+const avatarLayersOf = (avatarId) => {
+	if (!avatarId) return [];
 	for (const char of characters.value) {
-		const avatar = char.avatars.find(a => a.avatar_id === avatarId);
-		if (avatar && avatar.image_url) return BASE_URL + avatar.image_url;
+		const avatar = (char.avatars || []).find(a => a.avatar_id === avatarId);
+		if (!avatar || !avatar.image_url) continue;
+		const layers = (avatar.layers || [])
+			.filter(l => l && l.image_url)
+			.slice()
+			.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+			.map(l => assetSrc(l.image_url));
+		return [assetSrc(avatar.image_url), ...layers];
 	}
-	return '';
+	return [];
 };
 
 /* ===== 预览区：按当前对话的演出指令渲染 ===== */
 const previewDirectives = ref([]);
 
-const defaultAvatarUrl = (characterId) => {
-	if (!characterId) return '';
+const defaultAvatarSources = (characterId) => {
+	if (!characterId) return [];
 	const char = characters.value.find(c => c.character_id === characterId);
-	if (!char) return '';
+	if (!char) return [];
 	const list = char.avatars || [];
 	const def = list.find(a => a.is_default) || list[0];
-	if (def && def.image_url) return BASE_URL + def.image_url;
-	return char.avatar_url ? BASE_URL + char.avatar_url : '';
+	if (def && def.avatar_id) {
+		const layers = avatarLayersOf(def.avatar_id);
+		if (layers.length) return layers;
+	}
+	return char.avatar_url ? [assetSrc(char.avatar_url)] : [];
 };
 
 // 预览立绘：对话绑定角色时显示对应立绘；旁白沿用本场景上一位说话的角色，
@@ -2271,80 +2585,106 @@ const previewSpeaker = computed(() => {
 	return null;
 });
 
-const previewAvatarSrc = computed(() => {
+const previewAvatarSources = computed(() => {
 	const d = previewSpeaker.value;
-	if (!d) return '';
-	return getAvatarUrl(d.avatar_id) || defaultAvatarUrl(d.character_id);
+	if (!d) return [];
+	const byAvatar = avatarLayersOf(d.avatar_id);
+	if (byAvatar.length) return byAvatar;
+	return defaultAvatarSources(d.character_id);
 });
+
+const previewAvatarSrc = computed(() => previewAvatarSources.value[0] || '');
 
 // 预览区也按富文本标记渲染，避免作者看到 ** / [color] 等原始标记
 const richPreviewHtml = (text) => renderRichHtml(parseRichText(text || ''), Infinity);
 
+// ===== 舞台图层模型：任意数量图层，layer_id 稳定标识，order 为显式层级 =====
+const MAX_AVATAR_LAYERS = 8;
+const LEGACY_POSITION_ORDER = { left: 0, center: 1, right: 2 };
+const layerIdOf = (p = {}) => p.layer_id || p.position || 'center';
+const layerNameOf = (p = {}) => p.layer_name || ({ left: '左侧', center: '中间', right: '右侧' }[p.position] || '立绘');
+const layerOrderOf = (p = {}) => {
+	if (p.order !== undefined && p.order !== null && Number.isFinite(Number(p.order))) return Number(p.order);
+	if (p.z !== undefined && p.z !== null && Number.isFinite(Number(p.z))) return Number(p.z);
+	return LEGACY_POSITION_ORDER[p.position || 'center'] ?? 0;
+};
+const stageDefaultX = (layerId) => {
+	if (layerId === 'left') return 20;
+	if (layerId === 'right') return 80;
+	return 50;
+};
+
 const previewSlots = computed(() => {
-	const slots = { left: null, center: null, right: null };
+	const slots = {};
 	for (const d of previewDirectives.value) {
 		if (d.directive_type !== 'avatar') continue;
 		const p = d.payload || {};
-		const pos = p.position || 'center';
+		const layerId = layerIdOf(p);
 		if (p.action === 'hide') {
-			slots[pos] = null;
+			delete slots[layerId];
 			continue;
 		}
-		const src = getAvatarUrl(p.avatar_id) || defaultAvatarUrl(p.character_id);
+		const assetImage = p.image_url ? [assetSrc(p.image_url)] : [];
+		const sources = assetImage.length
+			? assetImage
+			: (avatarLayersOf(p.avatar_id).length ? avatarLayersOf(p.avatar_id) : defaultAvatarSources(p.character_id));
+		const src = sources[0];
 		if (!src) continue;
-		const x = Number(p.x) || 0;
-		const y = Number(p.y) || 0;
+		// 旧指令用 position + sprite 坐标；统一折算成舞台坐标，任意图层都走同一套渲染
+		const legacy = p.coord !== 'stage';
+		const x = legacy ? stageDefaultX(layerId) : (Number(p.x) || 0);
+		const y = legacy ? 100 : (Number(p.y) || 0);
 		const scale = Number(p.scale) || 1;
 		const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
 		const rotate = Number(p.rotate) || 0;
-		const coord = p.coord === 'stage' ? 'stage' : 'sprite';
-		// 显隐与层级：visible=false 仍保留槽位对象，图层列表可再次显示
+		const order = layerOrderOf(p);
 		const visible = p.visible !== false;
-		const z = Number(p.z) || 0;
-		const zIndex = 10 + z;
-		let style;
-		let boxStyle;
-		if (coord === 'stage') {
-			// 舞台坐标：x = 中心 %，y = 底边 %；槽位本身做锚定，图片只做缩放/旋转
-			boxStyle = {
-				left: `${x}%`,
-				top: `${y}%`,
-				bottom: 'auto',
-				right: 'auto',
-				transform: 'translate(-50%, -100%)',
-				zIndex
-			};
-			style = {
-				transform: `scale(${scale}) rotate(${rotate}deg)`,
-				opacity
-			};
-		} else {
-			// 旧 sprite 坐标：保持原语义，第一次拖拽时再迁移
-			boxStyle = { zIndex };
-			style = {
-				transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
-				opacity
-			};
-		}
-		slots[pos] = {
+		const boxStyle = {
+			left: `${x}%`,
+			top: `${y}%`,
+			bottom: 'auto',
+			right: 'auto',
+			transform: 'translate(-50%, -100%)',
+			zIndex: 10 + order
+		};
+		const style = {
+			transform: `scale(${scale}) rotate(${rotate}deg)`,
+			opacity
+		};
+		slots[layerId] = {
 			src,
+			sources,
 			style,
 			boxStyle,
-			coord,
+			coord: 'stage',
 			visible,
-			z,
+			order,
+			layer_id: layerId,
+			layer_name: layerNameOf(p),
 			x,
 			y,
 			scale,
 			opacity,
 			rotate,
-			position: pos
+			character_id: p.character_id,
+			avatar_id: p.avatar_id
 		};
 	}
 	return slots;
 });
 
-const hasPreviewSlots = computed(() => Object.values(previewSlots.value).some(Boolean));
+const hasPreviewSlots = computed(() => Object.keys(previewSlots.value).length > 0);
+
+// 图层列表：order 越高越靠前（列表展示时再倒序）
+const avatarLayers = computed(() => Object.values(previewSlots.value)
+	.map(slot => ({
+		layer_id: slot.layer_id,
+		label: slot.layer_name || slot.layer_id,
+		exists: true,
+		visible: slot.visible !== false,
+		order: slot.order
+	}))
+	.sort((a, b) => a.order - b.order));
 
 // 舞台层可见性（背景/前景/对话框）：由节点级 stage 指令控制，缺省全部可见
 const stageVisibility = computed(() => {
@@ -2368,8 +2708,8 @@ const previewBgSrc = computed(() => {
 		if (p.layer === 'foreground') continue;
 		bg = p.url || '';
 	}
-	if (bg) return BASE_URL + bg;
-	return scene.value.background_url ? BASE_URL + scene.value.background_url : defaultBackground;
+	if (bg) return assetSrc(bg);
+	return scene.value.background_url ? assetSrc(scene.value.background_url) : defaultBackground;
 });
 
 // 背景/前景是否存在真实资源（与是否被隐藏无关，供图层列表判断"空/已设置"）
@@ -2401,7 +2741,7 @@ const previewFgSrc = computed(() => {
 		if (p.layer !== 'foreground') continue;
 		fg = p.url || '';
 	}
-	return fg ? BASE_URL + fg : '';
+	return fg ? assetSrc(fg) : '';
 });
 
 // 场景设置里的背景图 404 降级；舞台预览的裂图由 SceneStagePreview 自己处理
@@ -2511,7 +2851,7 @@ const restorePersistedStageUndo = (contentId) => {
 		}
 		// 同一 contentId 只保留一条持久化快照，避免重复
 		stageUndoStack.value = stageUndoStack.value.filter(e => String(e.contentId) !== String(contentId));
-		stageUndoStack.value.push({ contentId: Number(contentId), rows: saved.rows });
+		stageUndoStack.value.push({ contentId: Number(contentId), rows: saved.rows, at: saved.at || Date.now() });
 	} catch (e) {
 		console.warn('恢复撤销栈失败:', e);
 	}
@@ -2529,9 +2869,11 @@ const snapshotStageDirectives = (contentId) => {
 		payload: { ...(d.payload || {}) }
 	}));
 	// baseline = 快照时刻服务端状态指纹；刷新后据此校验快照是否还有效
-	const entry = { contentId: cid, rows, baseline: directivesFingerprint(rows) };
+	const entry = { contentId: cid, rows, baseline: directivesFingerprint(rows), at: Date.now() };
 	stageUndoStack.value.push(entry);
 	if (stageUndoStack.value.length > 20) stageUndoStack.value.shift();
+	// 新的舞台操作让台词重做失效，保持统一撤销的线性语义
+	redoStack.value = [];
 	persistStageUndo();
 };
 
@@ -2578,35 +2920,102 @@ const undoAvatar = async () => {
 	}
 };
 
-// 供图层列表展示：三个槽位是否存在、是否可见、当前层级
-const avatarLayers = computed(() => {
-	return ['left', 'center', 'right'].map(pos => {
-		const slot = previewSlots.value[pos];
-		const label = { left: '左立绘', center: '中立绘', right: '右立绘' }[pos];
-		return {
-			position: pos,
-			label,
-			exists: !!slot,
-			visible: slot ? slot.visible !== false : true,
-			z: slot ? (Number(slot.z) || 0) : 0,
-		};
-	});
-});
+// 统一撤销：台词栈与舞台栈按操作时间比较，撤销更近的一步
+const canUndoAny = computed(() => undoStack.value.length > 0 || stageUndoStack.value.length > 0);
+const undoLast = () => {
+	const dTop = undoStack.value[undoStack.value.length - 1];
+	const sTop = stageUndoStack.value[stageUndoStack.value.length - 1];
+	if (!dTop && !sTop) return;
+	const dAt = dTop ? (dTop.at || 0) : -1;
+	const sAt = sTop ? (sTop.at || 0) : -1;
+	if (sAt >= dAt) undoAvatar();
+	else undo();
+};
 
-// 找当前台词某个槽位最后一条可显示 avatar 指令
-const findAvatarDirective = (pos) => previewDirectives.value
+// 角色立绘缩略图：表情/姿势轮盘的数据源
+const avatarsOfCharacter = (characterId) => {
+	if (!characterId) return [];
+	const c = characters.value.find(x => x.character_id === characterId);
+	return (c?.avatars || []).slice();
+};
+
+const dirCharacterAvatars = computed(() => avatarsOfCharacter(dirForm.value.character_id));
+
+const defaultAvatarIdOf = (characterId) => {
+	const list = avatarsOfCharacter(characterId);
+	const def = list.find(a => a.is_default) || list[0];
+	return def ? def.avatar_id : null;
+};
+
+const onDirCharacterChange = (characterId) => {
+	dirForm.value.avatar_id = defaultAvatarIdOf(characterId);
+	// 选了角色就清掉素材直出图片，避免「角色立绘」和「素材图」同时挂在一层
+	dirForm.value.image_url = '';
+	// 选中的既有图层若属于其他角色，自动切回「新建图层」，避免把两个人叠进同一层
+	const layer = avatarLayerOptions.value.find(l => l.layer_id === dirForm.value.layer_id);
+	if (layer && layer.character_id && layer.character_id !== characterId) {
+		dirForm.value.layer_id = '__new__';
+		dirForm.value.layer_name = nextLayerName();
+	}
+};
+
+// 多角色入场自动站位：挑一个没被占用的 X 坐标
+const STAGE_ENTRY_XS = [50, 25, 75, 18, 82, 35, 65];
+const nextFreeStageX = () => {
+	const used = Object.values(previewSlots.value)
+		.filter(Boolean)
+		.filter(s => s.visible !== false)
+		.map(s => Number(s.x))
+		.filter(v => Number.isFinite(v));
+	for (const x of STAGE_ENTRY_XS) {
+		if (!used.some(u => Math.abs(u - x) < 9)) return x;
+	}
+	return 50;
+};
+
+// 演出指令弹窗用：按前台→后台展示已有图层
+const avatarLayerOptions = computed(() => avatarLayers.value
+	.slice()
+	.sort((a, b) => b.order - a.order)
+	.map(l => {
+		const slot = previewSlots.value[l.layer_id];
+		return {
+			layer_id: l.layer_id,
+			label: l.label,
+			order: l.order,
+			character_id: slot?.character_id ?? null
+		};
+	}));
+
+const nextLayerOrder = () => (avatarLayers.value.length
+	? Math.max(...avatarLayers.value.map(l => Number(l.order) || 0)) + 1
+	: 0);
+
+const nextLayerName = () => `立绘 ${avatarLayers.value.length + 1}`;
+
+const layerMetaFor = (layerId) => {
+	const hit = avatarLayers.value.find(l => l.layer_id === layerId);
+	return {
+		layer_id: layerId,
+		layer_name: hit?.label || ({ left: '左侧', center: '中间', right: '右侧' }[layerId] || '立绘'),
+		order: hit ? Number(hit.order) || 0 : nextLayerOrder()
+	};
+};
+
+// 找当前台词某个图层最后一条可显示 avatar 指令
+const findAvatarDirective = (layerId) => previewDirectives.value
 	.filter(d => d.directive_type === 'avatar')
-	.filter(d => (d.payload?.position || 'center') === pos)
+	.filter(d => layerIdOf(d.payload || {}) === layerId)
 	.filter(d => d.payload?.action !== 'hide')
 	.pop();
 
-const handleAvatarVisibility = async (position, visible) => {
+const handleAvatarVisibility = async (layerId, visible) => {
 	const dialogue = currentDialogue.value;
 	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
 	const pid = Number(projectId.value);
 	const contentId = Number(dialogue.content_id);
-	const existing = findAvatarDirective(position);
-	if (!existing) { ElMessage.warning('该槽位还没有立绘'); return; }
+	const existing = findAvatarDirective(layerId);
+	if (!existing) { ElMessage.warning('该图层还没有立绘'); return; }
 	snapshotStageDirectives();
 	try {
 		await updateDirective(pid, existing.directive_id, {
@@ -2623,61 +3032,133 @@ const handleAvatarVisibility = async (position, visible) => {
 	}
 };
 
-const handleAvatarOrder = async (position, direction) => {
-	const dialogue = currentDialogue.value;
-	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
+// 把图层顺序写回所有 avatar 指令：layerIds 按从后到前排列
+const applyAvatarLayerOrders = async (layerIds) => {
 	const pid = Number(projectId.value);
-	const contentId = Number(dialogue.content_id);
-	const existing = findAvatarDirective(position);
-	if (!existing) { ElMessage.warning('该槽位还没有立绘'); return; }
-	const delta = direction === 'up' ? 1 : -1;
-	const nextZ = Math.max(-5, Math.min(20, (Number(existing.payload?.z) || 0) + delta));
+	const contentId = Number(currentDialogue.value?.content_id || 0);
+	if (!pid || !contentId) return false;
+	const wanted = new Map(layerIds.map((id, idx) => [id, idx]));
 	snapshotStageDirectives();
 	try {
-		await updateDirective(pid, existing.directive_id, {
-			payload: { ...(existing.payload || {}), z: nextZ }
-		});
+		for (const d of previewDirectives.value.filter(x => x.directive_type === 'avatar')) {
+			const id = layerIdOf(d.payload || {});
+			const order = wanted.get(id);
+			if (order === undefined) continue;
+			await updateDirective(pid, d.directive_id, {
+				payload: { ...(d.payload || {}), layer_id: id, order }
+			});
+		}
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
 		markStageUndoApplied();
-		ElMessage.success(`层级已${direction === 'up' ? '上移' : '下移'}（${nextZ}）`);
+		return true;
 	} catch (e) {
 		stageUndoStack.value.pop();
+		throw e;
+	}
+};
+
+const orderedAvatarLayerIds = () => avatarLayers.value
+	.slice()
+	.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+	.map(l => l.layer_id);
+
+const handleAvatarOrder = async (layerId, direction) => {
+	const ids = orderedAvatarLayerIds();
+	const index = ids.indexOf(layerId);
+	const target = index + (direction === 'up' ? 1 : -1);
+	if (index < 0 || target < 0 || target >= ids.length) return;
+	[ids[index], ids[target]] = [ids[target], ids[index]];
+	try {
+		await applyAvatarLayerOrders(ids);
+		ElMessage.success(`图层已${direction === 'up' ? '上移' : '下移'}`);
+	} catch (e) {
 		console.error('调整层级失败:', e);
 		ElMessage.error('调整层级失败: ' + (e.message || '未知错误'));
 	}
 };
 
-// 图层列表拖拽排序：把 from 放到 to 的位置，交换两者层级 z
+// 图层列表拖拽排序：把 from 放到 to 的位置，重排所有图层的 order
 const handleAvatarReorder = async (from, to) => {
+	const ids = orderedAvatarLayerIds();
+	const fromIdx = ids.indexOf(from);
+	const toIdx = ids.indexOf(to);
+	if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+	ids.splice(fromIdx, 1);
+	ids.splice(toIdx, 0, from);
+	try {
+		await applyAvatarLayerOrders(ids);
+		ElMessage.success('图层层级已调整');
+	} catch (e) {
+		console.error('图层排序失败:', e);
+		ElMessage.error('图层排序失败: ' + (e.message || '未知错误'));
+	}
+};
+
+// 删除图层：清掉该图层在当前节点的全部 avatar 指令
+const handleAvatarRemove = async (layerId) => {
 	const dialogue = currentDialogue.value;
 	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
 	const pid = Number(projectId.value);
 	const contentId = Number(dialogue.content_id);
-	const fromDir = findAvatarDirective(from);
-	const toDir = findAvatarDirective(to);
-	if (!fromDir || !toDir) { ElMessage.warning('两个图层都要有立绘才能排序'); return; }
-	const fromZ = Number(fromDir.payload?.z) || 0;
-	const toZ = Number(toDir.payload?.z) || 0;
-	// 交换层级；若两者相同，把 from 提到 to 之上
-	const nextFromZ = fromZ === toZ ? toZ + 1 : toZ;
-	const nextToZ = fromZ === toZ ? toZ - 1 : fromZ;
+	const rows = previewDirectives.value.filter(d =>
+		d.directive_type === 'avatar' && layerIdOf(d.payload || {}) === layerId
+	);
+	if (!rows.length) return;
 	snapshotStageDirectives();
 	try {
-		await updateDirective(pid, fromDir.directive_id, {
-			payload: { ...(fromDir.payload || {}), z: nextFromZ }
-		});
-		await updateDirective(pid, toDir.directive_id, {
-			payload: { ...(toDir.payload || {}), z: nextToZ }
-		});
+		for (const d of rows) await deleteDirective(pid, d.directive_id);
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
 		markStageUndoApplied();
-		ElMessage.success('图层层级已调整');
+		ElMessage.success('图层已删除');
 	} catch (e) {
 		stageUndoStack.value.pop();
-		console.error('图层排序失败:', e);
-		ElMessage.error('图层排序失败: ' + (e.message || '未知错误'));
+		console.error('删除图层失败:', e);
+		ElMessage.error('删除图层失败: ' + (e.message || '未知错误'));
+	}
+};
+
+// 重命名图层：更新该图层在当前节点的全部 avatar 指令
+const handleAvatarRename = async (layerId) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) { ElMessage.warning('请先保存当前台词'); return; }
+	const layer = avatarLayers.value.find(l => l.layer_id === layerId);
+	if (!layer) return;
+	let nextName = '';
+	try {
+		const result = await ElMessageBox.prompt('图层名称', '重命名图层', {
+			inputValue: layer.label,
+			confirmButtonText: '保存',
+			cancelButtonText: '取消',
+			inputValidator: (v) => (String(v || '').trim() ? true : '请输入图层名称')
+		});
+		nextName = String(result.value || '').trim().slice(0, 30);
+	} catch (e) {
+		return;
+	}
+	if (!nextName || nextName === layer.label) return;
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	const rows = previewDirectives.value.filter(d =>
+		d.directive_type === 'avatar' && layerIdOf(d.payload || {}) === layerId
+	);
+	if (!rows.length) return;
+	snapshotStageDirectives();
+	try {
+		for (const d of rows) {
+			await updateDirective(pid, d.directive_id, {
+				payload: { ...(d.payload || {}), layer_id: layerId, layer_name: nextName }
+			});
+		}
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		markStageUndoApplied();
+		ElMessage.success('图层已重命名');
+	} catch (e) {
+		stageUndoStack.value.pop();
+		console.error('重命名图层失败:', e);
+		ElMessage.error('重命名图层失败: ' + (e.message || '未知错误'));
 	}
 };
 
@@ -2707,8 +3188,8 @@ const handleStageVisibility = async (layerKey, visible) => {
 	}
 };
 
-// 舞台拖拽：把像素位移折算成指令里的 x/y 百分比，写回当前台词的 avatar 指令
-const handleAvatarMove = async ({ position, x, y, coord }) => {
+// 舞台拖拽：支持多选成组移动，把像素位移折算成每个图层的 x/y 百分比
+const handleAvatarGroupMove = async ({ updates }) => {
 	const dialogue = currentDialogue.value;
 	if (!dialogue?.content_id) {
 		ElMessage.warning('请先保存当前台词，再调整立绘位置');
@@ -2716,56 +3197,63 @@ const handleAvatarMove = async ({ position, x, y, coord }) => {
 	}
 	const pid = Number(projectId.value);
 	if (!pid) return;
-	const pos = position || 'center';
-	const isStage = coord === 'stage';
-	const clamp = (v) => Math.max(isStage ? 0 : -100, Math.min(100, Number(v) || 0));
-	const nx = Math.round(clamp(x) * 10) / 10;
-	const ny = Math.round(clamp(y) * 10) / 10;
+	const list = Array.isArray(updates) ? updates : [];
+	if (!list.length) return;
 	const contentId = Number(dialogue.content_id);
-	const hideExists = previewDirectives.value.some(d =>
-		d.directive_type === 'avatar' &&
-		(d.payload?.position || 'center') === pos &&
-		d.payload?.action === 'hide'
-	);
-	const existing = hideExists ? null : previewDirectives.value
-		.filter(d => d.directive_type === 'avatar')
-		.filter(d => (d.payload?.position || 'center') === pos)
-		.filter(d => d.payload?.action !== 'hide')
-		.pop();
+	const clamp = (v) => Math.max(0, Math.min(100, Number(v) || 0));
+	const missing = list.filter(u => !findAvatarDirective(u.layerId || 'center'));
+	const speaker = previewSpeaker.value || dialogue;
+	if (missing.length && !speaker?.character_id) {
+		ElMessage.warning('当前台词没有角色，无法添加立绘');
+		return;
+	}
+	if (missing.length && avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
+		ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
+		return;
+	}
 	snapshotStageDirectives();
 	try {
-		if (existing) {
-			await updateDirective(pid, existing.directive_id, {
-				payload: {
-					...(existing.payload || {}),
-					x: nx,
-					y: ny,
-					...(isStage ? { coord: 'stage' } : {})
-				}
-			});
-		} else {
-			const speaker = previewSpeaker.value || dialogue;
-			if (!speaker?.character_id) {
-				ElMessage.warning('当前台词没有角色，无法添加立绘');
-				return;
+		for (const u of list) {
+			const lid = u.layerId || 'center';
+			const nx = clamp(u.x);
+			const ny = clamp(u.y);
+			const existing = findAvatarDirective(lid);
+			if (existing) {
+				await updateDirective(pid, existing.directive_id, {
+					payload: {
+						...(existing.payload || {}),
+						layer_id: lid,
+						coord: 'stage',
+						x: nx,
+						y: ny
+					}
+				});
+			} else {
+				const meta = layerMetaFor(lid);
+				await createDirective(pid, {
+					content_id: contentId,
+					directive_type: 'avatar',
+					payload: {
+						layer_id: lid,
+						layer_name: meta.layer_name,
+						order: meta.order,
+						character_id: speaker.character_id,
+						avatar_id: speaker.avatar_id || null,
+						action: 'show',
+						coord: 'stage',
+						x: nx,
+						y: ny,
+						scale: 1,
+						opacity: 1,
+						rotate: 0
+					}
+				});
 			}
-			await createDirective(pid, {
-				content_id: contentId,
-				directive_type: 'avatar',
-				payload: {
-					position: pos,
-					character_id: speaker.character_id,
-					avatar_id: speaker.avatar_id || null,
-					x: nx,
-					y: ny,
-					...(isStage ? { coord: 'stage' } : {})
-				}
-			});
 		}
 		await loadPreviewDirectives(contentId);
 		await loadDirectives(contentId);
 		markStageUndoApplied();
-		ElMessage.success('立绘位置已保存');
+		ElMessage.success(list.length > 1 ? `已移动 ${list.length} 个图层` : '立绘位置已保存');
 	} catch (e) {
 		stageUndoStack.value.pop();
 		console.error('保存立绘位置失败:', e);
@@ -2773,10 +3261,8 @@ const handleAvatarMove = async ({ position, x, y, coord }) => {
 	}
 };
 
-// 画布 v2：属性条改缩放/透明度/旋转，写回同一条 avatar 指令
-const stageDefaultX = (pos) => (pos === 'left' ? 20 : pos === 'right' ? 80 : 50);
-
-const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, reset }) => {
+// 属性条改缩放/透明度/旋转，写回同一条 avatar 指令
+const handleAvatarTransform = async ({ layerId, layerName, scale, opacity, rotate, x, y, reset }) => {
 	const dialogue = currentDialogue.value;
 	if (!dialogue?.content_id) {
 		ElMessage.warning('请先保存当前台词，再调整立绘属性');
@@ -2784,7 +3270,7 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 	}
 	const pid = Number(projectId.value);
 	if (!pid) return;
-	const pos = position || 'center';
+	const lid = layerId || 'center';
 	const contentId = Number(dialogue.content_id);
 	const clamp = (v, min, max) => Math.max(min, Math.min(max, Number(v)));
 	const opRaw = opacity === undefined || opacity === null ? 1 : Number(opacity);
@@ -2795,44 +3281,53 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 	};
 	const hideExists = previewDirectives.value.some(d =>
 		d.directive_type === 'avatar' &&
-		(d.payload?.position || 'center') === pos &&
+		layerIdOf(d.payload || {}) === lid &&
 		d.payload?.action === 'hide'
 	);
-	const existing = hideExists ? null : previewDirectives.value
-		.filter(d => d.directive_type === 'avatar')
-		.filter(d => (d.payload?.position || 'center') === pos)
-		.filter(d => d.payload?.action !== 'hide')
-		.pop();
-	const isStage = !existing || existing.payload?.coord === 'stage';
-	const clampXY = (v) => Math.max(isStage ? 0 : -100, Math.min(100, Number(v) || 0));
+	const existing = hideExists ? null : findAvatarDirective(lid);
+	const clampXY = (v) => Math.max(0, Math.min(100, Number(v) || 0));
 	if (reset) {
-		patch.x = isStage ? stageDefaultX(pos) : 0;
-		patch.y = isStage ? 100 : 0;
+		// 多角色入场：自动挑一个没被占用的站位，避免新角色和已有立绘重叠
+		patch.x = nextFreeStageX();
+		patch.y = 100;
 	} else {
 		if (x !== undefined && x !== null) patch.x = clampXY(x);
 		if (y !== undefined && y !== null) patch.y = clampXY(y);
 	}
+	const speaker = existing ? null : (previewSpeaker.value || dialogue);
+	if (!existing && !speaker?.character_id) {
+		ElMessage.warning('当前台词没有角色，无法添加立绘');
+		return;
+	}
+	if (!existing && avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
+		ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
+		return;
+	}
+	const meta = layerMetaFor(lid);
 	snapshotStageDirectives();
 	try {
 		if (existing) {
 			await updateDirective(pid, existing.directive_id, {
-				payload: { ...(existing.payload || {}), ...patch }
+				payload: {
+					...(existing.payload || {}),
+					layer_id: lid,
+					coord: 'stage',
+					...patch
+				}
 			});
 		} else {
-			const speaker = previewSpeaker.value || dialogue;
-			if (!speaker?.character_id) {
-				ElMessage.warning('当前台词没有角色，无法添加立绘');
-				return;
-			}
 			await createDirective(pid, {
 				content_id: contentId,
 				directive_type: 'avatar',
 				payload: {
-					position: pos,
+					layer_id: lid,
+					layer_name: layerName || meta.layer_name,
+					order: meta.order,
 					character_id: speaker.character_id,
 					avatar_id: speaker.avatar_id || null,
+					action: 'show',
 					coord: 'stage',
-					x: patch.x ?? stageDefaultX(pos),
+					x: patch.x ?? stageDefaultX(lid),
 					y: patch.y ?? 100,
 					scale: patch.scale,
 					opacity: patch.opacity,
@@ -2851,8 +3346,146 @@ const handleAvatarTransform = async ({ position, scale, opacity, rotate, x, y, r
 	}
 };
 
-const handleAvatarAdd = (position) => {
-	handleAvatarTransform({ position, scale: 1, opacity: 1, rotate: 0, reset: true });
+// 新建一个立绘层：用当前说话角色创建一条 show 指令
+const handleAvatarAddNew = () => {
+	if (avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
+		ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
+		return;
+	}
+	const layerId = `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	handleAvatarTransform({
+		layerId,
+		layerName: nextLayerName(),
+		scale: 1,
+		opacity: 1,
+		rotate: 0,
+		reset: true
+	});
+};
+
+// ===== 素材直出：拖到舞台空白处新建立绘层 / 拖到已有图层替换图片 =====
+
+const stageAssetPayload = (ev) => {
+	try {
+		const raw = ev.dataTransfer?.getData('application/x-aigc-asset') || ''
+		if (raw) {
+			const data = JSON.parse(raw)
+			const url = data?.url || data?.image_url || ''
+			if (url) return { url, label: data?.label || data?.title || '' }
+		}
+		const text = ev.dataTransfer?.getData('text/plain') || ''
+		if (text && isImageUrl(text)) return { url: text, label: '' }
+	} catch (_) {
+		/* 非素材拖拽数据 */
+	}
+	return null;
+};
+
+const onStageAssetDrop = async ({ url, label, x, y }) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) {
+		ElMessage.warning('请先保存当前台词，再把素材拖到舞台');
+		return;
+	}
+	if (avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
+		ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
+		return;
+	}
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	const layerId = `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	const layerName = String(label || '素材立绘').slice(0, 30) || '素材立绘';
+	snapshotStageDirectives();
+	try {
+		await createDirective(pid, {
+			content_id: contentId,
+			directive_type: 'avatar',
+			payload: {
+				layer_id: layerId,
+				layer_name: layerName,
+				order: nextLayerOrder(),
+				image_url: url,
+				action: 'show',
+				coord: 'stage',
+				x: Math.max(0, Math.min(100, Number(x) || 50)),
+				y: Math.max(0, Math.min(100, Number(y) || 100)),
+				scale: 1,
+				opacity: 1,
+				rotate: 0
+			}
+		});
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		markStageUndoApplied();
+		ElMessage.success(`已用素材创建立绘层「${layerName}」`);
+	} catch (e) {
+		stageUndoStack.value.pop();
+		console.error('素材立绘层创建失败:', e);
+		ElMessage.error('素材立绘层创建失败，请重试');
+	}
+};
+
+const onAvatarReplaceAsset = async (layerId, asset) => {
+	const dialogue = currentDialogue.value;
+	if (!dialogue?.content_id) {
+		ElMessage.warning('请先保存当前台词，再替换图层素材');
+		return;
+	}
+	const existing = findAvatarDirective(layerId);
+	if (!existing) {
+		ElMessage.warning('该图层还没有立绘指令，无法替换素材');
+		return;
+	}
+	const pid = Number(projectId.value);
+	const contentId = Number(dialogue.content_id);
+	snapshotStageDirectives();
+	try {
+		await updateDirective(pid, existing.directive_id, {
+			payload: {
+				...(existing.payload || {}),
+				layer_id: layerId,
+				image_url: asset.url,
+				layer_name: (existing.payload && existing.payload.layer_name) || asset.label || layerId,
+				action: 'show'
+			}
+		});
+		await loadPreviewDirectives(contentId);
+		await loadDirectives(contentId);
+		markStageUndoApplied();
+		ElMessage.success('图层素材已替换');
+	} catch (e) {
+		stageUndoStack.value.pop();
+		console.error('替换图层素材失败:', e);
+		ElMessage.error('替换图层素材失败，请重试');
+	}
+};
+
+// 资源热重载：不改剧本，只给预览 URL 换时间戳并重新拉取指令
+const hotReloadAssets = () => {
+	assetNonce.value = Date.now();
+	const id = currentDialogue.value?.content_id;
+	if (id) loadPreviewDirectives(id);
+	ElMessage.success('已重新加载预览素材');
+};
+
+const onDirAssetDragOver = (ev) => {
+	const types = ev.dataTransfer?.types || [];
+	if (Array.from(types).includes('application/x-aigc-asset')) dirAssetOver.value = true;
+};
+
+const onDirAssetDrop = (ev) => {
+	dirAssetOver.value = false;
+	const asset = stageAssetPayload(ev);
+	if (!asset || !isImageUrl(asset.url)) {
+		ElMessage.warning('请拖入图片素材');
+		return;
+	}
+	dirForm.value.image_url = asset.url;
+	// 素材直出层不绑角色，避免被角色默认立绘覆盖
+	dirForm.value.character_id = null;
+	dirForm.value.avatar_id = null;
+	if (!dirForm.value.layer_name) dirForm.value.layer_name = (asset.label || '素材立绘').slice(0, 30);
+	ElMessage.success('已填入素材图片，可继续调整位置');
 };
 
 // 演出弹窗增删了指令后，如果改的正是预览中的那条对话，立刻刷新预览
@@ -3021,6 +3654,172 @@ const saveDialogue = async (index) => {
 		loading.value = false;
 	}
 };
+
+// ===== 逐句译文 =====
+const translationDialogVisible = ref(false)
+const translationSaving = ref(false)
+const translationTarget = ref(null)
+const translationLang = ref(TRANSLATION_LANGUAGES[0]?.code || 'zh-TW')
+const translationText = ref('')
+
+const translationCount = (dialogue) => {
+	return dialogue && dialogue.translations ? Object.keys(dialogue.translations).length : 0
+}
+
+const translatedLanguages = (dialogue) => {
+	const map = dialogue && dialogue.translations ? dialogue.translations : {}
+	return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
+}
+
+const onTranslationLangChange = () => {
+	translationText.value = translationTarget.value?.translations?.[translationLang.value] || ''
+}
+
+const openTranslationDialog = (dialogue) => {
+	if (!dialogue || !dialogue.content_id) {
+		ElMessage.warning('请先保存这条台词，再添加译文')
+		return
+	}
+	translationTarget.value = dialogue
+	// 优先切到还没有译文的语言，方便继续补全
+	const missing = TRANSLATION_LANGUAGES.find(lang => !dialogue.translations?.[lang.code])
+	translationLang.value = (missing || TRANSLATION_LANGUAGES[0]).code
+	translationText.value = dialogue.translations?.[translationLang.value] || ''
+	translationDialogVisible.value = true
+}
+
+const saveTranslation = async () => {
+	if (!translationTarget.value?.content_id) return
+	translationSaving.value = true
+	try {
+		const saved = await saveContentTranslation(
+			Number(translationTarget.value.content_id),
+			translationLang.value,
+			translationText.value
+		)
+		const next = { ...(translationTarget.value.translations || {}) }
+		if (saved?.text) next[saved.language] = saved.text
+		else delete next[translationLang.value]
+		translationTarget.value.translations = next
+		translationDialogVisible.value = false
+		ElMessage.success(saved?.text ? '译文已保存' : '译文已清除')
+	} catch (error) {
+		console.error('保存译文失败:', error)
+		ElMessage.error('保存译文失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
+	} finally {
+		translationSaving.value = false
+	}
+}
+
+// ===== 场景标题/描述译文 =====
+const sceneTransVisible = ref(false)
+const sceneTransSaving = ref(false)
+const sceneTransLang = ref(TRANSLATION_LANGUAGES[0]?.code || 'zh-TW')
+const sceneTransTitle = ref('')
+const sceneTransDescription = ref('')
+
+const sceneTranslationCount = computed(() => {
+	return Object.keys(scene.value.translations || {}).length
+})
+
+const translatedSceneLanguages = computed(() => {
+	const map = scene.value.translations || {}
+	return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
+})
+
+const onSceneTransLangChange = () => {
+	const payload = scene.value.translations?.[sceneTransLang.value] || {}
+	sceneTransTitle.value = payload.title || ''
+	sceneTransDescription.value = payload.description || ''
+}
+
+const openSceneTranslationDialog = () => {
+	if (!scene.value.scene_id) {
+		ElMessage.warning('场景尚未加载完成')
+		return
+	}
+	const missing = TRANSLATION_LANGUAGES.find(lang => !scene.value.translations?.[lang.code])
+	sceneTransLang.value = (missing || TRANSLATION_LANGUAGES[0]).code
+	onSceneTransLangChange()
+	sceneTransVisible.value = true
+}
+
+const saveSceneTranslations = async () => {
+	if (!scene.value.scene_id) return
+	sceneTransSaving.value = true
+	try {
+		const saved = await saveSceneTranslation(
+			Number(scene.value.scene_id),
+			sceneTransLang.value,
+			sceneTransTitle.value,
+			sceneTransDescription.value
+		)
+		const next = { ...(scene.value.translations || {}) }
+		if (saved?.title || saved?.description) {
+			next[saved.language] = { title: saved.title || '', description: saved.description || '' }
+		} else {
+			delete next[sceneTransLang.value]
+		}
+		scene.value.translations = next
+		sceneTransVisible.value = false
+		ElMessage.success(saved?.title || saved?.description ? '场景译文已保存' : '场景译文已清除')
+	} catch (error) {
+		console.error('保存场景译文失败:', error)
+		ElMessage.error('保存场景译文失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
+	} finally {
+		sceneTransSaving.value = false
+	}
+}
+
+// ===== 选项译文 =====
+const choiceTransVisible = ref(false)
+const choiceTransSaving = ref(false)
+const choiceTransTarget = ref(null)
+const choiceTransLang = ref(TRANSLATION_LANGUAGES[0]?.code || 'zh-TW')
+const choiceTransText = ref('')
+
+const choiceTranslationCount = (opt) => {
+	return opt && opt.translations ? Object.keys(opt.translations).length : 0
+}
+
+const onChoiceTransLangChange = () => {
+	choiceTransText.value = choiceTransTarget.value?.translations?.[choiceTransLang.value] || ''
+}
+
+const openChoiceTranslationDialog = (opt) => {
+	if (!opt?.path_id) {
+		ElMessage.warning('请先保存这条选择节点的选项，再添加译文')
+		return
+	}
+	choiceTransTarget.value = opt
+	const missing = TRANSLATION_LANGUAGES.find(lang => !opt.translations?.[lang.code])
+	choiceTransLang.value = (missing || TRANSLATION_LANGUAGES[0]).code
+	onChoiceTransLangChange()
+	choiceTransVisible.value = true
+}
+
+const saveChoiceTranslation = async () => {
+	if (!choiceTransTarget.value?.path_id) return
+	choiceTransSaving.value = true
+	try {
+		const saved = await saveBranchTranslation(
+			Number(choiceTransTarget.value.path_id),
+			choiceTransLang.value,
+			choiceTransText.value
+		)
+		const next = { ...(choiceTransTarget.value.translations || {}) }
+		if (saved?.text) next[saved.language] = saved.text
+		else delete next[choiceTransLang.value]
+		choiceTransTarget.value.translations = next
+		choiceTransVisible.value = false
+		ElMessage.success(saved?.text ? '选项译文已保存' : '选项译文已清除')
+	} catch (error) {
+		console.error('保存选项译文失败:', error)
+		ElMessage.error('保存选项译文失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
+	} finally {
+		choiceTransSaving.value = false
+	}
+}
 
 // 跳到剧情图并定位当前台词（没有台词时定位场景首个节点）
 const openGraph = () => {
@@ -3402,6 +4201,7 @@ const ensureChoices = async (dialogue, force = false) => {
       .map(b => ({
         path_id: b.path_id,
         choice_text: b.choice_text || '',
+        translations: b.translations || {},
         target_content_id: b.target_content_id,
         ...parseChoiceConditions(b.conditions),
       }));
@@ -3544,13 +4344,26 @@ const saveChoices = async (dialogue, index) => {
       const conditions = condItems.length
         ? { mode: it.cond_mode === 'or' ? 'or' : 'and', items: condItems }
         : null;
-      await createBranch(projectId.value, {
+      const created = await createBranch(projectId.value, {
         source_content_id: dialogue.content_id,
         target_content_id: it.target_content_id,
         choice_text: it.choice_text.trim(),
         image_url: it.image_url || '',
         conditions: conditions,
       });
+      // 选项是先删后建，branch_paths 主键会变；把已有译文迁移到新分支上
+      if (created?.path_id) {
+        it.path_id = created.path_id;
+        for (const [lang, text] of Object.entries(it.translations || {})) {
+          if (text && String(text).trim()) {
+            try {
+              await saveBranchTranslation(Number(created.path_id), lang, String(text));
+            } catch (e) {
+              console.warn('恢复选项译文失败:', e);
+            }
+          }
+        }
+      }
     }
     await ensureChoices(dialogue, true);
     ElMessage.success(`已保存 ${items.length} 个分支选项`);
@@ -4864,6 +5677,102 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+/* 逐句译文 */
+.dlg-translation-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.dlg-translation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff8fab;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.dlg-translation-tag {
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: #fff0f5;
+  border: 1px solid #ffd3e0;
+  color: #c2185b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dlg-translation-hint {
+  font-size: 11px;
+  color: #b99aa5;
+}
+
+.dlg-translation-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dlg-translation-label {
+  font-size: 12px;
+  color: #8a6a76;
+}
+
+.dlg-translation-original {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fffafc;
+  border: 1px solid #f5e4ea;
+}
+
+.dlg-translation-original p {
+  margin: 6px 0 0;
+  color: #4a3a40;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.dlg-translation-original p.scene-trans-original-desc {
+  color: #8a6a76;
+  font-size: 12px;
+}
+
+.dlg-translation-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dlg-translation-copy {
+  border: 1px solid #f0d6df;
+  background: #fff;
+  color: #b25a76;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dlg-translation-copy:hover {
+  background: #fff5f8;
+}
+
+.dlg-translation-tip {
+  margin: 0;
+  font-size: 11px;
+  color: #b99aa5;
+}
+
 .dir-target {
   font-size: 12px;
   color: #8a6a76;
@@ -4968,6 +5877,117 @@ onBeforeUnmount(() => {
 .dir-avatar-fine .el-input-number {
   width: 20%;
   min-width: 0;
+}
+
+/* 表情/姿势轮盘：横向缩略图，点选即切换立绘 */
+.expr-wheel {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  overflow-x: auto;
+  padding: 4px 2px 6px;
+}
+
+.expr-option {
+  position: relative;
+  flex: 0 0 auto;
+  width: 66px;
+  padding: 4px;
+  border: 1px solid #f0dfe6;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.expr-option:hover {
+  border-color: #f6b3cb;
+  transform: translateY(-1px);
+}
+
+.expr-option.selected {
+  border-color: #ff8fab;
+  box-shadow: 0 0 0 2px rgba(255, 143, 171, 0.18);
+}
+
+.expr-option img {
+  width: 54px;
+  height: 64px;
+  object-fit: contain;
+  background: #faf6f8;
+  border-radius: 6px;
+}
+
+.expr-name {
+  font-size: 11px;
+  color: #6b4a55;
+}
+
+.expr-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 9px;
+  line-height: 1;
+  color: #fff;
+  background: #ff8fab;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.expr-empty {
+  width: 100%;
+  margin: 0;
+  font-size: 11px;
+  color: #b99aa5;
+}
+
+/* 素材直出：拖入图片作为独立立绘层 */
+.dir-asset-drop {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed #e8d3dd;
+  border-radius: 8px;
+  background: #fffdfe;
+  font-size: 11px;
+  color: #8a6a76;
+}
+
+.dir-asset-drop.is-over {
+  border-color: #ff8fab;
+  background: #fff6f8;
+}
+
+.dir-asset-drop img {
+  width: 34px;
+  height: 44px;
+  object-fit: contain;
+  background: #faf6f8;
+  border-radius: 4px;
+  flex: none;
+}
+
+.dir-asset-tip {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.dir-asset-clear {
+  flex: none;
+  border: 1px solid #f6d6e2;
+  background: #fff;
+  color: #c81f4a;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 /* 演出弹窗里的素材上传 */

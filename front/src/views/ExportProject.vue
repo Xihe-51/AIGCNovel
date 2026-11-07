@@ -4,6 +4,23 @@
 		<button v-if="!loading && !error" class="player-settings-btn" @click="openSettings" title="阅读设置">
 			<el-icon><Setting /></el-icon>
 		</button>
+		<button
+			v-if="!loading && !error && canRollback"
+			class="player-back-btn"
+			@click="rollbackOneLine"
+			title="回到上一句（←）"
+		>
+			<el-icon><RefreshLeft /></el-icon>
+		</button>
+		<button
+			v-if="!loading && !error && canPerform"
+			class="player-perform-btn"
+			:class="{ 'is-active': performMode }"
+			@click="togglePerformMode"
+			title="演出模式（作者预览）"
+		>
+			<el-icon><EditPen /></el-icon>
+		</button>
 		<button v-if="!loading && !error && projectVariables.length" class="player-status-btn"
 				@click="statusDialogVisible = true" title="当前状态">
 			<el-icon><DataLine /></el-icon>
@@ -20,6 +37,59 @@
 				@click="chaptersVisible = true" title="章节跳转 / 路线图鉴">
 			章节
 		</button>
+
+		<!-- 演出模式：仅作者预览（?edit=1）可见，公开发布后玩家端不会出现 -->
+		<div v-if="canPerform && performMode && !loading && !error" class="perform-panel">
+			<div class="perform-head">
+				<span>演出模式</span>
+				<button class="perform-close" @click="performMode = false">×</button>
+			</div>
+			<div class="perform-pos">
+				场景 {{ currentSceneIndex + 1 }}/{{ scenes.length }} · 节点 #{{ currentDialogue?.content_id || '-' }}
+			</div>
+			<div class="perform-tip">改动直接写入作品，保存后当前画面热更新；玩家端不显示此面板。</div>
+
+			<label class="perform-label">台词</label>
+			<textarea
+				v-model="performText"
+				class="perform-textarea"
+				rows="3"
+				placeholder="当前节点台词"
+			></textarea>
+
+			<template v-if="currentDialogue?.content_type === '对话'">
+				<label class="perform-label">差分立绘</label>
+				<select v-model="performAvatarId" class="perform-select">
+					<option value="">跟随角色默认立绘</option>
+					<optgroup v-for="c in characters" :key="c.character_id" :label="c.name">
+						<option
+							v-for="a in (c.avatars || [])"
+							:key="a.avatar_id"
+							:value="String(a.avatar_id)"
+						>{{ a.avatar_type || '立绘' }} #{{ a.avatar_id }}</option>
+					</optgroup>
+				</select>
+			</template>
+
+			<label class="perform-label">场景背景 URL</label>
+			<input
+				v-model="performBackground"
+				class="perform-input"
+				placeholder="/uploads/... 或 https://..."
+			/>
+
+			<label class="perform-label">场景 BGM URL</label>
+			<input
+				v-model="performMusic"
+				class="perform-input"
+				placeholder="留空表示本场景无背景音乐"
+			/>
+
+			<button class="perform-save" type="button" :disabled="performSaving" @click="savePerformEdit">
+				{{ performSaving ? '保存中…' : '保存并热更新' }}
+			</button>
+			<div class="perform-status">{{ performStatus }}</div>
+		</div>
 
 		<!-- 调试器（仅 ?debug=1 时显示） -->
 		<button v-if="debugMode && !loading && !error" class="player-debug-btn" @click="debugPanelVisible = !debugPanelVisible" title="调试器">
@@ -185,7 +255,10 @@
 			<!-- 预览容器 -->
 			<div
 				class="preview-container"
-				:class="{ 'fx-shake': activeEffect && activeEffect.effect === 'shake' }"
+				:class="{
+					'fx-shake': activeEffect && activeEffect.effect === 'shake',
+					'is-audio-drama': playerSettings.audioDrama
+				}"
 				:style="{ '--fx-amp': (activeEffect && activeEffect.intensity ? activeEffect.intensity : 5) + 'px' }"
 				@wheel.prevent="handleWheel"
 			>
@@ -203,30 +276,47 @@
 				<!-- 黑场转场遮罩 -->
 				<div class="bg-blackout" :class="{ 'is-on': bgBlackout }"></div>
 				
-				<!-- 演出指令控制的立绘（左 / 中 / 右三槽位） -->
+				<!-- 演出指令控制的立绘：任意数量图层，按 order 叠放；每层可带差分叠加图 -->
 				<div v-if="hasStageAvatars" class="stage-layer">
 						<div
-							v-for="pos in stagePositions"
-							:key="pos"
-							v-show="stageAvatars[pos]"
-							:class="['stage-avatar', 'pos-' + pos]"
-							:style="stageAvatars[pos]?.boxStyle"
+							v-for="layer in stageLayers"
+							:key="layer.layer_id"
+							v-show="layer.visible !== false"
+							class="stage-avatar"
+							:style="layer.boxStyle"
 						>
-							<img :src="stageAvatars[pos]?.src" :style="stageAvatars[pos]?.style" :class="{ 'sprite-motion': playerSettings.spriteMotion }" alt="" decoding="async" />
+							<div
+								class="sprite-stack"
+								:style="layer.style"
+								:class="{ 'sprite-motion': playerSettings.spriteMotion }"
+							>
+								<img
+									v-for="(src, si) in (layer.sources && layer.sources.length ? layer.sources : [layer.src])"
+									:key="si"
+									:src="src"
+									:class="{ 'sprite-overlay': si > 0 }"
+									alt=""
+									decoding="async"
+								/>
+							</div>
 						</div>
 					</div>
 
 				<!-- 回退：没有演出指令时，显示当前（或最近一位）说话角色的立绘 -->
-					<div v-else-if="!loading && !error && previewAvatarSrc" class="character-stand">
-						<img 
-							:src="previewAvatarSrc" 
-							alt="角色立绘" 
-							class="character-image"
-							:class="{ 'sprite-motion': playerSettings.spriteMotion }"
-							loading="lazy"
-							decoding="async"
-							@error="hideBrokenImage"
-						/>
+					<div v-else-if="!loading && !error && previewAvatarLayers.length" class="character-stand">
+						<div class="sprite-stack" :class="{ 'sprite-motion': playerSettings.spriteMotion }">
+							<img
+								v-for="(src, si) in previewAvatarLayers"
+								:key="si"
+								:src="src"
+								alt="角色立绘"
+								class="character-image"
+								:class="{ 'sprite-overlay': si > 0 }"
+								loading="lazy"
+								decoding="async"
+								@error="hideBrokenImage"
+							/>
+						</div>
 					</div>
 
 					<!-- 演出指令：前景图层（覆盖在立绘之上、对话框之下） -->
@@ -302,10 +392,10 @@
 								:key="index" 
 								class="history-item"
 							>
-								<div v-if="dialogue.scene_title" class="history-scene">{{ dialogue.scene_title }}</div>
+								<div v-if="historySceneTitle(dialogue)" class="history-scene">{{ historySceneTitle(dialogue) }}</div>
 								<span class="history-character">{{ getCharacterName(dialogue.character_id) }}</span>
-								<span class="history-text">{{ dialogue.content_text }}</span>
-								<div v-if="dialogue.chosen" class="history-chosen">选择：{{ dialogue.chosen }}</div>
+								<span class="history-text">{{ localizedText(dialogue) }}</span>
+								<div v-if="dialogue.chosen" class="history-chosen">选择：{{ historyChoiceText(dialogue) }}</div>
 							</div>
 						</div>
 					</div>
@@ -363,7 +453,7 @@
 									alt=""
 									loading="lazy"
 								/>
-								<span class="choice-label">{{ choice.choice_text || '继续' }}</span>
+								<span class="choice-label">{{ localizedChoice(choice) || '继续' }}</span>
 								<span v-if="choice.locked" class="choice-lock-hint">
 									未解锁 · {{ conditionText(choice.conditions) }}
 								</span>
@@ -592,8 +682,8 @@
 						loading="lazy"
 					/>
 					<span v-else class="save-slot-thumb-empty">无画面</span>
-					<span v-if="saveMap[s.slot]?.scene_title" class="save-slot-thumb-title">
-						{{ saveMap[s.slot].scene_title }}
+					<span v-if="saveSlotTitle(saveMap[s.slot])" class="save-slot-thumb-title">
+						{{ saveSlotTitle(saveMap[s.slot]) }}
 					</span>
 				</div>
 				<div class="save-slot-info">
@@ -623,6 +713,17 @@
 				</el-select>
 			</div>
 			<div class="setting-row">
+				<span class="setting-label" title="切换阅读语言；没有译文的句子自动回退简体中文原文">语言</span>
+				<el-select v-model="playerSettings.language" size="small" style="width: 140px">
+					<el-option
+						v-for="lang in PLAYER_LANGUAGES"
+						:key="lang.code"
+						:label="lang.label"
+						:value="lang.code"
+					/>
+				</el-select>
+			</div>
+			<div class="setting-row">
 				<span class="setting-label">自动播放间隔</span>
 				<el-slider v-model="playerSettings.autoDelay" :min="1" :max="6" :step="0.5" style="flex: 1" />
 				<span class="setting-value">{{ playerSettings.autoDelay }}s</span>
@@ -640,6 +741,10 @@
 			<div class="setting-row">
 				<span class="setting-label">语音播放</span>
 				<el-switch v-model="playerSettings.voiceEnabled" />
+			</div>
+			<div class="setting-row">
+				<span class="setting-label" title="隐藏立绘与背景，只保留对白、旁白、音效与选项">有声剧模式</span>
+				<el-switch v-model="playerSettings.audioDrama" />
 			</div>
 			<div class="setting-row">
 				<span class="setting-label">对话字号</span>
@@ -675,8 +780,9 @@
 				<el-switch v-model="playerSettings.spriteMotion" />
 			</div>
 			<div class="setting-shortcuts">
-				<span>快捷键：空格 / 回车 / → 继续，A 自动播放，S 跳过已读，H 回想，Esc 关闭面板</span>
+				<span>快捷键：空格 / 回车 / → 继续，← 上一句，A 自动播放，S 跳过已读，H 回想，Esc 关闭面板</span>
 				<span>手柄：A 继续，B 回想，X 自动播放</span>
+				<span>有声剧模式：隐藏立绘与背景，保留对白、旁白、音效与选项</span>
 			</div>
 			<template #footer>
 				<el-button @click="resetSettings">恢复默认</el-button>
@@ -853,14 +959,17 @@ import {
 	getCurrentInstance
 } from 'vue'
 import { useRoute } from 'vue-router'
+import { jwtDecode } from 'jwt-decode'
 import {
 	getDialoguesBySceneId,
 	getCharactersByProjectId,
 	getCharacterAvatars as getCharacterAvatarsApi,
+	saveDialogues,
 } from '@/api/dialogue'
 import {
 	getScenes as getProjectScenes,
-	listSceneLocks
+	listSceneLocks,
+	updateScene,
 } from '@/api/scenes'
 import { listBranches, getStoryGraph } from '@/api/branch'
 import { recordPlayEvent } from '@/api/analytics'
@@ -875,6 +984,7 @@ import { listEndings, unlockEnding } from '@/api/ending'
 import { listMusicGallery, unlockMusic } from '@/api/gallery'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
+import { PLAYER_LANGUAGES } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
@@ -891,7 +1001,9 @@ import {
   Search,  // 新增引入搜索图标
   Setting,
   DataLine,
-  Picture
+  Picture,
+  RefreshLeft,
+  EditPen
 } from '@element-plus/icons-vue'
 import { ElMessage, ElLoading, ElIcon, ElMessageBox } from 'element-plus'
 
@@ -913,6 +1025,32 @@ const emit = defineEmits(['close'])
 const route = useRoute()
 const debugMode = ref(route.query.debug === '1')
 const debugPanelVisible = ref(false)
+
+// 演出模式：仅作者本人带 ?edit=1 预览时可用；公开发布的玩家端不会渲染编辑入口
+const currentUserId = (() => {
+	try {
+		const token = localStorage.getItem('token')
+		const decoded = token ? jwtDecode(token) : null
+		return decoded && decoded.identity ? String(decoded.identity) : ''
+	} catch (e) {
+		return ''
+	}
+})()
+const projectOwnerId = ref(0)
+const isOwner = computed(() =>
+	!!currentUserId
+	&& projectOwnerId.value > 0
+	&& String(projectOwnerId.value) === currentUserId
+)
+const canPerform = computed(() => route.query.edit === '1' && isOwner.value)
+const performMode = ref(route.query.edit === '1')
+const performSaving = ref(false)
+const performText = ref('')
+const performAvatarId = ref('')
+const performBackground = ref('')
+const performMusic = ref('')
+const performStatus = ref('')
+
 const debugJumpId = ref('')
 // 条件调试器：变量变化历史 / 条件断点 / 状态快照
 const variableHistory = ref([])
@@ -1043,6 +1181,8 @@ const saveDebugSnapshot = () => {
 }
 
 const restoreDebugSnapshot = (snap) => {
+	// 调试快照是任意时间点，恢复后旧的「上一句」快照不再可信
+	clearLineSnapshots()
 	currentSceneIndex.value = snap.sceneIndex
 	currentDialogueIndex.value = snap.dialogueIndex
 	variableValues.value = { ...(snap.variables || {}) }
@@ -1067,9 +1207,39 @@ const telemetrySessionId = (() => {
 let telemetryStartLogged = false
 let lastSceneLogId = 0
 let lastSceneLogAt = 0
+// 回退后重走已看过的内容时，避免重复计入试玩埋点（列表/选项/结局按会话去重）
+const loggedScenes = new Set()
+const loggedChoices = new Set()
+const loggedEndings = new Set()
+let telemetryFinishLogged = false
+
+// 新一轮从头开始：允许重新记录场景/选项/结局/通关埋点
+const resetTelemetryTracking = () => {
+	loggedScenes.clear()
+	loggedChoices.clear()
+	loggedEndings.clear()
+	telemetryFinishLogged = false
+}
 
 const logPlayEvent = (type, extra = {}) => {
-	if (debugMode.value || loading.value || error.value) return
+	// 作者本人的预览/试玩不计入玩家数据，避免污染流失率与选择分布
+	if (debugMode.value || isOwner.value || loading.value || error.value) return
+	if (type === 'scene_enter') {
+		const sid = Number(extra.scene_id) || 0
+		if (!sid || loggedScenes.has(sid)) return
+		loggedScenes.add(sid)
+	} else if (type === 'choice') {
+		const key = `${Number(extra.content_id) || 0}:${Number(extra.path_id) || 0}`
+		if (loggedChoices.has(key)) return
+		loggedChoices.add(key)
+	} else if (type === 'ending') {
+		const eid = Number(extra.ending_id) || 0
+		if (eid && loggedEndings.has(eid)) return
+		if (eid) loggedEndings.add(eid)
+	} else if (type === 'finish') {
+		if (telemetryFinishLogged) return
+		telemetryFinishLogged = true
+	}
 	recordPlayEvent(Number(props.projectId), {
 		session_id: telemetrySessionId,
 		event_type: type,
@@ -1097,6 +1267,8 @@ try {
 
 // 作品 UI 皮肤（作者在创作页「外观」里选择）
 const playTheme = ref('classic')
+// 作品封面：存档缩略图兜底，同时用于作者预览的演出模式归属判断
+const projectCoverUrl = ref('')
 
 // 状态管理
 const scenes = ref([]); // 所有场景
@@ -1185,7 +1357,7 @@ const affinityVariables = computed(() =>
 	projectVariables.value.filter((v) => !!v.character_id)
 );
 const otherVariables = computed(() =>
-	projectVariables.value.filter((v) => !v.character_id)
+	projectVariables.value.filter((v) => !v.character_id && !v.name.startsWith('behavior_'))
 );
 const characterNameOf = (id) => {
 	const c = characters.value.find((x) => x.character_id === id);
@@ -1301,6 +1473,8 @@ const jumpToChapter = (chapter) => {
 		return;
 	}
 	const di = firstPlayableNodeIndex(scenes.value[sceneIdx].scene_id);
+	// 章节跳转属于「瞬移」，清空回退快照，避免回退到跳转前的位置
+	clearLineSnapshots();
 	currentSceneIndex.value = sceneIdx;
 	currentDialogueIndex.value = di;
 	chaptersVisible.value = false;
@@ -1390,6 +1564,8 @@ const SETTINGS_KEY = 'aigc:player:settings';
 	showVariableNotice: true, // 变量变化时显示「好感度 +5」浮层
 	voiceEnabled: true, // 自动播放台词语音
 	spriteMotion: true, // 立绘轻微呼吸动态
+	audioDrama: false, // 有声剧模式：隐藏立绘与背景，只保留对白/旁白/音效/选项
+	language: 'zh-CN', // 阅读语言：zh-CN 原文，其余语言优先显示译文
 };
 const playerSettings = ref({ ...DEFAULT_SETTINGS });
 const settingsVisible = ref(false);
@@ -1397,8 +1573,55 @@ const displayedText = ref('');
 const dialogueVoice = ref(null);
 const isTyping = ref(false);
 
+// 当前语言下的台词文本：优先译文，缺失时回退原文
+const localizedText = (dialogue) => {
+	if (!dialogue) return '';
+	const lang = playerSettings.value.language;
+	const translated = lang && lang !== 'zh-CN' ? dialogue.translations?.[lang] : '';
+	return (translated && String(translated).trim()) ? translated : (dialogue.content_text || '');
+};
+
+// 当前语言下的场景标题：优先译文，缺失时回退原文
+const localizedSceneTitle = (scene) => {
+	if (!scene) return '';
+	const lang = playerSettings.value.language;
+	const payload = lang && lang !== 'zh-CN' ? scene.translations?.[lang] : null;
+	const title = payload && payload.title ? String(payload.title).trim() : '';
+	return title || scene.title || '';
+};
+
+const sceneTitleById = (sceneId) => {
+	const scene = (scenes.value || []).find(s => Number(s.scene_id) === Number(sceneId));
+	return scene ? localizedSceneTitle(scene) : '';
+};
+
+// 当前语言下的选项文案：优先译文，缺失时回退原文
+const localizedChoice = (branch) => {
+	if (!branch) return '';
+	const lang = playerSettings.value.language;
+	const translated = lang && lang !== 'zh-CN' ? branch.translations?.[lang] : '';
+	return (translated && String(translated).trim()) ? translated : (branch.choice_text || '');
+};
+
+const choiceTextById = (pathId) => {
+	const branch = (branches.value || []).find(b => Number(b.path_id) === Number(pathId));
+	return branch ? localizedChoice(branch) : '';
+};
+
+// 回想里的场景名：老存档只有 scene_title 字符串，新数据可用 scene_id 实时本地化
+const historySceneTitle = (dialogue) => {
+	const title = dialogue?.scene_id ? sceneTitleById(dialogue.scene_id) : '';
+	return title || dialogue?.scene_title || '';
+};
+
+// 回想里的选项：优先按 path_id 实时本地化，老存档回退已存文案
+const historyChoiceText = (dialogue) => {
+	const text = dialogue?.chosen_path_id ? choiceTextById(dialogue.chosen_path_id) : '';
+	return text || dialogue?.chosen || '';
+};
+
 // 对白富文本：纯文本用于逐字显示，HTML 用于渲染颜色/加粗/注音
-const richContent = computed(() => parseRichText(currentDialogue.value?.content_text || ''));
+const richContent = computed(() => parseRichText(localizedText(currentDialogue.value)));
 const displayedHtml = computed(() => renderRichHtml(richContent.value, displayedText.value.length));
 let typingTimer = null;
 let typeIndex = 0;
@@ -1448,6 +1671,71 @@ watch(
 	{ immediate: true }
 );
 
+// ==================== 上一句回退 ====================
+// 内存环形快照：每次推进前记录当前位置与关键状态，不落盘，刷新即失效。
+const LINE_SNAPSHOT_LIMIT = 30;
+const lineSnapshots = ref([]);
+const canRollback = computed(() => lineSnapshots.value.length > 0);
+
+const captureLineSnapshot = () => {
+	const dlg = currentDialogue.value;
+	if (!dlg) return null;
+	return {
+		sceneIndex: currentSceneIndex.value,
+		dialogueIndex: currentDialogueIndex.value,
+		variables: { ...variableValues.value },
+		lastEffectKey: lastEffectKey.value,
+		endings: [...triggeredEndings.value],
+		historyLength: historyDialogues.value.length,
+	};
+};
+
+const pushLineSnapshot = (snap = null) => {
+	const item = snap || captureLineSnapshot();
+	if (!item) return;
+	const last = lineSnapshots.value[lineSnapshots.value.length - 1];
+	if (last && last.sceneIndex === item.sceneIndex && last.dialogueIndex === item.dialogueIndex) {
+		return;
+	}
+	lineSnapshots.value = [...lineSnapshots.value, item].slice(-LINE_SNAPSHOT_LIMIT);
+};
+
+const clearLineSnapshots = () => {
+	lineSnapshots.value = [];
+};
+
+const rollbackOneLine = () => {
+	const snap = lineSnapshots.value[lineSnapshots.value.length - 1];
+	if (!snap) return;
+	lineSnapshots.value = lineSnapshots.value.slice(0, -1);
+	bumpBehaviorReview();
+
+	// 停掉正在进行的逐字、停顿与自动推进，避免回退后继续往前跑
+	clearWait();
+	clearTyping();
+	if (autoTimer) {
+		clearTimeout(autoTimer);
+		autoTimer = null;
+	}
+	isWaiting.value = false;
+	isPlaying.value = true;
+	showDialogueBox.value = true;
+
+	// 回退期间不记录埋点（已读记录本身按 content_id 去重）
+	currentSceneIndex.value = snap.sceneIndex;
+	currentDialogueIndex.value = snap.dialogueIndex;
+	variableValues.value = { ...snap.variables };
+	lastEffectKey.value = snap.lastEffectKey;
+	triggeredEndings.value = new Set(snap.endings);
+	historyDialogues.value = historyDialogues.value.slice(0, snap.historyLength);
+	skipRestoredLine = true;
+
+	nextTick(() => {
+		startTyping();
+		applyVolumes();
+	});
+};
+
 // 预览立绘：旁白沿用本场景最近一位说话的角色，直到出现新角色
 const previewSpeaker = computed(() => {
 	const list = currentSceneDialogues.value || [];
@@ -1458,11 +1746,16 @@ const previewSpeaker = computed(() => {
 	return null;
 });
 
-const previewAvatarSrc = computed(() => {
+// 基础图 + 差分层：按 order 从小到大叠放
+const previewAvatarLayers = computed(() => {
 	const d = previewSpeaker.value;
-	if (!d) return '';
-	return getAvatarUrl(d.avatar_id) || defaultAvatarOf(d.character_id);
+	if (!d) return [];
+	const byAvatar = avatarLayersOf(d.avatar_id);
+	if (byAvatar.length) return byAvatar;
+	return defaultAvatarLayersOf(d.character_id);
 });
+
+const previewAvatarSrc = computed(() => previewAvatarLayers.value[0] || '');
 
 // 当前「选择」节点的分支选项；条件未满足时保留按钮但标记为锁定
 const currentChoices = computed(() => {
@@ -1496,8 +1789,10 @@ const fetchProjectData = async () => {
 			const projectInfo = await getProject(projectIdNum);
 			playTheme.value = projectInfo.ui_theme || 'classic';
 			projectCoverUrl.value = projectInfo.cover_url || '';
+			projectOwnerId.value = Number(projectInfo.user_id) || 0;
 		} catch (e) {
 			playTheme.value = 'classic';
+			projectOwnerId.value = 0;
 		}
 
 		// 获取项目下的所有场景（按顺序排列）
@@ -1828,7 +2123,7 @@ const toggleFullscreen = async (val) => {
 };
 
 // 逐字显示
-const fullText = () => judge(currentDialogue.value?.content_text) || '';
+const fullText = () => judge(localizedText(currentDialogue.value)) || '';
 
 const clearTyping = () => {
 	if (typingTimer) {
@@ -1901,7 +2196,11 @@ const markCurrentRead = () => {
 	}, 1500);
 };
 
-const shouldSkipCurrent = () => {
+// 回退后停在上一句时不立刻触发「跳过已读」
+let skipRestoredLine = false
+
+const shouldSkipCurrent = (forceShow = false) => {
+	if (forceShow) return false;
 	if (!playerSettings.value.skipRead) return false;
 	const d = currentDialogue.value;
 	if (!d?.content_id || currentChoices.value.length) return false;
@@ -1925,6 +2224,13 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 			...coverageStats.value,
 			visitedNodes: [...visitedContents.value],
 			visitedEdges: [...visitedEdges.value],
+		},
+		perform: {
+			currentUserId,
+			projectOwnerId: projectOwnerId.value,
+			canPerform: canPerform.value,
+			performMode: performMode.value,
+			queryEdit: route.query.edit,
 		},
 	});
 }
@@ -2059,6 +2365,45 @@ const clampVariable = (v, value) => {
 	if (v.min_value !== null && v.min_value !== undefined) n = Math.max(Number(v.min_value), n);
 	if (v.max_value !== null && v.max_value !== undefined) n = Math.min(Number(v.max_value), n);
 	return n;
+};
+
+// ==================== 活叙事：行为变量 ====================
+// 仅当作者显式启用了 behavior_hesitation / behavior_review 时才记录，不默认采集。
+const BEHAVIOR_HESITATION = 'behavior_hesitation';
+const BEHAVIOR_REVIEW = 'behavior_review';
+let hesitationStartedAt = 0;
+let hesitationContentId = null;
+
+const behaviorDefOf = (name) => projectVariables.value.find(v => v.name === name);
+
+const setBehaviorVariable = (name, value) => {
+	const def = behaviorDefOf(name);
+	if (!def) return;
+	const next = clampVariable(def, Math.max(0, Math.round(Number(value) || 0)));
+	if (Number(variableValues.value[name] ?? def.initial_value) === next) return;
+	variableValues.value = { ...variableValues.value, [name]: next };
+};
+
+// 同一选择节点只记一次开始时间，避免设置/打字重入把犹豫时间清零
+const markHesitationStart = (contentId) => {
+	if (!contentId || hesitationContentId === contentId) return;
+	hesitationContentId = contentId;
+	hesitationStartedAt = Date.now();
+};
+
+const commitHesitation = () => {
+	if (!hesitationStartedAt) return;
+	const seconds = Math.min(60, Math.floor((Date.now() - hesitationStartedAt) / 1000));
+	hesitationStartedAt = 0;
+	hesitationContentId = null;
+	setBehaviorVariable(BEHAVIOR_HESITATION, seconds);
+};
+
+const bumpBehaviorReview = () => {
+	const def = behaviorDefOf(BEHAVIOR_REVIEW);
+	if (!def) return;
+	const current = Number(variableValues.value[BEHAVIOR_REVIEW] ?? def.initial_value);
+	setBehaviorVariable(BEHAVIOR_REVIEW, current + 1);
 };
 
 const evalSingleCondition = (cond) => {
@@ -2199,6 +2544,8 @@ const debugJump = () => {
 				clearTimeout(autoTimer);
 				autoTimer = null;
 			}
+			// 调试跳转是瞬移，清空旧的「上一句」快照
+			clearLineSnapshots();
 			currentSceneIndex.value = si;
 			currentDialogueIndex.value = di;
 			showDialogueBox.value = true;
@@ -2324,6 +2671,8 @@ const resetGame = () => {
 	endingDialogVisible.value = false;
 	achievementFinished = false;
 	resetVariables();
+	clearLineSnapshots();
+	resetTelemetryTracking();
 	nextTick(() => startPreview());
 };
 
@@ -2342,6 +2691,8 @@ const startNextPlaythrough = () => {
 	achievementFinished = false;
 	clearVariableNotices();
 	lastEffectKey.value = '';
+	clearLineSnapshots();
+	resetTelemetryTracking();
 	// 进入下一周目前，把本周目结束时的跨周目变量写回服务端
 	syncProjectMeta(true);
 	playthrough.value += 1;
@@ -2354,6 +2705,9 @@ const startNextPlaythrough = () => {
 
 const startTyping = () => {
 	applyEffectsForCurrent();
+	// 回退/演出编辑后强制展示当前句：即使命中结局分支也要先消费标记，避免标记泄漏到下一句
+	const forceShowRestored = skipRestoredLine;
+	skipRestoredLine = false;
 	// 到达结局节点且条件成立：弹结局页，不再继续打字
 	if (checkEndingForCurrent()) return;
 	clearTyping();
@@ -2363,7 +2717,7 @@ const startTyping = () => {
 	}
 
 	// 跳过已读：连续跳过已读节点，直到未读或遇到选择
-	if (shouldSkipCurrent()) {
+	if (!forceShowRestored && shouldSkipCurrent()) {
 		skipGuard += 1;
 		if (skipGuard <= 500) {
 			nextDialogue();
@@ -2375,6 +2729,11 @@ const startTyping = () => {
 	}
 
 	markCurrentRead();
+
+	// 活叙事：在选择节点开始计时（未启用行为变量时仅计时、不写入）
+	if (currentDialogue.value?.content_type === '选择') {
+		markHesitationStart(currentDialogue.value.content_id);
+	}
 
 	const full = fullText();
 	const speed = Number(playerSettings.value.textSpeed);
@@ -2406,6 +2765,11 @@ watch(playerSettings, () => {
 
 // 文字速度变化时，当前句按新速度重新显示
 watch(() => playerSettings.value.textSpeed, () => startTyping());
+// 切换语言后，当前句立即换成对应译文（正在打字时直接显示整句）
+watch(() => playerSettings.value.language, () => {
+	if (!isPlaying.value || !currentDialogue.value) return;
+	finishTyping();
+});
 watch(() => playerSettings.value.autoDelay, () => scheduleAutoAdvance());
 // 关闭语音时立刻恢复 BGM 音量
 watch(() => playerSettings.value.voiceEnabled, (on) => {
@@ -2430,9 +2794,21 @@ watch([currentSceneIndex, currentDialogueIndex], () => {
 	}, 1500);
 });
 
-/* ===== 节点演出指令（立绘三槽位 / 背景切换 / 音效）===== */
-const stagePositions = ['left', 'center', 'right'];
-const stageAvatars = ref({ left: null, center: null, right: null });
+/* ===== 节点演出指令（任意图层 / 背景切换 / 音效）===== */
+const LEGACY_POSITION_ORDER = { left: 0, center: 1, right: 2 };
+const layerIdOf = (p = {}) => p.layer_id || p.position || 'center';
+const layerNameOf = (p = {}) => p.layer_name || ({ left: '左侧', center: '中间', right: '右侧' }[p.position] || '立绘');
+const layerOrderOf = (p = {}) => {
+	if (p.order !== undefined && p.order !== null && Number.isFinite(Number(p.order))) return Number(p.order);
+	if (p.z !== undefined && p.z !== null && Number.isFinite(Number(p.z))) return Number(p.z);
+	return LEGACY_POSITION_ORDER[p.position || 'center'] ?? 0;
+};
+const stageDefaultX = (layerId) => {
+	if (layerId === 'left') return 20;
+	if (layerId === 'right') return 80;
+	return 50;
+};
+const stageAvatars = ref({});
 const bgFromDirective = ref('');
 const bgTransition = ref('fade');
 const bgDuration = ref(400);
@@ -2441,9 +2817,11 @@ const directivesByContent = ref({});
 // 节点级舞台层可见性（背景/前景/对话框），由 stage 指令控制
 const stageLayerVisible = ref({ background: true, foreground: true, dialogue: true });
 
-const hasStageAvatars = computed(() =>
-	stagePositions.some(p => !!stageAvatars.value[p])
-);
+const stageLayers = computed(() => Object.values(stageAvatars.value)
+	.filter(Boolean)
+	.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)));
+
+const hasStageAvatars = computed(() => stageLayers.value.length > 0);
 
 const stageBackground = computed(() => {
 	if (stageLayerVisible.value.background === false) return '';
@@ -2453,13 +2831,32 @@ const stageBackground = computed(() => {
 		: defaultBackground;
 });
 
-const defaultAvatarOf = (characterId) => {
+// 立绘差分层：返回 [基础图, ...叠加层]；按 order 从小到大
+const avatarLayersOf = (avatarId) => {
+	if (!avatarId) return [];
+	for (const char of characters.value) {
+		const avatar = (char.avatars || []).find(a => a.avatar_id === avatarId);
+		if (!avatar || !avatar.image_url) continue;
+		const layers = (avatar.layers || [])
+			.filter(l => l && l.image_url)
+			.slice()
+			.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+			.map(l => BASE_URL + l.image_url);
+		return [BASE_URL + avatar.image_url, ...layers];
+	}
+	return [];
+};
+
+const defaultAvatarLayersOf = (characterId) => {
 	const c = characters.value.find(x => x.character_id === characterId);
-	if (!c) return '';
+	if (!c) return [];
 	const list = c.avatars || [];
 	const def = list.find(a => a.is_default) || list[0];
-	if (def && def.image_url) return BASE_URL + def.image_url;
-	return c.avatar_url ? BASE_URL + c.avatar_url : '';
+	if (def && def.avatar_id) {
+		const layers = avatarLayersOf(def.avatar_id);
+		if (layers.length) return layers;
+	}
+	return c.avatar_url ? [BASE_URL + c.avatar_url] : [];
 };
 
 const loadDirectiveData = async () => {
@@ -2478,7 +2875,7 @@ const loadDirectiveData = async () => {
 };
 
 const resetStage = () => {
-	stageAvatars.value = { left: null, center: null, right: null };
+	stageAvatars.value = {};
 	bgFromDirective.value = '';
 	bgTransition.value = 'fade';
 	bgDuration.value = 400;
@@ -2641,44 +3038,49 @@ const applyDirectives = (dialogue) => {
 	for (const d of list) {
 		const p = d.payload || {};
 		if (d.directive_type === 'avatar') {
-			const pos = p.position || 'center';
+			const layerId = layerIdOf(p);
 			if (p.action === 'hide') {
-				next[pos] = null;
+				delete next[layerId];
 			} else {
-				const src = getAvatarUrl(p.avatar_id) || defaultAvatarOf(p.character_id);
+				const assetSources = p.image_url ? [BASE_URL + p.image_url] : [];
+				const avatarSources = avatarLayersOf(p.avatar_id);
+				const fallbackSources = assetSources.length
+					? assetSources
+					: (avatarSources.length ? avatarSources : defaultAvatarLayersOf(p.character_id));
+				const src = fallbackSources[0];
 				if (src) {
-					const x = Number(p.x) || 0;
-					const y = Number(p.y) || 0;
+					// 旧指令用 position + sprite 坐标；统一折算成舞台坐标
+					const legacy = p.coord !== 'stage';
+					const x = legacy ? stageDefaultX(layerId) : (Number(p.x) || 0);
+					const y = legacy ? 100 : (Number(p.y) || 0);
 					const scale = Number(p.scale) || 1;
 					const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
 					const rotate = Number(p.rotate) || 0;
-					const coord = p.coord === 'stage' ? 'stage' : 'sprite';
+					const order = layerOrderOf(p);
 					const visible = p.visible !== false;
-					const zIndex = 10 + (Number(p.z) || 0);
-					let style;
-					let boxStyle;
-					if (coord === 'stage') {
-						boxStyle = {
-							left: `${x}%`,
-							top: `${y}%`,
-							bottom: 'auto',
-							right: 'auto',
-							transform: 'translate(-50%, -100%)',
-							zIndex
-						};
-						style = {
-							transform: `scale(${scale}) rotate(${rotate}deg)`,
-							opacity
-						};
-					} else {
-						boxStyle = { zIndex };
-						style = {
-							transform: `translate(${x}%, ${y}%) scale(${scale}) rotate(${rotate}deg)`,
-							opacity
-						};
-					}
+					const boxStyle = {
+						left: `${x}%`,
+						top: `${y}%`,
+						bottom: 'auto',
+						right: 'auto',
+						transform: 'translate(-50%, -100%)',
+						zIndex: 10 + order
+					};
 					if (!visible) boxStyle.display = 'none';
-					next[pos] = { src, style, boxStyle };
+					const style = {
+						transform: `scale(${scale}) rotate(${rotate}deg)`,
+						opacity
+					};
+					next[layerId] = {
+						layer_id: layerId,
+						layer_name: layerNameOf(p),
+						order,
+						visible,
+						src,
+						sources: fallbackSources,
+						style,
+						boxStyle
+					};
 				}
 			}
 		} else if (d.directive_type === 'background') {
@@ -2773,6 +3175,9 @@ const nextDialogue = () => {
 	// 「选择」节点必须等玩家点选项，不能自动往下走
 	if (currentChoices.value.length) return;
 
+	// 推进前记录当前位置，供「上一句」回退
+	pushLineSnapshot();
+
 	// 非「选择」节点若配置了自动跳转，播完本节点后直接跳过去
 	const cur = currentDialogue.value;
 	if (cur && cur.content_type !== '选择') {
@@ -2830,11 +3235,15 @@ const selectBranch = (branch) => {
 		ElMessage.warning('条件未满足：' + conditionText(branch.conditions));
 		return;
 	}
+	// 活叙事：记录玩家在这个选择节点上犹豫的秒数
+	commitHesitation();
 	clearWait();
 	if (autoTimer) {
 		clearTimeout(autoTimer);
 		autoTimer = null;
 	}
+	// 先取回退点，等确认分支可跳转后再入栈
+	const lineSnapshot = captureLineSnapshot();
 
 	if (currentDialogue.value) {
 		historyDialogues.value.push({
@@ -2842,6 +3251,7 @@ const selectBranch = (branch) => {
 			scene_id: currentScene.value.scene_id,
 			scene_title: currentScene.value.title || '',
 			chosen: branch.choice_text || '',
+			chosen_path_id: branch.path_id || null,
 		});
 		markVisitedEdge(currentDialogue.value.content_id, branch.target_content_id);
 		logPlayEvent('choice', {
@@ -2868,6 +3278,7 @@ const selectBranch = (branch) => {
 				ElMessage.warning('目标台词条件未满足：' + conditionText(list[di].branch_condition));
 				return;
 			}
+			pushLineSnapshot(lineSnapshot);
 			currentSceneIndex.value = si;
 			currentDialogueIndex.value = di;
 			showDialogueBox.value = true;
@@ -2938,6 +3349,7 @@ const nextScene = () => {
 
 // 快进至下一场景
 const skipToNextScene = () => {
+	pushLineSnapshot();
 	nextScene();
 };
 
@@ -2961,6 +3373,9 @@ const restartGame = () => {
 		currentDialogueIndex.value = 0;
 		historyDialogues.value = [];
 		resetVariables();
+		clearLineSnapshots();
+		// 新一轮从头开始，重新允许记录本轮埋点
+		resetTelemetryTracking();
 		
 		// 重新开始
 		nextTick(() => {
@@ -2981,6 +3396,7 @@ const toggleDialogueBox = () => {
 
 // 切换历史对话显示/隐藏
 const toggleHistoryDialogue = () => {
+	if (!showHistoryDialogue.value) bumpBehaviorReview();
 	showHistoryDialogue.value = !showHistoryDialogue.value;
 };
 
@@ -3026,9 +3442,15 @@ const formatSaveTime = (iso) => {
 };
 
 const currentSaveSummary = () => {
-	const title = currentScene.value.title || '未命名场景';
-	const text = (currentDialogue.value?.content_text || '').replace(/\s+/g, ' ').slice(0, 24);
+	const title = localizedSceneTitle(currentScene.value) || '未命名场景';
+	const text = localizedText(currentDialogue.value).replace(/\s+/g, ' ').slice(0, 24);
 	return text ? `${title} · ${text}` : title;
+};
+
+// 存档列表里的场景名：新存档带 scene_id 可实时切换语言，老存档回退已存标题
+const saveSlotTitle = (slot) => {
+	if (!slot) return '';
+	return (slot.scene_id ? sceneTitleById(slot.scene_id) : '') || slot.scene_title || '';
 };
 
 const buildSaveState = () => ({
@@ -3040,6 +3462,7 @@ const buildSaveState = () => ({
 	triggeredEndings: [...triggeredEndings.value],
 	playthrough: playthrough.value,
 	// 存档缩略图：优先当前场景背景，没有背景时用作品封面
+	scene_id: currentScene.value.scene_id || null,
 	scene_title: currentScene.value.title || '',
 	thumbnail_url: currentScene.value.background_url || projectCoverUrl.value || '',
 	savedAt: new Date().toISOString(),
@@ -3102,6 +3525,7 @@ const loadFromSlot = async (slot) => {
 			} catch (_) { /* ignore */ }
 		}
 		initVariableValues();
+		clearLineSnapshots();
 		// 读档后把跨周目变量同步为存档里的值
 		syncProjectMeta(true);
 		saveDialogVisible.value = false;
@@ -3136,6 +3560,115 @@ const deleteSlot = async (slot) => {
 	}
 };
 
+// ==================== 演出模式（作者预览热更新） ====================
+const syncPerformForm = () => {
+	const dlg = currentDialogue.value
+	if (!dlg) return
+	performText.value = dlg.content_text || ''
+	performAvatarId.value = dlg.avatar_id ? String(dlg.avatar_id) : ''
+	performBackground.value = currentScene.value?.background_url || ''
+	performMusic.value = currentScene.value?.music_url || ''
+	performStatus.value = ''
+}
+
+const togglePerformMode = () => {
+	if (!canPerform.value) return
+	performMode.value = !performMode.value
+	if (performMode.value) syncPerformForm()
+}
+
+// 场景 BGM 改动后立即重载：若当前节点有 music 演出指令，以指令为准不覆盖
+const reloadSceneMusic = () => {
+	const audio = backgroundMusic.value
+	if (!audio) return
+	if (!currentScene.value?.music_url) {
+		audio.pause()
+		audio.currentTime = 0
+		return
+	}
+	if (!isPlaying.value) return
+	nextTick(() => {
+		audio.volume = 0
+		audio.play().then(() => fadeBgmTo(bgmTargetVolume(), 600)).catch(() => {})
+	})
+}
+
+const savePerformEdit = async () => {
+	const dlg = currentDialogue.value
+	const scene = currentScene.value
+	if (!dlg || !scene || performSaving.value) return
+	const text = performText.value.trim()
+	if (!text) {
+		ElMessage.warning('台词不能为空')
+		return
+	}
+
+	performSaving.value = true
+	try {
+		const updated = await saveDialogues({
+			...dlg,
+			project_id: Number(props.projectId),
+			scene_id: Number(scene.scene_id),
+			content_text: text,
+			avatar_id: dlg.content_type === '对话'
+				? (Number(performAvatarId.value) || null)
+				: (dlg.avatar_id || null),
+		})
+
+		// 热更新当前场景的台词列表，不刷新页面
+		const list = allDialogues.value[scene.scene_id] || []
+		const idx = list.findIndex(d => Number(d.content_id) === Number(dlg.content_id))
+		if (idx >= 0) {
+			const next = [...list]
+			next[idx] = { ...next[idx], ...(updated || {}), content_text: text }
+			allDialogues.value = { ...allDialogues.value, [scene.scene_id]: next }
+		}
+		historyDialogues.value = historyDialogues.value.map(h =>
+			Number(h.content_id) === Number(dlg.content_id) ? { ...h, content_text: text } : h
+		)
+
+		// 场景背景 / BGM 按需写入
+		const scenePatch = {}
+		const bg = performBackground.value.trim()
+		const music = performMusic.value.trim()
+		if (bg !== (scene.background_url || '')) scenePatch.background_url = bg
+		if (music !== (scene.music_url || '')) scenePatch.music_url = music
+		if (Object.keys(scenePatch).length) {
+			const savedScene = await updateScene(Number(scene.scene_id), scenePatch)
+			const si = scenes.value.findIndex(s => Number(s.scene_id) === Number(scene.scene_id))
+			if (si >= 0) {
+				const next = [...scenes.value]
+				next[si] = { ...next[si], ...scenePatch, ...(savedScene || {}) }
+				scenes.value = next
+			}
+			if ('music_url' in scenePatch) {
+				const hasMusicDirective = (directivesByContent.value[dlg.content_id] || [])
+					.some(d => d.directive_type === 'music')
+				if (!hasMusicDirective) reloadSceneMusic()
+			}
+		}
+
+		performStatus.value = '已保存 · ' + new Date().toLocaleTimeString()
+		// 编辑器里改完台词后立刻按新文本重新演出；不触发「跳过已读」
+		skipRestoredLine = true
+		startTyping()
+		ElMessage.success('已保存并热更新当前画面')
+	} catch (e) {
+		console.error('演出模式保存失败:', e)
+		ElMessage.error('保存失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+	} finally {
+		performSaving.value = false
+	}
+}
+
+// 面板打开时跟随场景/节点切换同步表单
+watch(
+	() => [currentDialogue.value?.content_id, currentScene.value?.scene_id],
+	() => {
+		if (performMode.value && canPerform.value) syncPerformForm()
+	}
+)
+
 // 从本地存储加载进度
 const loadProgress = () => {
 	try {
@@ -3156,9 +3689,10 @@ const loadProgress = () => {
 			if (savedPlaythrough) playthrough.value = Number(savedPlaythrough) || playthrough.value;
 			// 恢复变量与已触发的数值变化，避免读本地进度后数值归零/重复加分
 			if (savedVariables && typeof savedVariables === 'object') {
-				variableValues.value = { ...savedVariables };
-			}
-			syncProjectMeta(true);
+					variableValues.value = { ...savedVariables };
+				}
+				clearLineSnapshots();
+				syncProjectMeta(true);
 			lastEffectKey.value = savedEffectKey || '';
 			if (Array.isArray(savedEndings)) {
 				triggeredEndings.value = new Set(savedEndings);
@@ -3214,22 +3748,6 @@ const judge = (content_text) => {
 		return content_text
 	}
 }
-// 获取角色头像URL
-const getAvatarUrl = (avatarId) => {
-	if (!avatarId) return '';
-	
-	// 在所有角色的头像中查找匹配的头像
-	for (const char of characters.value) {
-		const avatar = char.avatars.find(a => a.avatar_id === avatarId);
-		if (avatar && avatar.image_url) {
-			return BASE_URL + avatar.image_url;
-		}
-	}
-	
-	// 找不到时返回空
-	return '';
-};
-
 // 素材文件丢失时不显示裂图
 const hideBrokenImage = (e) => {
 	if (e && e.target) e.target.style.visibility = 'hidden';
@@ -3268,6 +3786,14 @@ const handleKeydown = (e) => {
 
 	// 调试器输入框等可编辑区域不拦截其他按键
 	if (isEditableTarget(e.target)) return;
+
+	// ← 回到上一句
+	if (e.key === 'ArrowLeft') {
+		if (isPanelOpen()) return;
+		e.preventDefault();
+		rollbackOneLine();
+		return;
+	}
 
 	// 空格 / 回车 / → 继续对话
 	if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight') {
@@ -3511,6 +4037,170 @@ const backToHome = () => {
 .player-settings-btn:hover {
   background: rgba(0, 0, 0, 0.45);
   transform: rotate(20deg);
+}
+
+/* 上一句回退 */
+.player-back-btn {
+  position: absolute;
+  top: 66px;
+  right: 16px;
+  z-index: 30;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.player-back-btn:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* 演出模式入口 */
+.player-perform-btn {
+  position: absolute;
+  top: 116px;
+  right: 16px;
+  z-index: 30;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.player-perform-btn:hover,
+.player-perform-btn.is-active {
+  background: rgba(42, 163, 123, 0.72);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+/* 演出模式编辑面板 */
+.perform-panel {
+  position: absolute;
+  top: 170px;
+  right: 16px;
+  z-index: 40;
+  width: 300px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(18, 22, 26, 0.92);
+  color: #e8ecef;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.perform-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.perform-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.perform-pos {
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.perform-tip {
+  margin: 6px 0 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.perform-label {
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.perform-textarea,
+.perform-input,
+.perform-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.perform-textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.perform-select option,
+.perform-select optgroup {
+  color: #1f2329;
+  background: #fff;
+}
+
+.perform-save {
+  width: 100%;
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #2aa37b;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.perform-save:hover {
+  opacity: 0.88;
+}
+
+.perform-save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.perform-status {
+  min-height: 16px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* 状态入口 */
@@ -4643,6 +5333,21 @@ const backToHome = () => {
   overflow: hidden;
 }
 
+/* 有声剧模式：隐藏所有画面元素，只保留对白/旁白/音效/选项 */
+.preview-container.is-audio-drama {
+  background: #0b0e12;
+}
+
+.preview-container.is-audio-drama .scene-background img,
+.preview-container.is-audio-drama .stage-layer,
+.preview-container.is-audio-drama .character-stand,
+.preview-container.is-audio-drama .stage-foreground,
+.preview-container.is-audio-drama .fx-weather,
+.preview-container.is-audio-drama .fx-flash,
+.preview-container.is-audio-drama .choice-image {
+  display: none;
+}
+
 /* 背景图样式 - 铺满整个预览区 */
 .scene-background {
   width: 100%;
@@ -4784,11 +5489,25 @@ const backToHome = () => {
   pointer-events: none; /* 点击穿透，不影响对话框交互 */
 }
 
+.character-stand .sprite-stack {
+  position: relative;
+  height: 100%;
+}
+
 .character-image {
   height: 100%;
   width: auto;
   object-fit: contain;
   transition: opacity 0.3s ease;
+  display: block;
+}
+
+/* 差分层：叠加图与基础图同高、左上对齐 */
+.character-stand .sprite-overlay,
+.stage-avatar .sprite-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
 }
 
 /* 轻动态立绘：用独立 translate 属性做呼吸起伏，不覆盖演出指令的 transform 微调 */
@@ -4821,25 +5540,17 @@ const backToHome = () => {
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
 
-.stage-avatar img {
+.stage-avatar .sprite-stack {
+  position: relative;
+  height: 100%;
+}
+
+.stage-avatar .sprite-stack img {
   height: 100%;
   width: auto;
   object-fit: contain;
   display: block;
   filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.18));
-}
-
-.stage-avatar.pos-left {
-  left: 4%;
-}
-
-.stage-avatar.pos-center {
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.stage-avatar.pos-right {
-  right: 4%;
 }
 
 /* 演出效果：闪光 / 震动 / 天气 */
@@ -5383,6 +6094,27 @@ const backToHome = () => {
     right: 10px;
     width: 44px;
     height: 44px;
+  }
+
+  .player-back-btn {
+    top: 62px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .player-perform-btn {
+    top: 114px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .perform-panel {
+    top: 166px;
+    right: 10px;
+    width: min(300px, calc(100vw - 20px));
+    max-height: calc(100vh - 240px);
   }
 
   .player-status-btn {

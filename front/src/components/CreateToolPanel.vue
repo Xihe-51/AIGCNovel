@@ -244,35 +244,88 @@
 							</div>
 						</div>
 
+						<div v-if="analytics.summary.top_dropoff" class="tp-an-dropoff">
+							最大流失点：
+							<button class="tp-an-link" @click="onLocate(analytics.summary.top_dropoff.scene_id)">
+								{{ analytics.summary.top_dropoff.title }}
+							</button>
+							· {{ analytics.summary.top_dropoff.drop_offs }} 人
+							（到达后流失 {{ analytics.summary.top_dropoff.rate }}%）
+						</div>
+
 						<div class="tp-an-section">场景到达率（卡点）</div>
 						<div v-if="!analytics.scenes.length" class="tp-an-empty">还没有场景数据</div>
-						<div v-for="s in analytics.scenes" :key="s.scene_id" class="tp-an-scene">
+						<div
+							v-for="s in analytics.scenes"
+							:key="s.scene_id"
+							class="tp-an-scene is-clickable"
+							@click="onLocate(s.scene_id)"
+						>
 							<div class="tp-an-scene-top">
 								<span class="tp-an-scene-name">{{ s.order_num }}. {{ s.title }}</span>
-								<span class="tp-an-scene-meta">{{ s.reached }} 人 · {{ s.rate }}%</span>
+								<span class="tp-an-scene-meta">
+									{{ s.reached }} 人 · {{ s.rate }}%
+									<template v-if="s.drop_offs"> · 流失 {{ s.drop_offs }}（{{ s.drop_rate }}%）</template>
+								</span>
 							</div>
 							<div class="tp-an-bar">
 								<div class="tp-an-bar-fill" :style="{ width: Math.min(100, s.rate) + '%' }"></div>
 							</div>
 						</div>
 
+						<div class="tp-an-section">章节完成率</div>
+						<div v-if="!analytics.chapters?.length" class="tp-an-empty">还没有章节分组</div>
+						<div
+							v-for="c in analytics.chapters"
+							:key="c.chapter_id"
+							class="tp-an-scene is-clickable"
+							@click="onLocate(c.first_scene_id)"
+						>
+							<div class="tp-an-scene-top">
+								<span class="tp-an-scene-name">{{ c.order_num }}. {{ c.title }}</span>
+								<span class="tp-an-scene-meta">{{ c.reached }} 人 · {{ c.rate }}%</span>
+							</div>
+							<div class="tp-an-bar">
+								<div class="tp-an-bar-fill" :style="{ width: Math.min(100, c.rate) + '%' }"></div>
+							</div>
+						</div>
+
 						<div class="tp-an-section">选项分布</div>
 						<div v-if="!analytics.choices.length" class="tp-an-empty">还没有选项数据</div>
 						<div v-for="g in analytics.choices" :key="g.content_id" class="tp-an-choice">
-							<div class="tp-an-choice-title">{{ g.scene_title }} · {{ g.node_text }}</div>
-							<div class="tp-an-option" v-for="o in g.options" :key="o.path_id || o.choice_text">
+							<div class="tp-an-choice-title is-clickable" @click="onLocate(g.scene_id, g.content_id)">
+								{{ g.scene_title }} · {{ g.node_text }}
+							</div>
+							<div
+								v-for="o in g.options"
+								:key="o.path_id || o.choice_text"
+								:class="['tp-an-option', { 'is-cold': g.options.length > 1 && o.percent === g.least_percent }]"
+							>
 								<span class="tp-an-option-text">{{ o.choice_text }}</span>
-								<span class="tp-an-option-meta">{{ o.count }} 次 · {{ o.percent }}%</span>
+								<span class="tp-an-option-meta">
+									{{ o.count }} 次 · {{ o.percent }}%
+									<span v-if="g.options.length > 1 && o.percent === g.least_percent" class="tp-an-cold-tag">最少人选</span>
+								</span>
 							</div>
 						</div>
 
 						<div class="tp-an-section">结局达成</div>
 						<div v-if="!analytics.endings.length" class="tp-an-empty">还没有结局定义</div>
-						<div v-for="e in analytics.endings" :key="e.ending_id" class="tp-an-ending">
+						<div
+							v-for="e in analytics.endings"
+							:key="e.ending_id"
+							class="tp-an-ending is-clickable"
+							@click="e.scene_id && onLocate(e.scene_id, e.content_id)"
+						>
 							<span class="tp-an-ending-name">{{ e.title }}</span>
 							<span class="tp-an-ending-meta">{{ e.count }} 人 · {{ e.rate }}%</span>
 						</div>
 					</template>
+				</template>
+
+				<!-- 存档检查器 -->
+				<template v-else-if="tab === 'saves'">
+					<SaveInspectorPanel :project-id="projectId" @locate="onLocateSave" />
 				</template>
 
 				<!-- 成就 -->
@@ -740,6 +793,7 @@
 	import { BASE_URL } from '@/utils/request'
 	import AssetLibraryPanel from '@/components/AssetLibraryPanel.vue'
 	import ProjectHealthPanel from '@/components/ProjectHealthPanel.vue'
+	import SaveInspectorPanel from '@/components/SaveInspectorPanel.vue'
 	import {
 		createProjectVersion,
 		getVersionDiff,
@@ -780,6 +834,7 @@
 		{ key: 'variables', label: '变量', badge: '' },
 		{ key: 'overview', label: '概览', badge: '' },
 		{ key: 'analytics', label: '数据', badge: '' },
+		{ key: 'saves', label: '存档', badge: '' },
 		{ key: 'achievements', label: '成就', badge: '' },
 		{ key: 'report', label: '报表', badge: '' },
 		{ key: 'versions', label: '版本', badge: '' },
@@ -791,12 +846,12 @@
 		{ key: 'effects', label: '演出', badge: '' }
 	] as const
 
-	const tab = ref<'characters' | 'variables' | 'overview' | 'analytics' | 'achievements' | 'report' | 'versions' | 'terms' | 'appearance' | 'assets' | 'health' | 'ai' | 'effects'>('characters')
+	const tab = ref<'characters' | 'variables' | 'overview' | 'analytics' | 'saves' | 'achievements' | 'report' | 'versions' | 'terms' | 'appearance' | 'assets' | 'health' | 'ai' | 'effects'>('characters')
 
-	// 13 个工具按「内容 / 数据 / 质量 / 外观」分组，避免 300px 面板里横向滚动找 tab
+	// 14 个工具按「内容 / 数据 / 质量 / 外观」分组，避免 300px 面板里横向滚动找 tab
 	const tabGroups = [
 		{ key: 'content', label: '内容', tabs: ['characters', 'variables', 'effects'] },
-		{ key: 'data', label: '数据', tabs: ['overview', 'analytics', 'report'] },
+		{ key: 'data', label: '数据', tabs: ['overview', 'analytics', 'saves', 'report'] },
 		{ key: 'quality', label: '质量', tabs: ['health', 'achievements', 'terms', 'versions'] },
 		{ key: 'appearance', label: '外观', tabs: ['appearance', 'assets', 'ai'] }
 	] as const
@@ -832,8 +887,9 @@
 		(e: 'restored'): void
 	}>()
 
-	const onLocate = (sceneId: number) => emit('locate', sceneId, null)
+	const onLocate = (sceneId: number, contentId?: number | null) => emit('locate', sceneId, contentId ?? null)
 	const onLocateHealth = (sceneId: number, contentId: number | null) => emit('locate', sceneId, contentId)
+	const onLocateSave = (sceneId: number, contentId: number | null) => emit('locate', sceneId, contentId)
 
 	// ---- 工程概览 ----
 	const overview = ref<ProjectOverview | null>(null)
@@ -2136,6 +2192,56 @@
 		font-weight: 600;
 		color: #8a6a76;
 		margin: 10px 0 6px;
+	}
+
+	.tp-an-dropoff {
+		font-size: 11px;
+		line-height: 1.6;
+		color: #9a3412;
+		background: #fff7ed;
+		border: 1px solid #fed7aa;
+		border-radius: 8px;
+		padding: 6px 8px;
+		margin: 7px 0 2px;
+	}
+
+	.tp-an-link {
+		border: none;
+		background: none;
+		color: #c81f4a;
+		font-size: 11px;
+		padding: 0;
+		cursor: pointer;
+		text-decoration: underline;
+	}
+
+	.tp-an-scene.is-clickable,
+	.tp-an-choice-title.is-clickable,
+	.tp-an-ending.is-clickable {
+		cursor: pointer;
+	}
+
+	.tp-an-scene.is-clickable:hover,
+	.tp-an-choice-title.is-clickable:hover,
+	.tp-an-ending.is-clickable:hover {
+		background: #fff2f6;
+		border-radius: 6px;
+	}
+
+	.tp-an-option.is-cold {
+		background: #fff8e6;
+		border-radius: 5px;
+		padding-left: 4px;
+		padding-right: 4px;
+	}
+
+	.tp-an-cold-tag {
+		font-size: 9px;
+		color: #b45309;
+		background: #fff1cc;
+		padding: 0 4px;
+		border-radius: 3px;
+		margin-left: 4px;
 	}
 
 	.tp-an-empty {

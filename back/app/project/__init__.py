@@ -27,3 +27,6 @@ import app.project.achievement_views
 import app.project.report_views
 import app.project.release_views
 import app.project.meta_views
+import app.project.compiler_views
+import app.project.reader_views
+import app.project.translation_views

@@ -15,6 +15,8 @@ export interface BranchPath {
   source_content_id: number;
   target_content_id: number;
   choice_text?: string | null;
+  /** 选项译文：{ zh-TW: '…', en: '…', ja: '…' }，缺失时回退 choice_text */
+  translations?: Record<string, string>;
   image_url?: string | null;
   conditions?: any;
 }

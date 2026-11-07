@@ -65,9 +65,10 @@ def task_generate_music(self, *, user_id, prompt, duration, model_path):
 
 
 @celery_app.task(bind=True, name='ai.generate_voice')
-def task_generate_voice(self, *, user_id, text, voice_type=None, duration=0):
+def task_generate_voice(self, *, user_id, text, voice_type=None, duration=0, emotion=None):
     self.update_state(state='PROGRESS', meta={'stage': '正在合成配音…'})
-    ok, info = generate_voice(user_id, text, voice_type=voice_type, duration=duration)
+    ok, info = generate_voice(user_id, text, voice_type=voice_type,
+                              duration=duration, emotion=emotion)
     if not ok:
         raise RuntimeError(info.get('message', '配音生成失败'))
     return info

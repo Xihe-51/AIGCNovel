@@ -5,10 +5,14 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 from .. import db, STATIC_ROOT
-from ..models import Project, Character, CharacterAvatar, Scene, ScriptContent, BranchPath, \
+from ..models import Project, Character, CharacterAvatar, CharacterAvatarLayer, Scene, ScriptContent, BranchPath, \
     ContentEffect, ProjectVariable, SaveSlot, ReadRecord, Ending, EndingUnlock, ResourceReference, \
     ProjectCG, ContentDirective, SceneChapter, StoryChapter, SceneLock, ProjectVersion, \
-    ProjectTerm, PlayEvent, Achievement, AchievementUnlock, ProjectMeta
+    ProjectTerm, PlayEvent, Achievement, AchievementUnlock, ProjectMeta, \
+    ProjectRelease, ProjectSource, MusicUnlock, ContentTranslation, SceneTranslation, BranchPathTranslation
+
+# 配音导演：台词情绪标签（批量配音按情绪微调 TTS 语速/音调）
+EMOTION_OPTIONS = ('平静', '犹豫', '生气', '哭腔', '低声')
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {
@@ -517,6 +521,11 @@ def delete_project(project_id, user_id):
                 BranchPath.target_content_id.in_(content_ids) if content_ids else False,
             )
         )
+        branch_ids = [b.path_id for b in branch_query.all()]
+        if branch_ids:
+            BranchPathTranslation.query.filter(
+                BranchPathTranslation.path_id.in_(branch_ids)
+            ).delete(synchronize_session=False)
         branch_count = branch_query.delete(synchronize_session=False)
         print(f"  删除 {branch_count} 条分支路径")
 
@@ -531,6 +540,21 @@ def delete_project(project_id, user_id):
         directive_count = ContentDirective.query.filter_by(project_id=project_id).delete(
             synchronize_session=False)
         print(f"  删除 {directive_count} 条演出指令")
+
+        # 2.1.2 删除逐句译文（content_translations 引用 script_contents）
+        if content_ids:
+            translation_count = ContentTranslation.query.filter(
+                ContentTranslation.content_id.in_(content_ids)
+            ).delete(synchronize_session=False)
+            print(f"  删除 {translation_count} 条逐句译文")
+
+        # 2.1.3 删除场景译文（scene_translations 引用 scenes）
+        scene_ids = [s.scene_id for s in scenes]
+        if scene_ids:
+            scene_translation_count = SceneTranslation.query.filter(
+                SceneTranslation.scene_id.in_(scene_ids)
+            ).delete(synchronize_session=False)
+            print(f"  删除 {scene_translation_count} 条场景译文")
 
         # 2.2 删除玩家已读与存档（read_records 外键引用 script_contents；save_slots 引用 project）
         read_count = ReadRecord.query.filter_by(project_id=project_id).delete(
@@ -555,6 +579,9 @@ def delete_project(project_id, user_id):
         # 术语表
         term_count = ProjectTerm.query.filter_by(project_id=project_id).delete(
             synchronize_session=False)
+        # 小说导入源文件与编译结果
+        source_count = ProjectSource.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
         # 试玩埋点
         play_event_count = PlayEvent.query.filter_by(project_id=project_id).delete(
             synchronize_session=False)
@@ -570,11 +597,14 @@ def delete_project(project_id, user_id):
                 synchronize_session=False)
         achievement_count = Achievement.query.filter_by(project_id=project_id).delete(
             synchronize_session=False)
+        # BGM 鉴赏解锁记录（外键引用 projects，需在项目删除前清理）
+        music_unlock_count = MusicUnlock.query.filter_by(project_id=project_id).delete(
+            synchronize_session=False)
         print(f"  删除 {read_count} 条已读记录、{save_count} 个存档、"
               f"{ending_count} 个结局、{unlock_count} 条解锁记录、{ref_count} 条素材引用、"
               f"{cg_count} 条 CG、{version_count} 个版本快照、{term_count} 条术语、"
               f"{play_event_count} 条试玩埋点、{meta_count} 条跨周目元数据、"
-              f"{achievement_count} 个成就")
+              f"{achievement_count} 个成就、{music_unlock_count} 条 BGM 解锁")
 
         # 3. 删除场景中的所有对话
         for scene in scenes:
@@ -590,9 +620,15 @@ def delete_project(project_id, user_id):
         scene_count = Scene.query.filter_by(project_id=project_id).delete()
         print(f"  删除 {scene_count} 个场景")
 
-        # 5. 删除角色的所有头像记录
+        # 5. 删除角色的所有头像记录（连同差分层）
         avatar_count = 0
         for character in characters:
+            avatar_ids = [a.avatar_id for a in CharacterAvatar.query.filter_by(
+                character_id=character.character_id).all()]
+            if avatar_ids:
+                CharacterAvatarLayer.query.filter(
+                    CharacterAvatarLayer.avatar_id.in_(avatar_ids)
+                ).delete(synchronize_session=False)
             count = CharacterAvatar.query.filter_by(character_id=character.character_id).delete()
             avatar_count += count
         print(f"  删除 {avatar_count} 个角色头像")
@@ -700,6 +736,123 @@ def get_character_avatars(character_id):
     return CharacterAvatar.query.filter_by(character_id=character_id).all()
 
 
+def _avatar_layers_of(avatar_id):
+    """某个立绘的所有差分层，按 order 从小到大排列。"""
+    return (CharacterAvatarLayer.query.filter_by(avatar_id=avatar_id)
+            .order_by(CharacterAvatarLayer.order.asc(),
+                      CharacterAvatarLayer.layer_id.asc()).all())
+
+
+def avatar_layer_to_dict(layer):
+    return {
+        'layer_id': layer.layer_id,
+        'avatar_id': layer.avatar_id,
+        'image_url': layer.image_url,
+        'layer_name': layer.layer_name,
+        'layer_type': layer.layer_type,
+        'order': layer.order,
+        'config': layer.config,
+        'created_at': layer.created_at.isoformat() if layer.created_at else None,
+    }
+
+
+def avatar_to_dict(avatar):
+    """立绘统一序列化：基础图 + 差分层。"""
+    return {
+        'avatar_id': avatar.avatar_id,
+        'character_id': avatar.character_id,
+        'image_url': avatar.image_url,
+        'avatar_type': avatar.avatar_type,
+        'costume': avatar.costume,
+        'is_default': avatar.is_default,
+        'created_at': avatar.created_at.isoformat() if avatar.created_at else None,
+        'layers': [avatar_layer_to_dict(l) for l in _avatar_layers_of(avatar.avatar_id)],
+    }
+
+
+def add_character_avatar_layer(file, avatar_id, layer_name=None,
+                               layer_type='expression', order=None, config=None):
+    """给某个基础立绘追加一张差分叠加图。
+
+    返回层 dict；失败返回 None。文件落在该立绘所属项目目录下。
+    """
+    avatar = CharacterAvatar.query.filter_by(avatar_id=avatar_id).first()
+    if not avatar:
+        return None
+    character = Character.query.filter_by(character_id=avatar.character_id).first()
+    if not character:
+        return None
+
+    image_url = save_uploaded_file(file, character.project_id)
+    if not image_url:
+        return None
+
+    if order is None:
+        max_order = (db.session.query(func.max(CharacterAvatarLayer.order))
+                     .filter_by(avatar_id=avatar_id).scalar())
+        order = int(max_order or 0) + 1
+
+    layer = CharacterAvatarLayer(
+        avatar_id=avatar_id,
+        image_url=image_url,
+        layer_name=(str(layer_name or '').strip() or None),
+        layer_type=(str(layer_type or 'expression').strip()[:20] or 'expression'),
+        order=int(order),
+        config=config if isinstance(config, dict) else None,
+    )
+    try:
+        db.session.add(layer)
+        db.session.commit()
+        return avatar_layer_to_dict(layer)
+    except Exception as e:
+        print(f'差分层保存失败: {e}')
+        db.session.rollback()
+        _safe_delete_file(image_url)
+        return None
+
+
+def update_character_avatar_layer(layer_id, data):
+    """更新差分层名称/类型/排序/微调参数。"""
+    layer = CharacterAvatarLayer.query.filter_by(layer_id=layer_id).first()
+    if not layer:
+        return None
+    try:
+        if 'layer_name' in data:
+            layer.layer_name = str(data.get('layer_name') or '').strip() or None
+        if 'layer_type' in data and data.get('layer_type'):
+            layer.layer_type = str(data.get('layer_type')).strip()[:20]
+        if 'order' in data:
+            try:
+                layer.order = int(data.get('order') or 0)
+            except (TypeError, ValueError):
+                pass
+        if 'config' in data:
+            layer.config = data.get('config') if isinstance(data.get('config'), dict) else None
+        db.session.commit()
+        return avatar_layer_to_dict(layer)
+    except Exception as e:
+        print(f'差分层更新失败: {e}')
+        db.session.rollback()
+        return None
+
+
+def delete_character_avatar_layer(layer_id):
+    """删除差分层记录，并清掉对应的叠加图文件。"""
+    layer = CharacterAvatarLayer.query.filter_by(layer_id=layer_id).first()
+    if not layer:
+        return False
+    image_url = layer.image_url
+    try:
+        db.session.delete(layer)
+        db.session.commit()
+        _safe_delete_file(image_url)
+        return True
+    except Exception as e:
+        print(f'差分层删除失败: {e}')
+        db.session.rollback()
+        return False
+
+
 def get_project_characters(project_id):
     """
     获取项目所有角色
@@ -739,7 +892,18 @@ def fetch_character_avatars_batch(character_ids):
         CharacterAvatar.created_at.desc()  # 新的排前
     ).all()
 
-    # 构建字典列表返回
+    # 一次性把差分层取回来，避免逐张立绘查询（批量接口面向播放器/工作台）
+    avatar_ids = [a.avatar_id for a in avatars]
+    layers_by_avatar = {}
+    if avatar_ids:
+        layers = (CharacterAvatarLayer.query
+                  .filter(CharacterAvatarLayer.avatar_id.in_(avatar_ids))
+                  .order_by(CharacterAvatarLayer.order.asc(),
+                            CharacterAvatarLayer.layer_id.asc()).all())
+        for layer in layers:
+            layers_by_avatar.setdefault(layer.avatar_id, []).append(
+                avatar_layer_to_dict(layer))
+
     return [{
         'avatar_id': a.avatar_id,
         'character_id': a.character_id,
@@ -747,7 +911,8 @@ def fetch_character_avatars_batch(character_ids):
         'avatar_type': a.avatar_type,
         'costume': a.costume,
         'is_default': a.is_default,
-        'created_at': a.created_at.isoformat() if a.created_at else None
+        'created_at': a.created_at.isoformat() if a.created_at else None,
+        'layers': layers_by_avatar.get(a.avatar_id, []),
     } for a in avatars]
 
 
@@ -875,7 +1040,13 @@ def delete_character_with_relations(character_id):
                     path.conditions = None  # 或者设置为其他默认值
                     db.session.add(path)
 
-        # 4. 删除角色的所有头像
+        # 4. 删除角色的所有头像（连同差分层记录）
+        avatar_ids = [a.avatar_id for a in CharacterAvatar.query.filter_by(
+            character_id=character_id).all()]
+        if avatar_ids:
+            CharacterAvatarLayer.query.filter(
+                CharacterAvatarLayer.avatar_id.in_(avatar_ids)
+            ).delete(synchronize_session=False)
         CharacterAvatar.query.filter_by(character_id=character_id).delete()
 
         # 5. 删除角色本身
@@ -965,6 +1136,11 @@ def delete_character_avatar(avatar_id):
         ScriptContent.query.filter_by(avatar_id=avatar_id).update(
             {'avatar_id': None}, synchronize_session=False)
 
+        # 差分层随之删除：先记下文件地址，记录删掉后再清文件
+        layer_files = [l.image_url for l in _avatar_layers_of(avatar_id)]
+        CharacterAvatarLayer.query.filter_by(avatar_id=avatar_id).delete(
+            synchronize_session=False)
+
         # 构建图片文件路径（绝对路径，避免受启动目录影响）
         rel = str(avatar.image_url or '').lstrip('/')
         if rel.startswith('static/'):
@@ -977,6 +1153,8 @@ def delete_character_avatar(avatar_id):
         # 删除图片文件（仅限 static 目录内）
         if image_path.startswith(os.path.abspath(STATIC_ROOT) + os.sep) and os.path.exists(image_path):
             os.remove(image_path)
+        for file_url in layer_files:
+            _safe_delete_file(file_url)
 
         return True
     except Exception as e:
@@ -1188,12 +1366,24 @@ def delete_scene_by_id(scene_id):
         content_ids = [c.content_id for c in
                        ScriptContent.query.filter_by(scene_id=scene_id).all()]
         if content_ids:
+            branch_ids = [b.path_id for b in BranchPath.query.filter(
+                or_(BranchPath.source_content_id.in_(content_ids),
+                    BranchPath.target_content_id.in_(content_ids))
+            ).all()]
             BranchPath.query.filter(
                 or_(BranchPath.source_content_id.in_(content_ids),
                     BranchPath.target_content_id.in_(content_ids))
             ).delete(synchronize_session=False)
+            if branch_ids:
+                BranchPathTranslation.query.filter(
+                    BranchPathTranslation.path_id.in_(branch_ids)
+                ).delete(synchronize_session=False)
             ContentEffect.query.filter(
                 ContentEffect.content_id.in_(content_ids)
+            ).delete(synchronize_session=False)
+            # 逐句译文同样外键引用 script_contents
+            ContentTranslation.query.filter(
+                ContentTranslation.content_id.in_(content_ids)
             ).delete(synchronize_session=False)
             # 演出指令也引用 script_contents，必须先清掉才能删节点
             ContentDirective.query.filter(
@@ -1208,6 +1398,7 @@ def delete_scene_by_id(scene_id):
         # 章节归属与播放条件是 scene_id 主键外键，删除场景前先清掉
         SceneChapter.query.filter_by(scene_id=scene_id).delete(synchronize_session=False)
         SceneLock.query.filter_by(scene_id=scene_id).delete(synchronize_session=False)
+        SceneTranslation.query.filter_by(scene_id=scene_id).delete(synchronize_session=False)
 
         db.session.delete(scene)
         db.session.commit()
@@ -1296,6 +1487,8 @@ def save_dialogue(data, content_id=None):
     dialogue.content_type = data['content_type']
     dialogue.content_text = data['content_text']
     dialogue.voice_url = data.get('voice_url')
+    emotion = str(data.get('emotion') or '').strip() or None
+    dialogue.emotion = emotion if emotion in EMOTION_OPTIONS else None
     dialogue.order_num = data['order_num']
     if has_condition:
         dialogue.branch_condition = normalized_condition
@@ -1349,6 +1542,15 @@ def duplicate_scene(scene_id):
                 conditions=src_lock.conditions,
             ))
 
+        # 场景标题/描述译文一并复制
+        for st in SceneTranslation.query.filter_by(scene_id=scene_id).all():
+            db.session.add(SceneTranslation(
+                scene_id=new_scene.scene_id,
+                language=st.language,
+                title=st.title,
+                description=st.description,
+            ))
+
         contents = (ScriptContent.query
                     .filter_by(scene_id=scene_id)
                     .order_by(ScriptContent.order_num)
@@ -1373,13 +1575,19 @@ def duplicate_scene(scene_id):
         old_ids = list(id_map.keys())
         if old_ids:
             for b in BranchPath.query.filter(BranchPath.source_content_id.in_(old_ids)).all():
-                db.session.add(BranchPath(
+                nb = BranchPath(
                     project_id=b.project_id,
                     source_content_id=id_map[b.source_content_id],
                     target_content_id=id_map.get(b.target_content_id, b.target_content_id),
                     choice_text=b.choice_text,
                     conditions=b.conditions,
-                ))
+                )
+                db.session.add(nb)
+                db.session.flush()
+                # 选项译文跟随分支复制
+                for bt in BranchPathTranslation.query.filter_by(path_id=b.path_id).all():
+                    db.session.add(BranchPathTranslation(
+                        path_id=nb.path_id, language=bt.language, text=bt.text))
             for e in ContentEffect.query.filter(ContentEffect.content_id.in_(old_ids)).all():
                 db.session.add(ContentEffect(
                     content_id=id_map[e.content_id],
@@ -1393,6 +1601,12 @@ def duplicate_scene(scene_id):
                     directive_type=d.directive_type,
                     payload=d.payload,
                     order_num=d.order_num,
+                ))
+            for t in ContentTranslation.query.filter(ContentTranslation.content_id.in_(old_ids)).all():
+                db.session.add(ContentTranslation(
+                    content_id=id_map[t.content_id],
+                    language=t.language,
+                    text=t.text,
                 ))
 
         db.session.commit()
@@ -1414,11 +1628,21 @@ def delete_dialogue(content_id):
 
     try:
         # 先清理引用该节点的分支边与数值变化：两者都外键引用 script_contents
+        branch_ids = [b.path_id for b in BranchPath.query.filter(
+            or_(BranchPath.source_content_id == content_id,
+                BranchPath.target_content_id == content_id)
+        ).all()]
+        if branch_ids:
+            BranchPathTranslation.query.filter(
+                BranchPathTranslation.path_id.in_(branch_ids)
+            ).delete(synchronize_session=False)
         BranchPath.query.filter(
             or_(BranchPath.source_content_id == content_id,
                 BranchPath.target_content_id == content_id)
         ).delete(synchronize_session=False)
         ContentEffect.query.filter_by(content_id=content_id).delete(synchronize_session=False)
+        # 逐句译文外键引用 script_contents
+        ContentTranslation.query.filter_by(content_id=content_id).delete(synchronize_session=False)
         # 演出指令外键引用 script_contents，同样要先清掉
         ContentDirective.query.filter_by(content_id=content_id).delete(synchronize_session=False)
         ReadRecord.query.filter_by(content_id=content_id).delete(synchronize_session=False)
@@ -1505,6 +1729,15 @@ def build_project_bundle(project_id, user_id):
     effects = (ContentEffect.query.filter(ContentEffect.content_id.in_(content_ids)).all()
                if content_ids else [])
     branches = BranchPath.query.filter_by(project_id=project_id).all()
+    translations = (ContentTranslation.query
+                    .filter(ContentTranslation.content_id.in_(content_ids)).all()
+                    if content_ids else [])
+    scene_translations = (SceneTranslation.query
+                          .filter(SceneTranslation.scene_id.in_([s.scene_id for s in scenes])).all()
+                          if scenes else [])
+    branch_translations = (BranchPathTranslation.query
+                           .filter(BranchPathTranslation.path_id.in_([b.path_id for b in branches])).all()
+                           if branches else [])
     endings = Ending.query.filter_by(project_id=project_id).order_by(Ending.ending_id).all()
     cgs = (ProjectCG.query.filter_by(project_id=project_id)
            .order_by(ProjectCG.order_num, ProjectCG.cg_id).all())
@@ -1535,6 +1768,13 @@ def build_project_bundle(project_id, user_id):
             'avatar_type': a.avatar_type,
             'costume': a.costume,
             'is_default': bool(a.is_default),
+            'layers': [{
+                'image_url': l.image_url,
+                'layer_name': l.layer_name,
+                'layer_type': l.layer_type,
+                'order': l.order,
+                'config': l.config,
+            } for l in _avatar_layers_of(a.avatar_id)],
         } for a in avatars],
         'scenes': [{
             'scene_id': s.scene_id,
@@ -1555,6 +1795,22 @@ def build_project_bundle(project_id, user_id):
             'branch_condition': c.branch_condition,
             'order_num': c.order_num,
         } for c in contents],
+        'translations': [{
+            'content_id': t.content_id,
+            'language': t.language,
+            'text': t.text,
+        } for t in translations],
+        'scene_translations': [{
+            'scene_id': t.scene_id,
+            'language': t.language,
+            'title': t.title,
+            'description': t.description,
+        } for t in scene_translations],
+        'branch_translations': [{
+            'path_id': t.path_id,
+            'language': t.language,
+            'text': t.text,
+        } for t in branch_translations],
         'variables': [{
             'variable_id': v.variable_id,
             'name': v.name,
@@ -1570,6 +1826,7 @@ def build_project_bundle(project_id, user_id):
             'delta': e.delta,
         } for e in effects],
         'branches': [{
+            'path_id': b.path_id,
             'source_content_id': b.source_content_id,
             'target_content_id': b.target_content_id,
             'choice_text': b.choice_text,
@@ -1705,6 +1962,19 @@ def import_project_bundle(user_id, bundle):
             db.session.flush()
             avatar_map[a.get('avatar_id')] = av.avatar_id
 
+            # 差分层：图片地址随包迁移，order/config 原样恢复
+            for layer in a.get('layers') or []:
+                if not layer.get('image_url'):
+                    continue
+                db.session.add(CharacterAvatarLayer(
+                    avatar_id=av.avatar_id,
+                    image_url=layer.get('image_url'),
+                    layer_name=layer.get('layer_name'),
+                    layer_type=(layer.get('layer_type') or 'expression')[:20],
+                    order=int(layer.get('order') or 0),
+                    config=layer.get('config') if isinstance(layer.get('config'), dict) else None,
+                ))
+
         # 场景
         scene_map = {}
         for s in bundle.get('scenes') or []:
@@ -1719,6 +1989,16 @@ def import_project_bundle(user_id, bundle):
             db.session.add(sc)
             db.session.flush()
             scene_map[s.get('scene_id')] = sc.scene_id
+
+        # 场景标题/描述译文
+        for st in bundle.get('scene_translations') or []:
+            nid = scene_map.get(st.get('scene_id'))
+            lang = (st.get('language') or '').strip()
+            title = (st.get('title') or '').strip()
+            description = (st.get('description') or '').strip()
+            if nid and lang and (title or description):
+                db.session.add(SceneTranslation(
+                    scene_id=nid, language=lang, title=title, description=description))
 
         # 变量
         var_map = {}
@@ -1758,6 +2038,14 @@ def import_project_bundle(user_id, bundle):
             db.session.flush()
             content_map[c.get('content_id')] = ct.content_id
 
+        # 逐句译文（content_id 按新节点重映射）
+        for t in bundle.get('translations') or []:
+            nid = content_map.get(t.get('content_id'))
+            lang = (t.get('language') or '').strip()
+            text = (t.get('text') or '').strip()
+            if nid and lang and text:
+                db.session.add(ContentTranslation(content_id=nid, language=lang, text=text))
+
         # 节点数值变化
         for e in bundle.get('effects') or []:
             nid = content_map.get(e.get('content_id'))
@@ -1767,17 +2055,31 @@ def import_project_bundle(user_id, bundle):
                                              delta=e.get('delta') or 0))
 
         # 分支边
+        branch_map = {}
         for b in bundle.get('branches') or []:
             src = content_map.get(b.get('source_content_id'))
             tgt = content_map.get(b.get('target_content_id'))
             if src and tgt:
-                db.session.add(BranchPath(
+                nb = BranchPath(
                     project_id=project.project_id,
                     source_content_id=src,
                     target_content_id=tgt,
                     choice_text=b.get('choice_text'),
                     conditions=b.get('conditions'),
-                ))
+                )
+                db.session.add(nb)
+                db.session.flush()
+                if b.get('path_id') is not None:
+                    branch_map[b.get('path_id')] = nb.path_id
+
+        # 选项译文（path_id 按新分支重映射）
+        for bt in bundle.get('branch_translations') or []:
+            nid = branch_map.get(bt.get('path_id'))
+            lang = (bt.get('language') or '').strip()
+            text = (bt.get('text') or '').strip()
+            if nid and lang and text:
+                db.session.add(BranchPathTranslation(
+                    path_id=nid, language=lang, text=text))
 
         # 结局
         ending_map = {}

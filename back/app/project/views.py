@@ -11,18 +11,31 @@ from .services import get_user_projects, get_project_by_id, create_project, upda
     delete_character_with_relations, update_character, add_character_avatar, delete_character_avatar, \
     update_character_avatar, get_scene_by_id, delete_scene_by_id, update_existing_scene, create_new_scene, \
     save_uploaded_file, save_dialogue, delete_dialogue, get_character_avatars, get_characters_by_project_id, \
-    reorder_dialogues, get_characterAvatar_by_id, export_project, get_public_projects, \
+    update_scene, reorder_dialogues, get_characterAvatar_by_id, export_project, get_public_projects, \
     TEMPLATE_TYPES, UI_THEMES, get_templates, build_project_bundle, render_project_script_text, \
-    import_project_bundle, duplicate_scene
+    import_project_bundle, duplicate_scene, avatar_to_dict, add_character_avatar_layer, \
+    update_character_avatar_layer, delete_character_avatar_layer
 from .. import db, STATIC_ROOT
-from ..models import Project, CharacterAvatar, Scene, ScriptContent, Character, BranchPath
+from ..models import Project, CharacterAvatar, CharacterAvatarLayer, Scene, ScriptContent, Character, BranchPath
 from ..security import current_user_id
 from .services import _UNSET
 from .save_views import _owned_project
+from .story_path import load_graph, walk_route
+from .story_export import build_audio_script_docx, build_novel_docx
+from .translation_views import _branch_translations_of, _scene_translations_of, _translations_of
 
 
 def _iso(dt):
     return dt.isoformat() if dt else None
+
+
+def _require_owned_project(project_id):
+    """校验当前登录用户是项目作者；统一返回 (项目, 错误响应) 形式。"""
+    try:
+        pid = int(project_id)
+    except (TypeError, ValueError):
+        return None, (jsonify({'success': False, 'message': '无效的项目ID'}), 400)
+    return _owned_project(pid)
 
 
 def project_to_dict(p):
@@ -76,6 +89,18 @@ def _project_id_from_request():
 
     if 'avatar_id' in va:
         avatar = db.session.get(CharacterAvatar, va['avatar_id'])
+        if not avatar:
+            return None, (jsonify({'success': False, 'message': '立绘不存在'}), 404)
+        character = db.session.get(Character, avatar.character_id)
+        if not character:
+            return None, (jsonify({'success': False, 'message': '角色不存在'}), 404)
+        return character.project_id, None
+
+    if 'layer_id' in va:
+        layer = db.session.get(CharacterAvatarLayer, va['layer_id'])
+        if not layer:
+            return None, (jsonify({'success': False, 'message': '立绘差分层不存在'}), 404)
+        avatar = db.session.get(CharacterAvatar, layer.avatar_id)
         if not avatar:
             return None, (jsonify({'success': False, 'message': '立绘不存在'}), 404)
         character = db.session.get(Character, avatar.character_id)
@@ -369,6 +394,37 @@ def export_project_data(project_id):
 
     fmt = (request.args.get('format') or 'json').lower()
 
+    if fmt in ('novel_docx', 'audio_script'):
+        try:
+            from docx import Document  # noqa: F401
+        except ImportError:
+            return jsonify({'success': False, 'message': '服务器未安装 python-docx，无法导出 Word'}), 503
+
+        ending_id = request.args.get('ending_id', type=int)
+        graph = load_graph(project_id)
+        if ending_id and not any(int(e.ending_id) == int(ending_id) for e in graph['endings']):
+            return jsonify({'success': False, 'message': '指定的结局不存在'}), 400
+        route_result = walk_route(graph, include_directives=True,
+                                  target_ending_id=ending_id)
+        if not route_result.get('route'):
+            return jsonify({'success': False, 'message': '项目还没有可导出的主线内容'}), 400
+
+        if fmt == 'novel_docx':
+            payload = build_novel_docx(project_row.title, route_result)
+            suffix = '小说'
+        else:
+            payload = build_audio_script_docx(project_row.title, route_result)
+            suffix = '有声剧脚本'
+
+        resp = make_response(payload)
+        resp.headers['Content-Type'] = (
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        resp.headers['Content-Disposition'] = (
+            f"attachment; filename=project_{project_id}_{fmt}.docx; "
+            f"filename*=UTF-8''{quote(f'{project_row.title}-{suffix}.docx')}"
+        )
+        return resp
+
     if fmt == 'docx':
         text = render_project_script_text(project_id, user_id) or ''
         try:
@@ -625,15 +681,7 @@ def get_character_avatar_list(character_id):
 
         return jsonify({
             'success': True,
-            'data': [{
-                'avatar_id': a.avatar_id,
-                'character_id': a.character_id,
-                'image_url': a.image_url,
-                'avatar_type': a.avatar_type,
-                'costume': a.costume,
-                'is_default': a.is_default,
-                'created_at': a.created_at.isoformat()
-            } for a in avatars]
+            'data': [avatar_to_dict(a) for a in avatars]
         })
     except Exception as e:
         return jsonify({
@@ -915,6 +963,59 @@ def cutout_character_avatar(avatar_id):
 
 
 '''
+    立绘分层差分：基础立绘 + 表情/姿势/服装叠加层
+'''
+
+
+@project.route('/avatar/<int:avatar_id>/layers', methods=['POST'])
+def upload_avatar_layer(avatar_id):
+    """
+    给某个基础立绘上传一张叠加层图片。
+
+    表单参数:
+        - file: 叠加图（透明底 PNG 效果最好）
+        - layer_name: 层名称（可选，如「微笑」「侧身」）
+        - layer_type: expression / pose / costume / other
+        - order: 叠放顺序，越大越靠前（省略时排到最后）
+    """
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '没有文件部分'}), 400
+
+    avatar = db.session.get(CharacterAvatar, avatar_id)
+    if not avatar:
+        return jsonify({'success': False, 'message': '立绘不存在'}), 404
+
+    file = request.files['file']
+    layer_name = request.form.get('layer_name')
+    layer_type = request.form.get('layer_type') or 'expression'
+    order = request.form.get('order', type=int)
+
+    data = add_character_avatar_layer(file, avatar_id, layer_name, layer_type, order)
+    if not data:
+        return jsonify({'success': False, 'message': '差分层上传失败，请检查图片格式'}), 400
+
+    return jsonify({'success': True, 'data': data, 'message': '差分层上传成功'}), 200
+
+
+@project.route('/avatar_layers/<int:layer_id>', methods=['POST'])
+def update_avatar_layer(layer_id):
+    """更新差分层的名称 / 类型 / 叠放顺序 / 微调参数。"""
+    data = request.get_json(silent=True) or {}
+    result = update_character_avatar_layer(layer_id, data)
+    if not result:
+        return jsonify({'success': False, 'message': '差分层更新失败'}), 404
+    return jsonify({'success': True, 'data': result, 'message': '差分层已更新'})
+
+
+@project.route('/avatar_layers/<int:layer_id>', methods=['DELETE'])
+def delete_avatar_layer(layer_id):
+    """删除差分层，并清理叠加图文件。"""
+    if delete_character_avatar_layer(layer_id):
+        return jsonify({'success': True, 'message': '差分层已删除'}), 200
+    return jsonify({'success': False, 'message': '差分层不存在或删除失败'}), 404
+
+
+'''
     3.场景管理
 '''
 
@@ -926,6 +1027,7 @@ def get_scenes(project_id):
     """
     try:
         scenes = get_project_scenes(project_id)
+        translations = _scene_translations_of([s.scene_id for s in scenes])
         return jsonify({
             'success': True,
             'data': [{
@@ -935,6 +1037,7 @@ def get_scenes(project_id):
                 'background_url': s.background_url,
                 'music_url': s.music_url,
                 'description': s.description,
+                'translations': translations.get(int(s.scene_id), {}),
                 'order_num': s.order_num,
                 'created_at': s.created_at.isoformat()
             } for s in scenes]
@@ -969,6 +1072,7 @@ def get_scene(scene_id):
                 'project_id': scene.project_id,
                 'title': scene.title,
                 'description': scene.description,
+                'translations': _scene_translations_of([scene.scene_id]).get(int(scene.scene_id), {}),
                 'background_url': scene.background_url,
                 'music_url': scene.music_url,
                 'order_num': scene.order_num,
@@ -990,14 +1094,19 @@ def update_scene_settings(scene_id):
     :return: JSON响应
     """
     try:
-        data = request.json
-        scene, error = update_scene(
-            scene_id,
-            title=data.get('title'),
-            description=data.get('description'),
-            background_url=data.get('background_url'),
-            music_url=data.get('music_url')
-        )
+        data = request.get_json(silent=True) or {}
+        existing_scene = db.session.get(Scene, scene_id)
+        if not existing_scene:
+            return jsonify({'success': False, 'message': f'场景不存在: {scene_id}'}), 404
+        _, err = _require_owned_project(existing_scene.project_id)
+        if err:
+            return err
+        # 只更新请求里出现的字段，避免旧接口把未传的标题/背景清空
+        editable = ('title', 'description', 'background_url', 'music_url')
+        updates = {key: data.get(key) for key in editable if key in data}
+        if not updates:
+            return jsonify({'success': False, 'message': '没有需要更新的字段'}), 400
+        scene, error = update_scene(scene_id, **updates)
 
         if error:
             status_code = 404 if error == '场景不存在' else 500
@@ -1013,6 +1122,7 @@ def update_scene_settings(scene_id):
                 'project_id': scene.project_id,
                 'title': scene.title,
                 'description': scene.description,
+                'translations': _scene_translations_of([scene.scene_id]).get(int(scene.scene_id), {}),
                 'background_url': scene.background_url,
                 'music_url': scene.music_url,
                 'order_num': scene.order_num
@@ -1031,7 +1141,9 @@ def create_scene():
     创建新场景
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '无效的请求数据'}), 400
 
         # 验证必填字段
         required_fields = ['project_id', 'title', 'order_num']
@@ -1041,6 +1153,10 @@ def create_scene():
                     'success': False,
                     'message': f'缺少必填字段: {field}'
                 }), 400
+
+        _, err = _require_owned_project(data.get('project_id'))
+        if err:
+            return err
 
         scene = create_new_scene(
             project_id=data['project_id'],
@@ -1072,7 +1188,7 @@ def create_scene():
 
 
 @project.route('/scenes/<int:scene_id>', methods=['PUT'])
-def update_scene(scene_id):
+def update_scene_api(scene_id):
     """
     更新场景信息
     """
@@ -1088,6 +1204,10 @@ def update_scene(scene_id):
                 'success': False,
                 'message': f'场景不存在: {scene_id}'
             }), 404
+
+        _, err = _require_owned_project(existing_scene.project_id)
+        if err:
+            return err
 
         # 只要求「至少传一个可更新字段」，不再强制 title + order_num，
         # 这样前端拖拽排序时只发 {order_num} 也不会把背景图/音乐覆盖掉（P0-3）
@@ -1189,6 +1309,10 @@ def delete_scene(scene_id):
                 'message': f'场景不存在: {scene_id}'
             }), 404
 
+        _, err = _require_owned_project(existing_scene.project_id)
+        if err:
+            return err
+
         delete_scene_by_id(scene_id)
 
         return jsonify({
@@ -1244,6 +1368,7 @@ def get_dialogues(scene_id):
 
     avatars = CharacterAvatar.query.filter(CharacterAvatar.avatar_id.in_(avatar_ids)).all()
     avatar_map = {a.avatar_id: a.avatar_type for a in avatars}
+    translations = _translations_of([d.content_id for d in dialogues])
 
     return jsonify({
         'success': True,
@@ -1253,6 +1378,8 @@ def get_dialogues(scene_id):
             'scene_id': d.scene_id,
             'content_type': d.content_type,
             'content_text': d.content_text,
+            'translations': translations.get(int(d.content_id), {}),
+            'emotion': d.emotion,
             'branch_condition': d.branch_condition,
             'voice_url': d.voice_url,
             'character_id': d.character_id,
@@ -1270,6 +1397,11 @@ def create_dialogue():
     """
     try:
         data = request.json
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '无效的请求数据'}), 400
+        _, err = _require_owned_project(data.get('project_id'))
+        if err:
+            return err
         dialogue, error = save_dialogue(data)
 
         if error:
@@ -1294,6 +1426,8 @@ def create_dialogue():
                 'scene_id': dialogue.scene_id,
                 'content_type': dialogue.content_type,
                 'content_text': dialogue.content_text,
+                'translations': _translations_of([dialogue.content_id]).get(int(dialogue.content_id), {}),
+                'emotion': dialogue.emotion,
                 'branch_condition': dialogue.branch_condition,
                 'voice_url': dialogue.voice_url,
                 'character_id': dialogue.character_id,
@@ -1318,6 +1452,27 @@ def update_dialogue(content_id):
     """
     try:
         data = request.json
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '无效的请求数据'}), 400
+        existing = db.session.get(ScriptContent, content_id)
+        if not existing:
+            return jsonify({'success': False, 'message': '对话不存在'}), 404
+        _, err = _require_owned_project(existing.project_id)
+        if err:
+            return err
+        try:
+            payload_project = int(data.get('project_id') or existing.project_id)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': '无效的项目ID'}), 400
+        if payload_project != int(existing.project_id):
+            return jsonify({'success': False, 'message': '不能把台词移动到其他项目'}), 400
+        try:
+            payload_scene = int(data.get('scene_id'))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': '无效的场景ID'}), 400
+        scene_row = db.session.get(Scene, payload_scene)
+        if not scene_row or int(scene_row.project_id) != int(existing.project_id):
+            return jsonify({'success': False, 'message': '场景不属于当前项目'}), 400
         dialogue, error = save_dialogue(data, content_id)
 
         if error:
@@ -1342,6 +1497,8 @@ def update_dialogue(content_id):
                 'scene_id': dialogue.scene_id,
                 'content_type': dialogue.content_type,
                 'content_text': dialogue.content_text,
+                'translations': _translations_of([dialogue.content_id]).get(int(dialogue.content_id), {}),
+                'emotion': dialogue.emotion,
                 'branch_condition': dialogue.branch_condition,
                 'voice_url': dialogue.voice_url,
                 'character_id': dialogue.character_id,
@@ -1365,6 +1522,12 @@ def delete_dialogue_api(content_id):
     :return: JSON响应
     """
     try:
+        existing = db.session.get(ScriptContent, content_id)
+        if not existing:
+            return jsonify({'success': False, 'message': '对话不存在'}), 404
+        _, err = _require_owned_project(existing.project_id)
+        if err:
+            return err
         success, error = delete_dialogue(content_id)
         if not success:
             status_code = 404 if error == '对话不存在' else 500
@@ -1410,6 +1573,13 @@ def reorder_dialogues_api(scene_id):
                 'message': 'ordered_content_ids必须是数组'
             }), 400
 
+        scene = get_scene_by_id(scene_id)
+        if not scene:
+            return jsonify({'success': False, 'message': f'场景不存在: {scene_id}'}), 404
+        _, err = _require_owned_project(scene.project_id)
+        if err:
+            return err
+
         # 调用业务函数处理排序
         success, error = reorder_dialogues(scene_id, data['ordered_content_ids'])
         if not success:
@@ -1433,6 +1603,7 @@ def reorder_dialogues_api(scene_id):
                 'scene_id': d.scene_id,
                 'content_type': d.content_type,
                 'content_text': d.content_text,
+                'emotion': d.emotion,
                 'voice_url': d.voice_url,
                 'character_id': d.character_id,
                 'avatar_type': avatar_map.get(d.avatar_id),

@@ -124,6 +124,9 @@ def story_regression(project_id):
                 .filter_by(project_id=project_id)
                 .order_by(ScriptContent.order_num.asc(), ScriptContent.content_id.asc())
                 .all())
+    # 长篇线性项目需要能走完全程；分支爆炸时仍由固定上限保护
+    max_states = max(MAX_STATES, len(contents) + 100)
+    max_depth = max(MAX_DEPTH, len(contents) + 10)
     by_scene = {}
     for c in contents:
         by_scene.setdefault(c.scene_id, []).append(c)
@@ -205,7 +208,7 @@ def story_regression(project_id):
         stack.append((start_si, 0, initial, 0))
 
     while stack:
-        if states >= MAX_STATES:
+        if states >= max_states:
             capped = True
             break
         states += 1
@@ -246,7 +249,7 @@ def story_regression(project_id):
                 reached_endings.add(int(e.ending_id))
             continue
 
-        if depth >= MAX_DEPTH:
+        if depth >= max_depth:
             capped = True
             continue
 

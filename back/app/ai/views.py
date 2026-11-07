@@ -433,6 +433,7 @@ def generate_voice_view():
         data = request.get_json() or {}
         text = data.get('text') or data.get('prompt') or ''
         voice_type = data.get('voice_type') or None
+        emotion = data.get('emotion') or None
         duration = data.get('duration') or 0
         user_id = request.headers.get('X-User-Id', type=int)
 
@@ -443,12 +444,13 @@ def generate_voice_view():
 
         def _sync_voice():
             return generate_voice(user_id, text, voice_type=voice_type,
-                                  duration=int(duration or 0))
+                                  duration=int(duration or 0), emotion=emotion)
 
         return _submit_task(
             'voice',
             {'user_id': user_id, 'text': text,
-             'voice_type': voice_type, 'duration': int(duration or 0)},
+             'voice_type': voice_type, 'emotion': emotion,
+             'duration': int(duration or 0)},
             sync_fn=_sync_voice,
         )
     except Exception as e:

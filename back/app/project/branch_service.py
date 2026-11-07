@@ -13,13 +13,14 @@ branch_paths（剧情分支）业务层 —— 计划书 3.3.3 的「最大功�
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import db
-from ..models import BranchPath, Project, Scene, ScriptContent, ProjectVariable
+from ..models import BranchPath, BranchPathTranslation, Project, Scene, ScriptContent, ProjectVariable
 from .story_graph import validate_story_graph
+from .translation_views import _branch_translations_of
 
 
 # ==================== 序列化 ====================
 
-def _branch_to_dict(bp: BranchPath) -> Dict[str, Any]:
+def _branch_to_dict(bp: BranchPath, translations=None) -> Dict[str, Any]:
     return {
         'path_id': bp.path_id,
         'project_id': bp.project_id,
@@ -28,6 +29,7 @@ def _branch_to_dict(bp: BranchPath) -> Dict[str, Any]:
         'choice_text': bp.choice_text,
         'image_url': bp.image_url,
         'conditions': bp.conditions,
+        'translations': translations if translations is not None else {},
     }
 
 
@@ -127,7 +129,8 @@ def list_branches(project_id: int) -> Tuple[bool, Any]:
             .filter_by(project_id=project_id)
             .order_by(BranchPath.path_id.asc())
             .all())
-    return True, [_branch_to_dict(b) for b in rows]
+    translations = _branch_translations_of([b.path_id for b in rows])
+    return True, [_branch_to_dict(b, translations.get(int(b.path_id), {})) for b in rows]
 
 
 def create_branch(project_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
@@ -206,6 +209,7 @@ def delete_branch(path_id: int) -> Tuple[bool, Any]:
     bp = BranchPath.query.get(path_id)
     if not bp:
         return False, '分支不存在'
+    BranchPathTranslation.query.filter_by(path_id=path_id).delete(synchronize_session=False)
     db.session.delete(bp)
     db.session.commit()
     return True, {'path_id': path_id}
@@ -249,7 +253,19 @@ def batch_replace_branches(project_id: int, branches: List[Dict[str, Any]],
         })
 
     try:
+        # 整树覆盖时先记住旧分支的译文，按 (起点, 终点) 还原到新分支上
+        old_translations = {}
         if replace:
+            old_rows = BranchPath.query.filter_by(project_id=project_id).all()
+            old_ids = [b.path_id for b in old_rows]
+            old_trans = _branch_translations_of(old_ids)
+            for b in old_rows:
+                old_translations[(b.source_content_id, b.target_content_id)] = \
+                    old_trans.get(int(b.path_id), {})
+            if old_ids:
+                BranchPathTranslation.query.filter(
+                    BranchPathTranslation.path_id.in_(old_ids)
+                ).delete(synchronize_session=False)
             BranchPath.query.filter_by(project_id=project_id).delete()
 
         existing_pairs = set()
@@ -259,9 +275,16 @@ def batch_replace_branches(project_id: int, branches: List[Dict[str, Any]],
 
         created = 0
         for item in prepared:
-            if (item['source_content_id'], item['target_content_id']) in existing_pairs:
+            pair = (item['source_content_id'], item['target_content_id'])
+            if pair in existing_pairs:
                 continue
-            db.session.add(BranchPath(project_id=project_id, **item))
+            bp = BranchPath(project_id=project_id, **item)
+            db.session.add(bp)
+            db.session.flush()
+            for lang, text in (old_translations.get(pair) or {}).items():
+                if (text or '').strip():
+                    db.session.add(BranchPathTranslation(
+                        path_id=bp.path_id, language=lang, text=text))
             created += 1
         db.session.commit()
     except Exception as e:

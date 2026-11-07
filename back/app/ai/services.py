@@ -515,6 +515,15 @@ def generate_music(user_id: int, prompt: str, duration: int,
 # 历史实现把 map 型的 app 塞进了 async 接口，被服务端直接拒绝（HTTP 400）。
 VOLCENGINE_TTS_SYNC_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
+# 配音导演：按台词情绪微调 TTS 语速 / 音量 / 音调
+_TTS_EMOTION_TUNE = {
+    '平静': (1.0, 1.0, 1.0),
+    '犹豫': (0.90, 0.95, 1.0),
+    '生气': (1.15, 1.10, 1.05),
+    '哭腔': (0.90, 0.90, 0.95),
+    '低声': (0.85, 0.80, 0.95),
+}
+
 
 def _volcengine_appid():
     """appid 必须是字符串，转成 int 会被序列化成 2.12e+09 导致服务端解析失败。"""
@@ -526,7 +535,7 @@ def _volcengine_token():
 
 
 def generate_voice(user_id: int, text: str, voice_type: str = None,
-                   duration: int = 0) -> Tuple[bool, Dict]:
+                   duration: int = 0, emotion: str = None) -> Tuple[bool, Dict]:
     """
     把文字合成**配音音频**（火山引擎 TTS，一次性合成接口）。
 
@@ -547,6 +556,9 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
         }
 
     voice_type = voice_type or _cfg('VOLCENGINE_VOICE_TYPE', 'BV001_streaming')
+    emotion = (emotion or '').strip() or None
+    speed_ratio, volume_ratio, pitch_ratio = _TTS_EMOTION_TUNE.get(
+        emotion, (1.0, 1.0, 1.0))
     fmt = 'mp3'
 
     headers = {
@@ -564,9 +576,9 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
         "audio": {
             "voice_type": voice_type,
             "encoding": fmt,
-            "speed_ratio": 1.0,
-            "volume_ratio": 1.0,
-            "pitch_ratio": 1.0,
+            "speed_ratio": speed_ratio,
+            "volume_ratio": volume_ratio,
+            "pitch_ratio": pitch_ratio,
         },
         "request": {
             "reqid": str(uuid.uuid4()),
@@ -615,6 +627,10 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
         "message": "配音生成完成",
         "backend": "volcengine-tts",
         "voice_type": voice_type,
+        "emotion": emotion,
+        "speed_ratio": speed_ratio,
+        "volume_ratio": volume_ratio,
+        "pitch_ratio": pitch_ratio,
         "file": _static_rel_url(full_path),
         "size_bytes": len(audio_bytes),
     }

@@ -470,6 +470,13 @@
                       </div>
                       <div class="avatar-actions">
                         <button
+                          class="avatar-btn layer"
+                          :title="`差分叠加层：${(avatar.layers || []).length} 层`"
+                          @click.stop="openLayerDialog(avatar)"
+                        >
+                          差分{{ (avatar.layers || []).length ? `(${avatar.layers!.length})` : '' }}
+                        </button>
+                        <button
                           class="avatar-btn cutout"
                           :disabled="cutoutLoadingId !== null || cutoutBatchRunning"
                           title="去掉立绘背景，保留透明底人物"
@@ -552,6 +559,76 @@
                 </template>
               </el-dialog>
 
+              <!-- 立绘差分层管理 -->
+              <el-dialog v-model="layerDialogVisible" title="立绘差分层" width="600px" class="custom-dialog">
+                <div v-if="layerTargetAvatar" class="layer-panel">
+                  <div class="layer-base">
+                    <img :src="BASE_URL + (layerTargetAvatar.image_url || '')" alt="" />
+                    <div class="layer-base-meta">
+                      <p class="layer-base-title">
+                        {{ layerTargetAvatar.avatar_type }} · {{ layerTargetAvatar.costume || '默认服装' }}
+                      </p>
+                      <p class="layer-base-desc">
+                        基础图固定不动；差分图按「叠放顺序」压在上面，数字越大越靠前。透明底 PNG 效果最好。
+                      </p>
+                    </div>
+                  </div>
+
+                  <div v-if="layerTargetAvatar.layers && layerTargetAvatar.layers.length" class="layer-list">
+                    <div v-for="layer in layerTargetAvatar.layers" :key="layer.layer_id" class="layer-row">
+                      <img :src="BASE_URL + layer.image_url" alt="" class="layer-thumb" />
+                      <el-input
+                        v-model="layer.layer_name"
+                        placeholder="层名称"
+                        class="layer-name"
+                        @change="saveAvatarLayer(layer)"
+                      />
+                      <el-select v-model="layer.layer_type" class="layer-type" @change="saveAvatarLayer(layer)">
+                        <el-option v-for="t in avatarLayerTypes" :key="t.value" :label="t.label" :value="t.value" />
+                      </el-select>
+                      <el-input-number
+                        v-model="layer.order"
+                        :min="0"
+                        :max="99"
+                        size="small"
+                        controls-position="right"
+                        class="layer-order"
+                        @change="saveAvatarLayer(layer)"
+                      />
+                      <button class="avatar-btn delete" @click="removeAvatarLayer(layer)">删除</button>
+                    </div>
+                  </div>
+                  <p v-else class="layer-empty">还没有差分层。上传一张透明底表情/姿势图即可叠加。</p>
+
+                  <div class="layer-upload">
+                    <el-upload
+                      :show-file-list="false"
+                      :auto-upload="false"
+                      :on-change="onLayerFileChange"
+                      accept=".png,.webp,.jpg,.jpeg"
+                      drag
+                    >
+                      <div class="upload-area layer-upload-area">
+                        <el-icon><UploadFilled /></el-icon>
+                        <p>点击或拖拽上传差分图{{ layerFile ? `：${layerFile.name}` : '' }}</p>
+                      </div>
+                    </el-upload>
+                    <div class="layer-upload-form">
+                      <el-input v-model="newLayer.layer_name" placeholder="层名称，如「微笑」" />
+                      <el-select v-model="newLayer.layer_type">
+                        <el-option v-for="t in avatarLayerTypes" :key="t.value" :label="t.label" :value="t.value" />
+                      </el-select>
+                      <button class="dialog-btn confirm" :disabled="!layerFile || layerSaving" @click="addAvatarLayer">
+                        {{ layerSaving ? '上传中…' : '添加差分层' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <template #footer>
+                  <button class="dialog-btn cancel" @click="layerDialogVisible = false">关闭</button>
+                </template>
+              </el-dialog>
+
               <!-- 抠图进度对话框 -->
               <el-dialog
                 v-model="cutoutDialogVisible"
@@ -623,13 +700,29 @@
                 <div>
                   <h3>项目变量</h3>
                   <p class="variables-tip">用于好感度、数值、开关；在「场景编辑 → 数值变化」里给节点加减。</p>
+                  <p class="variables-tip">活叙事行为变量仅在你点击启用后记录，可在剧情条件中使用。</p>
                 </div>
-                <button class="primary-btn" @click="openCreateVariable">新建变量</button>
+                <div class="variables-actions">
+                  <button
+                    v-if="missingBehaviorVariables.length"
+                    class="primary-btn behavior-btn"
+                    :disabled="behaviorSaving"
+                    @click="enableBehaviorVariables"
+                  >
+                    {{ behaviorSaving ? '启用中…' : '启用行为变量' }}
+                  </button>
+                  <button class="primary-btn" @click="openCreateVariable">新建变量</button>
+                </div>
               </div>
 
               <el-table :data="variables" class="variables-table" v-if="variables.length">
                 <el-table-column prop="label" label="展示名" min-width="120" />
-                <el-table-column prop="name" label="变量名" min-width="120" />
+                <el-table-column label="变量名" min-width="140">
+                  <template #default="{ row }">
+                    <span>{{ row.name }}</span>
+                    <el-tag v-if="isBehaviorVariable(row)" type="success" size="small" class="behavior-tag">行为</el-tag>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="initial_value" label="初始值" width="90" />
                 <el-table-column label="范围" width="120">
                   <template #default="{ row }">
@@ -905,8 +998,8 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getProject, getDialogueCount } from '@/api/project'
-import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar, cutoutCharacterAvatar } from '@/api/character'
-import type { AvatarType } from '@/api/character'
+import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar, cutoutCharacterAvatar, uploadCharacterAvatarLayer, updateCharacterAvatarLayer, deleteCharacterAvatarLayer } from '@/api/character'
+import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
 import { getScenes, uploadSceneFile } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
 import { getStoryGraph } from '@/api/branch'
@@ -956,6 +1049,7 @@ interface CharacterAvatar {
   costume?: string
   is_default: boolean
   created_at: string
+  layers?: CharacterAvatarLayer[]
 }
 
 interface Scene {
@@ -1025,6 +1119,30 @@ export default defineComponent({
 
     // 项目变量
     const variables = ref<any[]>([])
+    // 活叙事：作者显式启用的行为变量（由播放器自动记录，不作为普通数值加减）
+    const BEHAVIOR_VARIABLES = [
+      {
+        name: 'behavior_hesitation',
+        label: '选择犹豫秒数',
+        initial_value: 0,
+        min_value: 0,
+        max_value: 60,
+        description: '玩家在当前选择节点上犹豫的秒数，每次做出选择后更新；可用于后续旁白/隐藏剧情条件',
+      },
+      {
+        name: 'behavior_review',
+        label: '回看次数',
+        initial_value: 0,
+        min_value: 0,
+        max_value: 99,
+        description: '本局玩家打开回想或执行「上一句」回退的次数；可用于隐藏剧情条件',
+      },
+    ]
+    const behaviorSaving = ref(false)
+    const isBehaviorVariable = (row: any) => String(row?.name || '').startsWith('behavior_')
+    const missingBehaviorVariables = computed(() =>
+      BEHAVIOR_VARIABLES.filter(def => !variables.value.some(v => v.name === def.name))
+    )
     const variableDialogVisible = ref(false)
     const editingVariableId = ref<number | null>(null)
     const variableSaving = ref(false)
@@ -1091,6 +1209,18 @@ export default defineComponent({
     const cutoutError = ref('')
     let cutoutTimer: ReturnType<typeof setInterval> | null = null
     let cutoutCloseTimer: ReturnType<typeof setTimeout> | null = null
+    // 立绘分层差分：基础图 + 表情/姿势叠加层
+    const layerDialogVisible = ref(false)
+    const layerTargetAvatar = ref<CharacterAvatar | null>(null)
+    const layerFile = ref<File | null>(null)
+    const layerSaving = ref(false)
+    const avatarLayerTypes = [
+      { value: 'expression', label: '表情' },
+      { value: 'pose', label: '姿势' },
+      { value: 'costume', label: '服装' },
+      { value: 'other', label: '其他' },
+    ]
+    const newLayer = ref<{ layer_name: string; layer_type: string }>({ layer_name: '', layer_type: 'expression' })
     const settingsDialogVisible = ref(false)
     const showFeaturePreview = ref(false)
     const showNodeEditor = ref(false)
@@ -1357,9 +1487,9 @@ export default defineComponent({
       router.push(`/create/${props.projectId}`)
     }
 
-    // 新窗口打开播放器试玩
+    // 新窗口打开播放器试玩（作者预览带演出模式入口）
     const openPlayer = () => {
-      window.open(router.resolve(`/view/${props.projectId}`).href, '_blank')
+      window.open(router.resolve({ path: `/view/${props.projectId}`, query: { edit: '1' } }).href, '_blank')
     }
 
     // 第 10 批：节点级剧情图编辑器（content-level 节点 + 拖拽连线 + 条件编辑）
@@ -1555,6 +1685,86 @@ export default defineComponent({
         characterDrawerVisible.value = false
         characterAvatars.value = characterAvatars.value.filter(a => a.avatar_id !== avatarId)
         ElMessage.success('立绘删除成功')
+      } catch {}
+    }
+
+    // ==================== 立绘分层差分 ====================
+    const syncCurrentCharacterAvatars = () => {
+      if (!currentCharacter.value || isAdd.value) return
+      const characterId = currentCharacter.value.character_id
+      currentCharacterAvatars.value = characterAvatars.value.filter(a => a.character_id === characterId)
+      if (layerTargetAvatar.value) {
+        const avatarId = layerTargetAvatar.value.avatar_id
+        layerTargetAvatar.value = currentCharacterAvatars.value.find(a => a.avatar_id === avatarId) || null
+      }
+    }
+
+    const openLayerDialog = (avatar: CharacterAvatar) => {
+      layerTargetAvatar.value = avatar
+      layerFile.value = null
+      newLayer.value = { layer_name: '', layer_type: 'expression' }
+      layerDialogVisible.value = true
+    }
+
+    const onLayerFileChange = (file: any) => {
+      layerFile.value = file?.raw || null
+    }
+
+    const refreshAfterLayerChange = async () => {
+      await fetchCharacterAvatars()
+      syncCurrentCharacterAvatars()
+    }
+
+    // 差分层按叠放顺序升序展示，和「数字越大越靠前」的语义保持一致
+    const sortTargetLayers = () => {
+      const avatar = layerTargetAvatar.value
+      if (!avatar?.layers) return
+      avatar.layers = [...avatar.layers].sort(
+        (a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)
+      )
+    }
+
+    const addAvatarLayer = async () => {
+      if (!layerTargetAvatar.value || !layerFile.value) return
+      layerSaving.value = true
+      try {
+        await uploadCharacterAvatarLayer(
+          layerTargetAvatar.value.avatar_id,
+          layerFile.value,
+          newLayer.value.layer_name.trim() || undefined,
+          newLayer.value.layer_type,
+        )
+        await refreshAfterLayerChange()
+        layerFile.value = null
+        newLayer.value = { layer_name: '', layer_type: 'expression' }
+        ElMessage.success('差分层已添加')
+      } catch (error) {
+        ElMessage.error('差分层上传失败，请重试')
+      } finally {
+        layerSaving.value = false
+      }
+    }
+
+    const saveAvatarLayer = async (layer: CharacterAvatarLayer) => {
+      try {
+        await updateCharacterAvatarLayer(layer.layer_id, {
+          layer_name: layer.layer_name || '',
+          layer_type: layer.layer_type,
+          order: Number(layer.order) || 0,
+        })
+        sortTargetLayers()
+        ElMessage.success('差分层已更新')
+      } catch (error) {
+        ElMessage.error('差分层更新失败')
+      }
+    }
+
+    const removeAvatarLayer = async (layer: CharacterAvatarLayer) => {
+      try {
+        await ElMessageBox.confirm('确定要删除这个差分层吗？', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
+        await deleteCharacterAvatarLayer(layer.layer_id)
+        await refreshAfterLayerChange()
+        ElMessage.success('差分层已删除')
       } catch {}
     }
 
@@ -1811,6 +2021,32 @@ export default defineComponent({
       } catch (e) {
         console.warn('读取变量失败:', e)
         variables.value = []
+      }
+    }
+
+    // 一键启用行为变量：只创建缺失的定义，已存在的不重复创建
+    const enableBehaviorVariables = async () => {
+      if (behaviorSaving.value || !missingBehaviorVariables.value.length) return
+      behaviorSaving.value = true
+      try {
+        for (const def of missingBehaviorVariables.value) {
+          await createVariable(Number(props.projectId), {
+            name: def.name,
+            label: def.label,
+            character_id: null,
+            initial_value: def.initial_value,
+            min_value: def.min_value,
+            max_value: def.max_value,
+            description: def.description,
+            persist: false,
+          })
+        }
+        await fetchVariables()
+        ElMessage.success('行为变量已启用，可在剧情条件与后续旁白中使用')
+      } catch (e: any) {
+        ElMessage.error(e?.response?.data?.message || e?.message || '启用行为变量失败')
+      } finally {
+        behaviorSaving.value = false
       }
     }
 
@@ -2199,6 +2435,7 @@ export default defineComponent({
       project, isAdd, selectedFile, characters, characterAvatars, scenes,
       currentCharacterAvatars, BASE_URL, sceneScriptContents, activeTab,
       variables, variableDialogVisible, editingVariableId, variableSaving, variableForm,
+      missingBehaviorVariables, behaviorSaving, enableBehaviorVariables, isBehaviorVariable,
       fetchVariables, openCreateVariable, openEditVariable, saveVariable, removeVariable,
       endings, endingDialogVisible, editingEndingId, endingSaving, storyNodes, endingForm,
       fetchEndings, openCreateEnding, openEditEnding, addEndingCondition, removeEndingCondition,
@@ -2221,6 +2458,8 @@ export default defineComponent({
       formatTime, handleChange, getGenreColor, getContentTagType, getCharacterColor,
       showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
       showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, cutoutAvatar, deleteAvatar,
+      layerDialogVisible, layerTargetAvatar, layerFile, layerSaving, avatarLayerTypes, newLayer,
+      openLayerDialog, onLayerFileChange, addAvatarLayer, saveAvatarLayer, removeAvatarLayer,
       showSettingsDialog, addSetting, removeSetting, updateSettings,
       fetchScenes, getNextScene,
       getAvatarUrl, onAvatarImgError, startVoice,
@@ -3399,6 +3638,21 @@ $cg-text-light: #999999;
   color: #c81f4a;
 }
 
+.variables-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: none;
+}
+
+.behavior-btn {
+  background: #2aa37b;
+}
+
+.behavior-tag {
+  margin-left: 6px;
+}
+
 .variables-tip {
   margin: 0;
   color: #888;
@@ -3667,5 +3921,140 @@ $cg-text-light: #999999;
 .cutout-dialog .el-progress__text {
   font-size: 12px !important;
   color: #8a6a76;
+}
+
+/* ===== 立绘差分层 ===== */
+.layer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.layer-base {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  background: #fdf3f7;
+  border: 1px solid #f6d6e2;
+  border-radius: 10px;
+
+  img {
+    width: 56px;
+    height: 72px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 6px;
+  }
+}
+
+.layer-base-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-base-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d2b32;
+}
+
+.layer-base-desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8a6a76;
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #f0dfe6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.layer-thumb {
+  width: 40px;
+  height: 52px;
+  object-fit: contain;
+  background: #faf6f8;
+  border-radius: 4px;
+  flex: none;
+}
+
+.layer-name {
+  flex: 1;
+  min-width: 90px;
+}
+
+.layer-type {
+  width: 88px;
+  flex: none;
+}
+
+.layer-order {
+  width: 96px;
+  flex: none;
+}
+
+.layer-empty {
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #b99aa5;
+  background: #faf6f8;
+  border: 1px dashed #e8d3dd;
+  border-radius: 8px;
+}
+
+.layer-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  .el-upload {
+    width: 100%;
+  }
+
+  .el-upload-dragger {
+    width: 100%;
+  }
+}
+
+.layer-upload-area {
+  padding: 14px 0 !important;
+  font-size: 12px;
+}
+
+.layer-upload-form {
+  display: flex;
+  gap: 8px;
+
+  .el-input {
+    flex: 1;
+  }
+
+  .el-select {
+    width: 100px;
+    flex: none;
+  }
+
+  .dialog-btn.confirm {
+    flex: none;
+    padding: 0 14px;
+  }
 }
 </style>
