@@ -8,7 +8,7 @@
 - 选择节点枚举条件成立的选项
 - 普通节点优先走条件成立的自动跳转边，否则顺序推进
 """
-from ..models import (BranchPath, Character, ContentDirective, ContentEffect,
+from ..models import (BranchPath, Character, CharacterAvatar, ContentDirective, ContentEffect,
                       Ending, ProjectVariable, Scene, SceneLock, ScriptContent)
 
 OP_LABELS = {'>': '>', '>=': '≥', '<': '<', '<=': '≤', '==': '=', '!=': '≠'}
@@ -172,6 +172,16 @@ def load_graph(project_id):
     characters = {int(c.character_id): (c.name or '') for c in
                   Character.query.filter_by(project_id=project_id).all()}
 
+    avatars = {}
+    if characters:
+        for a in CharacterAvatar.query.filter(
+                CharacterAvatar.character_id.in_(list(characters.keys()))).all():
+            avatars[int(a.avatar_id)] = {
+                'image_url': a.image_url or '',
+                'avatar_type': a.avatar_type or '',
+                'character_id': int(a.character_id),
+            }
+
     directives = {}
     for d in (ContentDirective.query.filter_by(project_id=project_id)
               .order_by(ContentDirective.order_num.asc(), ContentDirective.directive_id.asc()).all()):
@@ -193,6 +203,7 @@ def load_graph(project_id):
         'endings': endings,
         'endings_by_content': endings_by_content,
         'characters': characters,
+        'avatars': avatars,
         'directives': directives,
     }
 
@@ -236,6 +247,13 @@ def _scene_music(graph, scene_id):
     for s in graph['scenes']:
         if int(s.scene_id) == int(scene_id):
             return s.music_url or ''
+    return ''
+
+
+def _scene_background(graph, scene_id):
+    for s in graph['scenes']:
+        if int(s.scene_id) == int(scene_id):
+            return s.background_url or ''
     return ''
 
 
@@ -337,6 +355,8 @@ def walk_route(graph, choice_picker=None, patience=0, max_steps=None,
                 'title': requested_ending.title,
             } if requested_ending else None),
             'stop_reason': stop_reason, 'dropoff': None,
+            'characters': graph.get('characters', {}),
+            'avatars': graph.get('avatars', {}),
             'stats': {'node_count': 0, 'dialogue_count': 0, 'narration_count': 0,
                       'choice_count': 0, 'char_count': 0, 'est_minutes': 0},
         }
@@ -372,7 +392,11 @@ def walk_route(graph, choice_picker=None, patience=0, max_steps=None,
             'emotion': getattr(node, 'emotion', None),
             'character_id': int(node.character_id) if node.character_id else None,
             'character_name': graph['characters'].get(int(node.character_id), '') if node.character_id else '',
+            'avatar_id': int(node.avatar_id) if node.avatar_id else None,
+            'avatar_url': (graph.get('avatars', {}).get(int(node.avatar_id), {}) or {}).get('image_url', '') if node.avatar_id else '',
+            'avatar_type': (graph.get('avatars', {}).get(int(node.avatar_id), {}) or {}).get('avatar_type', '') if node.avatar_id else '',
             'scene_music': _scene_music(graph, sid),
+            'scene_background': _scene_background(graph, sid),
         }
         if include_directives:
             item['directives'] = graph['directives'].get(cid, [])
@@ -492,6 +516,8 @@ def walk_route(graph, choice_picker=None, patience=0, max_steps=None,
         } if requested_ending else None),
         'stop_reason': stop_reason,
         'dropoff': dropoff,
+        'characters': graph.get('characters', {}),
+        'avatars': graph.get('avatars', {}),
         'stats': {
             'node_count': len(route),
             'dialogue_count': sum(1 for n in route if n['content_type'] == '对话'),

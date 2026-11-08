@@ -237,6 +237,17 @@ export const exportProjectAudioScript = async (projectId: number, endingId?: num
 };
 
 /**
+ * 导出动态漫 / 短视频分镜脚本 Word 文档
+ */
+export const exportProjectStoryboard = async (projectId: number, endingId?: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'storyboard_docx', ending_id: endingId || undefined },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
  * 导出可独立部署的静态网页包（zip：离线播放器 + 作品数据 + 素材）
  */
 export const exportProjectStaticPackage = async (projectId: number): Promise<Blob> => {

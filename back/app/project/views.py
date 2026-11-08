@@ -21,7 +21,7 @@ from ..security import current_user_id
 from .services import _UNSET
 from .save_views import _owned_project
 from .story_path import load_graph, walk_route
-from .story_export import build_audio_script_docx, build_novel_docx
+from .story_export import build_audio_script_docx, build_novel_docx, build_storyboard_docx
 from .translation_views import _branch_translations_of, _scene_translations_of, _translations_of
 
 
@@ -394,7 +394,7 @@ def export_project_data(project_id):
 
     fmt = (request.args.get('format') or 'json').lower()
 
-    if fmt in ('novel_docx', 'audio_script'):
+    if fmt in ('novel_docx', 'audio_script', 'storyboard_docx'):
         try:
             from docx import Document  # noqa: F401
         except ImportError:
@@ -412,6 +412,9 @@ def export_project_data(project_id):
         if fmt == 'novel_docx':
             payload = build_novel_docx(project_row.title, route_result)
             suffix = '小说'
+        elif fmt == 'storyboard_docx':
+            payload = build_storyboard_docx(project_row.title, route_result)
+            suffix = '分镜脚本'
         else:
             payload = build_audio_script_docx(project_row.title, route_result)
             suffix = '有声剧脚本'

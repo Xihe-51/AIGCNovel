@@ -100,6 +100,7 @@
                     <el-dropdown-item command="docx">导出剧本 DOCX</el-dropdown-item>
                     <el-dropdown-item command="novel">导出主线小说 DOCX</el-dropdown-item>
                     <el-dropdown-item command="audio">导出有声剧脚本 DOCX</el-dropdown-item>
+                    <el-dropdown-item command="storyboard">导出分镜脚本 DOCX</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -254,7 +255,11 @@
     <!-- 多形态导出：选择结局/路线 -->
     <el-dialog v-model="exportDialogVisible" title="导出多形态作品" width="460px" append-to-body>
       <div style="font-size:12px;color:#8b6b78;line-height:1.7;margin-bottom:10px">
-        {{ exportFormat === 'novel' ? '按选定路线展开成线性小说。' : '按选定路线生成有声剧脚本，包含角色、情绪、BGM、音效与停顿提示。' }}
+        {{ exportFormat === 'novel'
+          ? '按选定路线展开成线性小说。'
+          : exportFormat === 'audio'
+            ? '按选定路线生成有声剧脚本，包含角色、情绪、BGM、音效与停顿提示。'
+            : '按选定路线生成动态漫 / 短视频分镜表：镜号、画面、台词、情绪、镜头建议、时长与声音提示。' }}
         不选结局时使用默认主线（遇到选择取第一个可走选项）。
       </div>
       <el-form label-position="top">
@@ -326,7 +331,7 @@ const importInputRef = ref<HTMLInputElement | null>(null)
 
 // 多形态导出：结局/路线选择
 const exportDialogVisible = ref(false)
-const exportFormat = ref<'novel' | 'audio'>('novel')
+const exportFormat = ref<'novel' | 'audio' | 'storyboard'>('novel')
 const exportTarget = ref<Project | null>(null)
 const exportEndingId = ref<number | undefined>(undefined)
 const projectEndings = ref<Ending[]>([])
@@ -907,7 +912,7 @@ const downloadFile = (content: string | Blob, filename: string, mime: string) =>
 
 // 导出项目：json=完整项目包，txt=纯文本剧本，docx=Word 文档，novel/audio=多形态导出
 const handleExport = async (project: Project, format: string) => {
-  if (format === 'novel' || format === 'audio') {
+  if (format === 'novel' || format === 'audio' || format === 'storyboard') {
     openFormatExport(project, format)
     return
   }
@@ -933,7 +938,7 @@ const handleExport = async (project: Project, format: string) => {
 }
 
 // 打开多形态导出对话框：选择结局/路线
-const openFormatExport = async (project: Project, format: 'novel' | 'audio') => {
+const openFormatExport = async (project: Project, format: 'novel' | 'audio' | 'storyboard') => {
   const seq = ++exportSeq
   exportTarget.value = project
   exportFormat.value = format
@@ -956,6 +961,9 @@ const confirmFormatExport = async () => {
     if (exportFormat.value === 'novel') {
       const blob = await projectApi.exportProjectNovel(project.project_id, exportEndingId.value)
       downloadFile(blob, `${project.title}-主线小说.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    } else if (exportFormat.value === 'storyboard') {
+      const blob = await projectApi.exportProjectStoryboard(project.project_id, exportEndingId.value)
+      downloadFile(blob, `${project.title}-分镜脚本.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
     } else {
       const blob = await projectApi.exportProjectAudioScript(project.project_id, exportEndingId.value)
       downloadFile(blob, `${project.title}-有声剧脚本.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
