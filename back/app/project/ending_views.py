@@ -11,7 +11,7 @@ from .. import db
 from ..models import Ending, EndingUnlock, ProjectVariable, ScriptContent, ProjectCG
 from ..security import current_user_id
 from . import project
-from .save_views import _owned_project
+from .save_views import _owned_project, _readable_project
 
 CONDITION_OPS = ('>', '>=', '<', '<=', '==', '!=')
 
@@ -55,7 +55,7 @@ def _ending_to_dict(e, unlocked_ids=None):
 
 @project.route('/endings/<int:project_id>', methods=['GET'])
 def list_endings(project_id):
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -166,7 +166,7 @@ def delete_ending(project_id, ending_id):
 @project.route('/endings/<int:project_id>/<int:ending_id>/unlock', methods=['POST'])
 def unlock_ending(project_id, ending_id):
     """标记当前用户达成某结局（幂等）。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 

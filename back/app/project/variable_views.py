@@ -11,13 +11,48 @@ import re
 from flask import jsonify, request
 
 from .. import db
-from ..models import ContentEffect, ProjectVariable, ScriptContent, BranchPath
+from ..models import ContentEffect, ProjectVariable, ScriptContent, BranchPath, Character
 from ..security import current_user_id
 from . import project
-from .save_views import _owned_project
+from .save_views import _owned_project, _readable_project
 
 NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,49}$')
 MAX_DELTA = 9999
+
+
+def _rewrite_condition_variable(cond, old_name, new_name):
+    """变量改名时同步更新单条件/条件组；返回新的条件对象（None 表示清空）。"""
+    if not isinstance(cond, dict):
+        return cond
+    items = cond.get('items')
+    if isinstance(items, list):
+        changed = False
+        new_items = []
+        for item in items:
+            if isinstance(item, dict) and item.get('variable') == old_name:
+                new_items.append({**item, 'variable': new_name})
+                changed = True
+            else:
+                new_items.append(item)
+        return {**cond, 'items': new_items} if changed else cond
+    if cond.get('variable') == old_name:
+        return {**cond, 'variable': new_name}
+    return cond
+
+
+def _drop_condition_variable(cond, name):
+    """删除变量时移除引用；条件组删空则整体置空。"""
+    if not isinstance(cond, dict):
+        return cond
+    items = cond.get('items')
+    if isinstance(items, list):
+        new_items = [i for i in items if not (isinstance(i, dict) and i.get('variable') == name)]
+        if not new_items:
+            return None
+        return {**cond, 'items': new_items}
+    if cond.get('variable') == name:
+        return None
+    return cond
 
 
 def _var_to_dict(v):
@@ -26,10 +61,12 @@ def _var_to_dict(v):
         'project_id': v.project_id,
         'name': v.name,
         'label': v.label,
+        'character_id': v.character_id,
         'initial_value': v.initial_value,
         'min_value': v.min_value,
         'max_value': v.max_value,
         'description': v.description,
+        'persist': bool(v.persist),
     }
 
 
@@ -42,9 +79,24 @@ def _parse_int(value, field, default=None):
         raise ValueError(f'{field} 必须是整数')
 
 
+def _parse_character_id(project_id, value):
+    """校验变量绑定的角色属于当前项目；空值表示不绑定。"""
+    if value is None or value == '':
+        return None
+    try:
+        cid = int(value)
+    except (TypeError, ValueError):
+        raise ValueError('character_id 必须是整数')
+    exists = Character.query.filter_by(project_id=project_id, character_id=cid).first()
+    if not exists:
+        raise ValueError('绑定角色不属于当前项目')
+    return cid
+
+
 @project.route('/variables/<int:project_id>', methods=['GET'])
 def list_variables(project_id):
-    _, err = _owned_project(project_id)
+    # 玩家侧（公开作品）也需要变量定义，否则条件/数值变化无法生效
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -75,6 +127,7 @@ def create_variable(project_id):
         initial = _parse_int(data.get('initial_value'), 'initial_value', 0)
         min_value = _parse_int(data.get('min_value'), 'min_value')
         max_value = _parse_int(data.get('max_value'), 'max_value')
+        character_id = _parse_character_id(project_id, data.get('character_id'))
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
     if min_value is not None and max_value is not None and min_value > max_value:
@@ -84,9 +137,11 @@ def create_variable(project_id):
         project_id=project_id,
         name=name,
         label=label,
+        character_id=character_id,
         initial_value=initial,
         min_value=min_value,
         max_value=max_value,
+        persist=bool(data.get('persist')),
         description=str(data.get('description') or '') or None,
     )
     db.session.add(row)
@@ -130,19 +185,21 @@ def update_variable(project_id, variable_id):
             row.min_value = _parse_int(data.get('min_value'), 'min_value')
         if 'max_value' in data:
             row.max_value = _parse_int(data.get('max_value'), 'max_value')
+        if 'character_id' in data:
+            row.character_id = _parse_character_id(project_id, data.get('character_id'))
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
     if row.min_value is not None and row.max_value is not None and row.min_value > row.max_value:
         return jsonify({'success': False, 'message': '最小值不能大于最大值'}), 400
     if 'description' in data:
         row.description = str(data.get('description') or '') or None
+    if 'persist' in data:
+        row.persist = bool(data.get('persist'))
 
-    # 变量改名时同步更新分支条件里引用的变量名
+    # 变量改名时同步更新分支条件（单条件 / 条件组）里引用的变量名
     if row.name != old_name:
         for bp in BranchPath.query.filter_by(project_id=project_id).all():
-            cond = bp.conditions
-            if isinstance(cond, dict) and cond.get('variable') == old_name:
-                bp.conditions = {**cond, 'variable': row.name}
+            bp.conditions = _rewrite_condition_variable(bp.conditions, old_name, row.name)
 
     db.session.commit()
     return jsonify({'success': True, 'data': _var_to_dict(row), 'message': '变量已更新'})
@@ -159,11 +216,9 @@ def delete_variable(project_id, variable_id):
         return jsonify({'success': False, 'message': '变量不存在'}), 404
 
     ContentEffect.query.filter_by(variable_id=variable_id).delete(synchronize_session=False)
-    # 分支条件引用该变量时清空，避免留下永远不成立的死条件
+    # 分支条件引用该变量时移除，避免留下永远不成立的条件
     for bp in BranchPath.query.filter_by(project_id=project_id).all():
-        cond = bp.conditions
-        if isinstance(cond, dict) and cond.get('variable') == row.name:
-            bp.conditions = None
+        bp.conditions = _drop_condition_variable(bp.conditions, row.name)
     db.session.delete(row)
     db.session.commit()
     return jsonify({'success': True, 'message': '变量已删除'})
@@ -174,7 +229,7 @@ def delete_variable(project_id, variable_id):
 @project.route('/effects/<int:project_id>', methods=['GET'])
 def list_effects(project_id):
     """返回项目内全部节点的数值变化（播放器一次加载）。"""
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 
@@ -194,7 +249,7 @@ def list_effects(project_id):
 
 @project.route('/effects/<int:project_id>/<int:content_id>', methods=['GET'])
 def get_content_effects(project_id, content_id):
-    _, err = _owned_project(project_id)
+    _, err = _readable_project(project_id)
     if err:
         return err
 

@@ -9,6 +9,7 @@ export interface Project {
   template_type: string;
   word_count: number;
   is_public: boolean;
+  ui_theme?: string;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +19,7 @@ interface ProjectCreateParams {
   genre: string;
   template_type: string;
   is_public?: boolean;
+  ui_theme?: string;
 }
 
 interface ProjectUpdateParams extends Partial<ProjectCreateParams> {}
@@ -199,6 +201,74 @@ export const exportProjectText = async (projectId: number): Promise<string> => {
     transformResponse: [(data: string) => data],
   });
   return response.data;
+};
+
+/**
+ * 导出项目剧本为 Word 文档
+ */
+export const exportProjectDocx = async (projectId: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'docx' },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * 导出主线小说 Word 文档
+ */
+export const exportProjectNovel = async (projectId: number, endingId?: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'novel_docx', ending_id: endingId || undefined },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * 导出有声剧脚本 Word 文档
+ */
+export const exportProjectAudioScript = async (projectId: number, endingId?: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'audio_script', ending_id: endingId || undefined },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * 导出动态漫 / 短视频分镜脚本 Word 文档
+ */
+export const exportProjectStoryboard = async (projectId: number, endingId?: number): Promise<Blob> => {
+  const response = await request.get(`/project/project/${projectId}/export`, {
+    params: { format: 'storyboard_docx', ending_id: endingId || undefined },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * 导出可独立部署的静态网页包（zip：离线播放器 + 作品数据 + 素材）
+ */
+export const exportProjectStaticPackage = async (projectId: number): Promise<Blob> => {
+  try {
+    const response = await request.get(`/project/project/${projectId}/static_export`, {
+      responseType: 'blob',
+    });
+    return response.data as Blob;
+  } catch (error: any) {
+    // 后端错误以 JSON 返回，但 responseType=blob 时需要手动解析出提示
+    const data = error?.response?.data;
+    let message = '';
+    if (data instanceof Blob) {
+      try {
+        message = JSON.parse(await data.text())?.message || '';
+      } catch {
+        message = '';
+      }
+    }
+    throw new Error(message || error?.message || '导出静态网页包失败');
+  }
 };
 
 /**

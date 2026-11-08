@@ -74,6 +74,8 @@ export interface GenerateVoiceParams {
   text: string;
   voice_type?: string;
   duration?: number;
+  /** 情绪标签：后端据此微调语速/音量/音调 */
+  emotion?: string;
 }
 
 // ========== API 函数 ==========

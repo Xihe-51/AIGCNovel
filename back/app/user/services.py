@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
-from .. import db
+from .. import db, STATIC_ROOT
 from ..models import AIGeneration, AIModel, User, Project, MarketResource, ResourceReference
 
 '''
@@ -31,9 +31,14 @@ def delete_ai_generation_by_id(db_session: Session, generation_id: int) -> bool:
     if not generation:
         return False
     if generation.type != "text":
-        path = generation.generated_text.replace("/", "app/", 1)
-        print(generation.generated_text)
-        os.remove(path)
+        url = str(generation.generated_text or '')
+        rel = url.lstrip('/')
+        if rel.startswith('static/'):
+            rel = rel[len('static/'):]
+        path = os.path.abspath(os.path.join(STATIC_ROOT, rel))
+        # 文件可能已被清理，不存在就跳过，别让删历史记录失败
+        if path.startswith(os.path.abspath(STATIC_ROOT) + os.sep) and os.path.exists(path):
+            os.remove(path)
     db_session.delete(generation)
     db_session.commit()
     return True
@@ -100,7 +105,7 @@ def update_avatar(user_id, avatar_file):
         return None
 
     # 确保上传目录存在
-    upload_folder = f"app/static/avatar/{user_id}"
+    upload_folder = os.path.join(STATIC_ROOT, 'avatar', str(user_id))
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
 
@@ -655,10 +660,10 @@ def allowed_file(filename):
 def get_upload_folder(file_type):
     """根据文件类型获取上传目录"""
     upload_folders = {
-        'image': os.path.join('app/static', 'uploads', 'images'),
-        'audio': os.path.join('app/static', 'uploads', 'audios')
+        'image': os.path.join(STATIC_ROOT, 'uploads', 'images'),
+        'audio': os.path.join(STATIC_ROOT, 'uploads', 'audios')
     }
-    return upload_folders.get(file_type, os.path.join('app/static', 'uploads', 'others'))
+    return upload_folders.get(file_type, os.path.join(STATIC_ROOT, 'uploads', 'others'))
 
 
 def ensure_upload_folders_exist():
@@ -666,5 +671,5 @@ def ensure_upload_folders_exist():
     for file_type in ALLOWED_EXTENSIONS.keys():
         folder = get_upload_folder(file_type)
         os.makedirs(folder, exist_ok=True)
-    others_folder = os.path.join('app/static', 'uploads', 'others')
+    others_folder = os.path.join(STATIC_ROOT, 'uploads', 'others')
     os.makedirs(others_folder, exist_ok=True)

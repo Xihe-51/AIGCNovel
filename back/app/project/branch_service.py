@@ -13,20 +13,23 @@ branch_paths（剧情分支）业务层 —— 计划书 3.3.3 的「最大功�
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import db
-from ..models import BranchPath, Project, Scene, ScriptContent, ProjectVariable
+from ..models import BranchPath, BranchPathTranslation, Project, Scene, ScriptContent, ProjectVariable
 from .story_graph import validate_story_graph
+from .translation_views import _branch_translations_of
 
 
 # ==================== 序列化 ====================
 
-def _branch_to_dict(bp: BranchPath) -> Dict[str, Any]:
+def _branch_to_dict(bp: BranchPath, translations=None) -> Dict[str, Any]:
     return {
         'path_id': bp.path_id,
         'project_id': bp.project_id,
         'source_content_id': bp.source_content_id,
         'target_content_id': bp.target_content_id,
         'choice_text': bp.choice_text,
+        'image_url': bp.image_url,
         'conditions': bp.conditions,
+        'translations': translations if translations is not None else {},
     }
 
 
@@ -58,18 +61,10 @@ def _validate_edge(project_id: int, source_id, target_id, valid_ids: Optional[se
 
 
 CONDITION_OPS = ('>', '>=', '<', '<=', '==', '!=')
+CONDITION_MODES = ('and', 'or')
 
 
-def _normalize_conditions(project_id: int, conditions) -> Tuple[Optional[dict], Optional[str]]:
-    """
-    条件格式：{ "variable": "affection_lin", "op": ">=", "value": 50 }
-    空值表示无条件。返回 (normalized, error)。
-    """
-    if conditions in (None, {}, ''):
-        return None, None
-    if not isinstance(conditions, dict):
-        return None, '条件必须是对象'
-
+def _normalize_single_condition(project_id: int, conditions: dict) -> Tuple[Optional[dict], Optional[str]]:
     variable = str(conditions.get('variable') or '').strip()
     op = str(conditions.get('op') or '').strip()
     if not variable:
@@ -90,6 +85,41 @@ def _normalize_conditions(project_id: int, conditions) -> Tuple[Optional[dict], 
     return {'variable': variable, 'op': op, 'value': value}, None
 
 
+def _normalize_conditions(project_id: int, conditions) -> Tuple[Optional[dict], Optional[str]]:
+    """
+    条件格式（兼容两种）：
+      单条件：{ "variable": "affection_lin", "op": ">=", "value": 50 }
+      条件组：{ "mode": "and"|"or", "items": [{variable, op, value}, ...] }
+    空值表示无条件。返回 (normalized, error)。
+    """
+    if conditions in (None, {}, ''):
+        return None, None
+    if not isinstance(conditions, dict):
+        return None, '条件必须是对象'
+
+    # 条件组：level 为 and/or
+    if 'items' in conditions:
+        mode = str(conditions.get('mode') or 'and').strip().lower()
+        if mode not in CONDITION_MODES:
+            return None, f'不支持的条件关系：{mode}'
+        raw_items = conditions.get('items')
+        if not isinstance(raw_items, list):
+            return None, '条件组 items 必须是数组'
+        items = []
+        for i, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                return None, f'第 {i + 1} 个条件格式不正确'
+            normalized, err = _normalize_single_condition(project_id, item)
+            if err:
+                return None, f'第 {i + 1} 个条件：{err}'
+            items.append(normalized)
+        if not items:
+            return None, None
+        return {'mode': mode, 'items': items}, None
+
+    return _normalize_single_condition(project_id, conditions)
+
+
 # ==================== CRUD ====================
 
 def list_branches(project_id: int) -> Tuple[bool, Any]:
@@ -99,7 +129,8 @@ def list_branches(project_id: int) -> Tuple[bool, Any]:
             .filter_by(project_id=project_id)
             .order_by(BranchPath.path_id.asc())
             .all())
-    return True, [_branch_to_dict(b) for b in rows]
+    translations = _branch_translations_of([b.path_id for b in rows])
+    return True, [_branch_to_dict(b, translations.get(int(b.path_id), {})) for b in rows]
 
 
 def create_branch(project_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
@@ -125,6 +156,8 @@ def create_branch(project_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
     if existed:
         if 'choice_text' in data:
             existed.choice_text = data.get('choice_text')
+        if 'image_url' in data:
+            existed.image_url = str(data.get('image_url') or '').strip() or None
         if 'conditions' in data:
             existed.conditions = conditions
         db.session.commit()
@@ -135,6 +168,7 @@ def create_branch(project_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
         source_content_id=source_id,
         target_content_id=target_id,
         choice_text=data.get('choice_text'),
+        image_url=str(data.get('image_url') or '').strip() or None,
         conditions=conditions,
     )
     db.session.add(bp)
@@ -163,6 +197,8 @@ def update_branch(path_id: int, data: Dict[str, Any]) -> Tuple[bool, Any]:
     bp.target_content_id = target_id
     if 'choice_text' in data:
         bp.choice_text = data.get('choice_text')
+    if 'image_url' in data:
+        bp.image_url = str(data.get('image_url') or '').strip() or None
     if 'conditions' in data:
         bp.conditions = conditions
     db.session.commit()
@@ -173,6 +209,7 @@ def delete_branch(path_id: int) -> Tuple[bool, Any]:
     bp = BranchPath.query.get(path_id)
     if not bp:
         return False, '分支不存在'
+    BranchPathTranslation.query.filter_by(path_id=path_id).delete(synchronize_session=False)
     db.session.delete(bp)
     db.session.commit()
     return True, {'path_id': path_id}
@@ -211,11 +248,24 @@ def batch_replace_branches(project_id: int, branches: List[Dict[str, Any]],
             'source_content_id': s,
             'target_content_id': t,
             'choice_text': item.get('choice_text'),
+            'image_url': str(item.get('image_url') or '').strip() or None,
             'conditions': conditions,
         })
 
     try:
+        # 整树覆盖时先记住旧分支的译文，按 (起点, 终点) 还原到新分支上
+        old_translations = {}
         if replace:
+            old_rows = BranchPath.query.filter_by(project_id=project_id).all()
+            old_ids = [b.path_id for b in old_rows]
+            old_trans = _branch_translations_of(old_ids)
+            for b in old_rows:
+                old_translations[(b.source_content_id, b.target_content_id)] = \
+                    old_trans.get(int(b.path_id), {})
+            if old_ids:
+                BranchPathTranslation.query.filter(
+                    BranchPathTranslation.path_id.in_(old_ids)
+                ).delete(synchronize_session=False)
             BranchPath.query.filter_by(project_id=project_id).delete()
 
         existing_pairs = set()
@@ -225,9 +275,16 @@ def batch_replace_branches(project_id: int, branches: List[Dict[str, Any]],
 
         created = 0
         for item in prepared:
-            if (item['source_content_id'], item['target_content_id']) in existing_pairs:
+            pair = (item['source_content_id'], item['target_content_id'])
+            if pair in existing_pairs:
                 continue
-            db.session.add(BranchPath(project_id=project_id, **item))
+            bp = BranchPath(project_id=project_id, **item)
+            db.session.add(bp)
+            db.session.flush()
+            for lang, text in (old_translations.get(pair) or {}).items():
+                if (text or '').strip():
+                    db.session.add(BranchPathTranslation(
+                        path_id=bp.path_id, language=lang, text=text))
             created += 1
         db.session.commit()
     except Exception as e:
@@ -292,6 +349,7 @@ def get_story_graph(project_id: int, with_validation: bool = True) -> Tuple[bool
             'source_content_id': b.source_content_id,
             'target_content_id': b.target_content_id,
             'choice_text': b.choice_text,
+            'image_url': b.image_url,
             'conditions': b.conditions,
         })
 

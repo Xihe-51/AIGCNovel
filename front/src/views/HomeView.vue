@@ -95,7 +95,12 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="json">导出 JSON 包</el-dropdown-item>
+                    <el-dropdown-item command="static">导出静态网页包</el-dropdown-item>
                     <el-dropdown-item command="txt">导出剧本 TXT</el-dropdown-item>
+                    <el-dropdown-item command="docx">导出剧本 DOCX</el-dropdown-item>
+                    <el-dropdown-item command="novel">导出主线小说 DOCX</el-dropdown-item>
+                    <el-dropdown-item command="audio">导出有声剧脚本 DOCX</el-dropdown-item>
+                    <el-dropdown-item command="storyboard">导出分镜脚本 DOCX</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -246,6 +251,34 @@
         <el-button type="primary" @click="submitProject">确 定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 多形态导出：选择结局/路线 -->
+    <el-dialog v-model="exportDialogVisible" title="导出多形态作品" width="460px" append-to-body>
+      <div style="font-size:12px;color:#8b6b78;line-height:1.7;margin-bottom:10px">
+        {{ exportFormat === 'novel'
+          ? '按选定路线展开成线性小说。'
+          : exportFormat === 'audio'
+            ? '按选定路线生成有声剧脚本，包含角色、情绪、BGM、音效与停顿提示。'
+            : '按选定路线生成动态漫 / 短视频分镜表：镜号、画面、台词、情绪、镜头建议、时长与声音提示。' }}
+        不选结局时使用默认主线（遇到选择取第一个可走选项）。
+      </div>
+      <el-form label-position="top">
+        <el-form-item label="导出到哪个结局">
+          <el-select v-model="exportEndingId" clearable placeholder="默认主线（第一个可走路线）" style="width:100%">
+            <el-option
+              v-for="en in projectEndings"
+              :key="en.ending_id"
+              :label="en.title"
+              :value="en.ending_id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting" @click="confirmFormatExport">导出</el-button>
+      </template>
+    </el-dialog>
     </div>
         </div>
 
@@ -273,6 +306,8 @@ import {
 } from '@element-plus/icons-vue'
 import * as projectApi from '@/api/project'
 import type { Project, TemplateMeta } from '@/api/project'
+import { listEndings } from '@/api/ending'
+import type { Ending } from '@/api/ending'
 import { BASE_URL } from "@/utils/request"
 
 interface ProjectForm {
@@ -293,6 +328,15 @@ const isPublicMode = ref(false)
 const statsTimeRange = ref('all')
 const templates = ref<TemplateMeta[]>([])
 const importInputRef = ref<HTMLInputElement | null>(null)
+
+// 多形态导出：结局/路线选择
+const exportDialogVisible = ref(false)
+const exportFormat = ref<'novel' | 'audio' | 'storyboard'>('novel')
+const exportTarget = ref<Project | null>(null)
+const exportEndingId = ref<number | undefined>(undefined)
+const projectEndings = ref<Ending[]>([])
+const exporting = ref(false)
+let exportSeq = 0
 
 // 图表相关引用
 const genreChartRef = ref<HTMLDivElement | null>(null)
@@ -854,8 +898,8 @@ const loadTemplates = async () => {
 }
 
 // 触发浏览器下载
-const downloadFile = (content: string, filename: string, mime: string) => {
-  const blob = new Blob([content], { type: mime })
+const downloadFile = (content: string | Blob, filename: string, mime: string) => {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -866,19 +910,70 @@ const downloadFile = (content: string, filename: string, mime: string) => {
   URL.revokeObjectURL(url)
 }
 
-// 导出项目：json=完整项目包，txt=纯文本剧本
+// 导出项目：json=完整项目包，txt=纯文本剧本，docx=Word 文档，novel/audio=多形态导出
 const handleExport = async (project: Project, format: string) => {
+  if (format === 'novel' || format === 'audio' || format === 'storyboard') {
+    openFormatExport(project, format)
+    return
+  }
   try {
     if (format === 'txt') {
       const text = await projectApi.exportProjectText(project.project_id)
       downloadFile(text, `${project.title}.txt`, 'text/plain;charset=utf-8')
+    } else if (format === 'docx') {
+      const blob = await projectApi.exportProjectDocx(project.project_id)
+      downloadFile(blob, `${project.title}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    } else if (format === 'static') {
+      ElMessage.info('正在打包静态网页，包含素材时可能需要一点时间')
+      const blob = await projectApi.exportProjectStaticPackage(project.project_id)
+      downloadFile(blob, `${project.title}-网页版.zip`, 'application/zip')
     } else {
       const bundle = await projectApi.exportProjectBundle(project.project_id)
       downloadFile(JSON.stringify(bundle, null, 2), `${project.title}.json`, 'application/json')
     }
     ElMessage.success('导出成功')
-  } catch (error) {
-    ElMessage.error('导出失败')
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + (error?.message || '请稍后重试'))
+  }
+}
+
+// 打开多形态导出对话框：选择结局/路线
+const openFormatExport = async (project: Project, format: 'novel' | 'audio' | 'storyboard') => {
+  const seq = ++exportSeq
+  exportTarget.value = project
+  exportFormat.value = format
+  exportEndingId.value = undefined
+  projectEndings.value = []
+  exportDialogVisible.value = true
+  try {
+    const rows = await listEndings(project.project_id)
+    if (seq === exportSeq) projectEndings.value = rows
+  } catch (e) {
+    if (seq === exportSeq) projectEndings.value = []
+  }
+}
+
+const confirmFormatExport = async () => {
+  const project = exportTarget.value
+  if (!project || exporting.value) return
+  exporting.value = true
+  try {
+    if (exportFormat.value === 'novel') {
+      const blob = await projectApi.exportProjectNovel(project.project_id, exportEndingId.value)
+      downloadFile(blob, `${project.title}-主线小说.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    } else if (exportFormat.value === 'storyboard') {
+      const blob = await projectApi.exportProjectStoryboard(project.project_id, exportEndingId.value)
+      downloadFile(blob, `${project.title}-分镜脚本.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    } else {
+      const blob = await projectApi.exportProjectAudioScript(project.project_id, exportEndingId.value)
+      downloadFile(blob, `${project.title}-有声剧脚本.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    }
+    ElMessage.success('导出成功')
+    exportDialogVisible.value = false
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
+  } finally {
+    exporting.value = false
   }
 }
 

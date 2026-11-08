@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export type DirectiveType = 'avatar' | 'background' | 'music' | 'sound' | 'wait'
+export type DirectiveType = 'avatar' | 'background' | 'music' | 'sound' | 'wait' | 'effect' | 'stage'
 
 export interface ContentDirective {
   directive_id: number

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>视觉小说</title>
+  <style>
+    html, body, #app { height: 100%; }
+    body { margin: 0; }
+    .static-home {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      background: linear-gradient(160deg, #fff5f7 0%, #ffe8ef 45%, #f6e7ff 100%);
+      font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .static-home-card {
+      width: min(420px, 100%);
+      padding: 36px 32px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 18px 48px rgba(146, 64, 96, 0.16);
+      text-align: center;
+    }
+    .static-home-card h1 {
+      margin: 0 0 14px;
+      font-size: 26px;
+      color: #4a2b37;
+      line-height: 1.4;
+    }
+    .static-home-card p {
+      margin: 0 0 26px;
+      font-size: 13px;
+      line-height: 1.8;
+      color: #8b6b78;
+    }
+    .static-home-card button {
+      padding: 10px 34px;
+      border: none;
+      border-radius: 999px;
+      background: #d81f37;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .static-home-card button:hover { opacity: 0.86; }
+    .static-fatal {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      color: #8b6b78;
+      font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.8;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/static-player.ts"></script>
+</body>
+
+</html>

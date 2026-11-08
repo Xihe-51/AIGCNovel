@@ -29,6 +29,8 @@ class Project(db.Model):
     template_type = Column(String(20), nullable=False, default='线性叙事')
     word_count = Column(Integer, default=0)
     is_public = Column(Boolean, default=False)
+    # 播放器 UI 皮肤：classic / sakura / ink / midnight / mint
+    ui_theme = Column(String(20), nullable=False, default='classic')
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
     updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(), onupdate=func.current_timestamp())
 
@@ -43,6 +45,8 @@ class Character(db.Model):
     description = Column(Text)
     settings = Column(JSON)
     is_main = Column(Boolean, default=False)
+    # 角色默认配音音色（火山 TTS voice_type，如 BV001_streaming）
+    voice_type = Column(String(50))
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
 
 
@@ -55,6 +59,24 @@ class CharacterAvatar(db.Model):
     avatar_type = Column(Enum('正常', '高兴', '生气', '悲伤', '惊讶', '其他'), nullable=False)
     costume = Column(String(50))
     is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
+class CharacterAvatarLayer(db.Model):
+    """立绘差分层：基础立绘 + 叠加层（表情/姿势/服装等）。
+
+    与 Saki 的分层差分模型对齐：一张基础图固定，表情/姿势作为透明叠加图按
+    order 从小到大压在上面。config 预留 x/y/scale/opacity 等微调参数。
+    """
+    __tablename__ = 'character_avatar_layers'
+
+    layer_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    avatar_id = Column(BigInteger, ForeignKey('character_avatars.avatar_id'), nullable=False)
+    image_url = Column(String(255), nullable=False)
+    layer_name = Column(String(50))
+    layer_type = Column(String(20), nullable=False, default='expression')
+    order = Column(Integer, nullable=False, default=0)
+    config = Column(JSON)
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
 
 
@@ -71,6 +93,36 @@ class Scene(db.Model):
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
 
 
+class StoryChapter(db.Model):
+    """章节/幕分组：只影响创作端展示，不改变场景播放顺序。"""
+    __tablename__ = 'story_chapters'
+
+    chapter_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False)
+    title = Column(String(100), nullable=False)
+    order_num = Column(Integer, nullable=False, default=0)
+    target_words = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
+class SceneChapter(db.Model):
+    """场景 → 章节归属（一个场景最多属于一个章节）。"""
+    __tablename__ = 'scene_chapters'
+
+    scene_id = Column(BigInteger, ForeignKey('scenes.scene_id'), primary_key=True)
+    chapter_id = Column(BigInteger, ForeignKey('story_chapters.chapter_id'), nullable=False)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False)
+
+
+class SceneLock(db.Model):
+    """场景播放条件（剧情锁）：条件不满足时，顺序播放会跳过该场景。"""
+    __tablename__ = 'scene_locks'
+
+    scene_id = Column(BigInteger, ForeignKey('scenes.scene_id'), primary_key=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False)
+    conditions = Column(JSON)
+
+
 class ScriptContent(db.Model):
     __tablename__ = 'script_contents'
 
@@ -82,9 +134,51 @@ class ScriptContent(db.Model):
     content_type = Column(Enum('对话', '描述', '选择'), nullable=False)
     content_text = Column(Text, nullable=False)
     voice_url = Column(String(255))
+    # 配音导演：台词情绪标签（平静/犹豫/生气/哭腔/低声），批量配音据此微调语速与音调
+    emotion = Column(String(20))
     branch_condition = Column(JSON)
     order_num = Column(Integer, nullable=False)
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
+class ContentTranslation(db.Model):
+    """逐句译文：主语言（简体中文）直接使用 content_text，其余语言存本表。"""
+    __tablename__ = 'content_translations'
+
+    translation_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    content_id = Column(BigInteger, ForeignKey('script_contents.content_id'), nullable=False, index=True)
+    language = Column(String(16), nullable=False)
+    text = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                        onupdate=func.current_timestamp())
+    __table_args__ = (UniqueConstraint('content_id', 'language', name='uq_content_translation'),)
+
+
+class SceneTranslation(db.Model):
+    """场景译文：标题与描述；主语言直接使用 scenes 表字段。"""
+    __tablename__ = 'scene_translations'
+
+    translation_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    scene_id = Column(BigInteger, ForeignKey('scenes.scene_id'), nullable=False, index=True)
+    language = Column(String(16), nullable=False)
+    title = Column(String(200))
+    description = Column(Text)
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                        onupdate=func.current_timestamp())
+    __table_args__ = (UniqueConstraint('scene_id', 'language', name='uq_scene_translation'),)
+
+
+class BranchPathTranslation(db.Model):
+    """选项译文：branch_paths.choice_text 的多语言文本。"""
+    __tablename__ = 'branch_path_translations'
+
+    translation_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    path_id = Column(BigInteger, ForeignKey('branch_paths.path_id'), nullable=False, index=True)
+    language = Column(String(16), nullable=False)
+    text = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                        onupdate=func.current_timestamp())
+    __table_args__ = (UniqueConstraint('path_id', 'language', name='uq_branch_path_translation'),)
 
 
 class BranchPath(db.Model):
@@ -95,6 +189,8 @@ class BranchPath(db.Model):
     source_content_id = Column(BigInteger, ForeignKey('script_contents.content_id'), nullable=False)
     target_content_id = Column(BigInteger, ForeignKey('script_contents.content_id'), nullable=False)
     choice_text = Column(String(255))
+    # 图片选项：选项卡片配图（可选），为空时仍是纯文字选项
+    image_url = Column(String(255))
     conditions = Column(JSON)
 
 
@@ -156,6 +252,51 @@ class SaveSlot(db.Model):
     )
 
 
+class PlayEvent(db.Model):
+    """玩家试玩埋点：开始、进入场景、选择分支、达成结局、通关。"""
+    __tablename__ = 'play_events'
+
+    event_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=True)
+    session_id = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(20), nullable=False, index=True)
+    scene_id = Column(BigInteger)
+    content_id = Column(BigInteger)
+    path_id = Column(BigInteger)
+    ending_id = Column(BigInteger)
+    payload = Column(JSON)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp(), index=True)
+
+
+class Achievement(db.Model):
+    """作品成就：按结局/变量/通关条件解锁。"""
+    __tablename__ = 'achievements'
+
+    achievement_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    title = Column(String(100), nullable=False)
+    description = Column(String(255))
+    # {"type": "ending"|"variable"|"finish", ...}
+    condition = Column(JSON)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
+class AchievementUnlock(db.Model):
+    """玩家已解锁成就（按用户+成就唯一）。"""
+    __tablename__ = 'achievement_unlocks'
+
+    unlock_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=False, index=True)
+    achievement_id = Column(BigInteger, ForeignKey('achievements.achievement_id'),
+                            nullable=False, index=True)
+    unlocked_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'achievement_id', name='uq_achievement_unlock'),
+    )
+
+
 class ReadRecord(db.Model):
     """已读记录：用于「跳过已读」与二周目体验。"""
     __tablename__ = 'read_records'
@@ -179,14 +320,34 @@ class ProjectVariable(db.Model):
     project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False)
     name = Column(String(50), nullable=False)          # 英文 key，如 affection_lin
     label = Column(String(100), nullable=False)        # 展示名，如 林瑶好感度
+    # 绑定角色后，播放器「好感度」面板会按角色展示这个变量
+    character_id = Column(BigInteger, ForeignKey('characters.character_id'))
     initial_value = Column(Integer, nullable=False, default=0)
     min_value = Column(Integer)
     max_value = Column(Integer)
+    # 跨周目保留：进入下一周目/重新开始时不清零
+    persist = Column(Boolean, nullable=False, default=False, server_default='0')
     description = Column(Text)
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
 
     __table_args__ = (
         UniqueConstraint('project_id', 'name', name='uq_project_variable'),
+    )
+
+
+class ProjectMeta(db.Model):
+    """玩家跨周目元数据：保存标记为 persist 的变量值。"""
+    __tablename__ = 'project_meta'
+
+    meta_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=False, index=True)
+    state_json = Column(JSON)
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                          onupdate=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'project_id', name='uq_project_meta'),
     )
 
 
@@ -208,12 +369,16 @@ class ContentDirective(db.Model):
     """节点演出指令：播放到某条 script_content 时执行的舞台动作。
 
     directive_type 取值：
-      avatar     立绘：payload = {character_id, avatar_id, position(left/center/right),
-                                action(show/hide/move), fade_ms}
-      background 背景：payload = {url, transition(fade/none), duration_ms}
+      avatar     立绘：payload = {layer_id, layer_name, order, character_id, avatar_id,
+                                action(show/hide), coord(stage), x/y/scale/opacity/rotate/visible}
+                                layer_id 为任意图层稳定标识；order 越大越靠前；
+                                旧数据兼容 position(left/center/right) 与 z
+      background 背景：payload = {url, layer(background/foreground), transition, duration_ms}
       music      BGM：payload = {url, action(play/stop), loop}
       sound      音效：payload = {url, volume}
       wait       停顿：payload = {ms}
+      effect     画面效果：payload = {effect(flash/shake/weather), ...}
+      stage      舞台层显隐：payload = {background, foreground, dialogue}
     """
     __tablename__ = 'content_directives'
 
@@ -254,6 +419,21 @@ class EndingUnlock(db.Model):
     )
 
 
+class MusicUnlock(db.Model):
+    """玩家已解锁的 BGM 鉴赏曲目（按用户+项目+音乐地址唯一）。"""
+    __tablename__ = 'music_unlocks'
+
+    unlock_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=False)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False)
+    music_url = Column(String(255), nullable=False)
+    unlocked_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'project_id', 'music_url', name='uq_music_unlock'),
+    )
+
+
 class ProjectCG(db.Model):
     """CG 图鉴条目：作者为作品登记的 CG。
 
@@ -291,3 +471,69 @@ class ResourceReference(db.Model):
     __table_args__ = (
         UniqueConstraint('resource_id', 'user_id', 'project_id', name='uq_resource_reference'),
     )
+
+
+class ProjectVersion(db.Model):
+    """项目剧本版本快照：保存场景、台词与分支，支持差异预览和恢复。"""
+    __tablename__ = 'project_versions'
+
+    version_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=False)
+    label = Column(String(100))
+    # JSON 文本；用 LONGTEXT，避免长篇项目超过 MySQL TEXT 64KB 上限
+    snapshot = Column(db.Text(length=4294967295), nullable=False)
+    content_hash = Column(String(32), nullable=False)
+    scene_count = Column(Integer, nullable=False, default=0)
+    content_count = Column(Integer, nullable=False, default=0)
+    branch_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
+class ProjectSource(db.Model):
+    """小说导入源文件与最近一次编译结果（诊断、统计、source map）。"""
+    __tablename__ = 'project_sources'
+
+    source_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=False, index=True)
+    filename = Column(String(255))
+    source_format = Column(String(20), nullable=False, default='txt')
+    # 原文可能超过 MySQL TEXT 64KB，沿用 ProjectVersion 的 LONGTEXT 写法
+    content = Column(db.Text(length=4294967295), nullable=False)
+    # 最近一次编译：stats / diagnostics / source_map / 分支与变量建议
+    compile_json = Column(JSON)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                          onupdate=func.current_timestamp())
+
+
+class ProjectRelease(db.Model):
+    """作品发布记录：绑定一次剧本快照，记录更新说明，支持回滚到该版本。"""
+    __tablename__ = 'project_releases'
+
+    release_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id'), nullable=False)
+    # 绑定的剧本快照；该快照不会被版本清理删除
+    version_id = Column(BigInteger, ForeignKey('project_versions.version_id'), nullable=False)
+    # 项目内递增的发布序号，从 1 开始
+    release_no = Column(Integer, nullable=False, default=1)
+    notes = Column(Text)
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+
+
+class ProjectTerm(db.Model):
+    """术语表：统一人名/地名/专有名词写法，扫描错别别名。"""
+    __tablename__ = 'project_terms'
+
+    term_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey('projects.project_id'), nullable=False, index=True)
+    # 标准写法，例如「林瑶」
+    standard = Column(String(100), nullable=False)
+    # 需要纠正的别名/错写，用逗号、顿号或换行分隔
+    variants = Column(Text)
+    note = Column(String(255))
+    created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                        onupdate=func.current_timestamp())

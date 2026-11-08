@@ -9,10 +9,25 @@ export interface Character {
   description?: string
   settings?: Record<string, any>
   is_main: boolean
+  voice_type?: string
   created_at: string
 }
 
 export type AvatarType = '正常' | '高兴' | '生气' | '悲伤' | '惊讶' | '其他';
+
+/** 立绘叠加层类型：表情 / 姿势 / 服装 / 其他 */
+export type AvatarLayerType = 'expression' | 'pose' | 'costume' | 'other';
+
+export interface CharacterAvatarLayer {
+  layer_id: number;
+  avatar_id: number;
+  image_url: string;
+  layer_name?: string;
+  layer_type: AvatarLayerType | string;
+  order: number;
+  config?: Record<string, any>;
+  created_at?: string;
+}
 
 export interface CharacterAvatar {
   avatar_id: number;
@@ -22,6 +37,8 @@ export interface CharacterAvatar {
   costume?: string;
   is_default: boolean;
   created_at: string;
+  /** 差分层：基础图之上按 order 叠加的表情/姿势/服装透明图 */
+  layers?: CharacterAvatarLayer[];
 }
 
 /**
@@ -74,6 +91,47 @@ export const uploadCharacterAvatar = async (
     throw error; // 向上抛出错误以便在调用处处理
   }
 };
+
+/** 角色立绘抠图：去掉背景，返回透明底 PNG 的新地址 */
+export const cutoutCharacterAvatar = async (
+  avatarId: number
+): Promise<{ avatar_id: number; image_url: string; already_transparent?: boolean }> => {
+  const response = await request.post(`/project/avatar/${avatarId}/cutout`)
+  return (response.data as any).data
+}
+
+/** 给基础立绘上传一张差分叠加层（表情/姿势/服装） */
+export const uploadCharacterAvatarLayer = async (
+  avatarId: number,
+  file: File,
+  layerName?: string,
+  layerType: AvatarLayerType | string = 'expression',
+  order?: number
+): Promise<CharacterAvatarLayer> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (layerName) formData.append('layer_name', layerName)
+  formData.append('layer_type', layerType)
+  if (order !== undefined && order !== null) formData.append('order', String(order))
+  const response = await request.post(`/project/avatar/${avatarId}/layers`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return (response.data as any).data
+}
+
+/** 更新差分层名称/类型/叠放顺序 */
+export const updateCharacterAvatarLayer = async (
+  layerId: number,
+  payload: Partial<Pick<CharacterAvatarLayer, 'layer_name' | 'layer_type' | 'order' | 'config'>>
+): Promise<CharacterAvatarLayer> => {
+  const response = await request.post(`/project/avatar_layers/${layerId}`, payload)
+  return (response.data as any).data
+}
+
+/** 删除差分层 */
+export const deleteCharacterAvatarLayer = async (layerId: number): Promise<void> => {
+  await request.delete(`/project/avatar_layers/${layerId}`)
+}
 
 /**
  * 获取项目下所有角色
@@ -148,7 +206,7 @@ export const createCharacter = async (characterData: Omit<Character, 'character_
  * @param characterData 角色数据
  * @returns 编辑后信息
  */
-export const updateCharacter = async (characterData: Omit<Character, 'character_id' | 'created_at'>): Promise<Character> => {
+export const updateCharacter = async (characterData: Character): Promise<Character> => {
   try {
     const response = await request.post('/project/update_character', characterData);
     return response.data.data;

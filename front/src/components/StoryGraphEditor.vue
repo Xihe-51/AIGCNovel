@@ -1,13 +1,45 @@
 <template>
-  <div class="sge-root">
+  <div ref="rootRef" class="sge-root">
     <!-- 工具栏 -->
     <div class="sge-toolbar">
       <div class="sge-info">
-        节点级剧情图 · <b>{{ nodes.length }}</b> 个剧情节点 · <b>{{ edges.length }}</b> 条分支
+        节点级剧情图 · <b>{{ displayNodes.length }}</b>
+        <span v-if="sceneFilter" class="sge-filter-total">/ {{ nodes.length }}</span>
+        个剧情节点 · <b>{{ displayEdgeCount }}</b> 条分支
         <span v-if="dirty" class="sge-dirty">（有未保存改动）</span>
       </div>
       <div class="sge-tools">
+        <el-select
+          v-model="sceneFilter"
+          size="small"
+          clearable
+          placeholder="全部场景"
+          class="sge-scene-filter"
+          :teleported="false"
+        >
+          <el-option
+            v-for="s in sceneOptions"
+            :key="s.scene_id"
+            :label="`${s.order}. ${s.title}`"
+            :value="s.scene_id"
+          />
+        </el-select>
         <button class="sge-btn" @click="autoLayout">自动布局</button>
+        <button class="sge-btn" :disabled="!history.length" title="撤销上一步拓扑/位置调整（Ctrl+Z）" @click="undoTopology">撤销</button>
+        <button class="sge-btn" :disabled="!future.length" title="重做（Ctrl+Shift+Z）" @click="redoTopology">重做</button>
+        <button class="sge-btn" title="把全部节点缩放平移到可视区域" @click="zoomToFit">适配视图</button>
+        <button
+          class="sge-btn"
+          :disabled="!selectedEdge && !selectedNodeIds.length"
+          title="复制选中连线；或复制选中节点的全部出边（Ctrl+C）"
+          @click="copyBranches"
+        >复制分支</button>
+        <button
+          class="sge-btn"
+          :disabled="!clipboardBranches.length || !selectedNodeId"
+          title="把复制的分支挂到当前选中节点（Ctrl+V）"
+          @click="pasteBranches"
+        >粘贴到节点</button>
         <button class="sge-btn" @click="zoom(-0.1)">－</button>
         <span class="sge-zoom">{{ Math.round(scale * 100) }}%</span>
         <button class="sge-btn" @click="zoom(0.1)">＋</button>
@@ -76,16 +108,22 @@
           </svg>
 
           <div
-            v-for="n in nodes"
+            v-for="n in displayNodes"
             :key="n.content_id"
             class="sge-node"
+            role="button"
+            tabindex="0"
+            :aria-label="`节点 #${n.content_id}`"
             :class="[nodeClass(n), {
-              selected: selectedNodeId === n.content_id,
+              selected: isNodeSelected(n.content_id),
+              primary: selectedNodeId === n.content_id,
               hovered: connecting && connecting.hoverId === n.content_id,
             }]"
             :style="{ left: n._x + 'px', top: n._y + 'px', width: NODE_W + 'px' }"
             @mousedown.stop="onNodeDown($event, n)"
-            @click.stop="selectNode(n)"
+            @click.stop="selectNode(n, $event)"
+            @keydown.enter.prevent="selectNode(n, $event)"
+            @keydown.space.prevent="selectNode(n, $event)"
           >
             <div class="sge-node-head">
               <span class="sge-node-type">{{ n.content_type }}</span>
@@ -120,11 +158,16 @@
           </div>
           <div class="sge-field">
             <label>显示条件</label>
+            <div v-if="edgeGroupLock" class="sge-read" style="margin-bottom: 6px">
+              该连线使用多条件组（{{ selectedEdge.conditions.mode === 'or' ? '任一满足' : '全部满足' }}，{{ (selectedEdge.conditions.items || []).length }} 条）
+              —— 请到场景编辑器的「选择项」里修改
+            </div>
             <el-select
               v-model="edgeForm.variable"
               size="small"
               clearable
               placeholder="无条件（始终显示）"
+              :disabled="edgeGroupLock"
               style="width: 100%"
             >
               <el-option v-for="v in variables" :key="v.variable_id" :label="v.label" :value="v.name" />
@@ -140,10 +183,10 @@
               <el-option label="≠" value="!=" />
             </el-select>
             <el-input-number v-model="edgeForm.value" size="small" :step="1" :controls="false" style="width: 96px" />
-            <span class="sge-cond-tip">仅当条件成立才显示该选项</span>
+            <span class="sge-cond-tip">{{ sourceNotChoice ? '仅当条件成立才自动跳转' : '仅当条件成立才显示该选项' }}</span>
           </div>
           <p v-if="sourceNotChoice" class="sge-warn">
-            起点不是「选择」节点：该连线只参与剧情图结构校验，播放器不会按它跳转。
+            起点不是「选择」节点：播放完该节点后会按这条连线自动跳转（多条时取第一条条件成立的边）。
           </p>
           <div class="sge-panel-actions">
             <button class="sge-btn danger" @click="deleteEdge(selectedEdge)">删除连线</button>
@@ -179,6 +222,8 @@
             该节点不是「选择」节点：它的出边只用于剧情图校验，播放器不会按它跳转。
           </p>
           <div class="sge-panel-actions">
+            <button class="sge-btn primary" @click="locateInScript(selectedNode)">在脚本中编辑</button>
+            <button class="sge-btn" @click="playFromNode(selectedNode)">从此节点试玩</button>
             <button class="sge-btn danger" @click="deleteNodeEdges(selectedNode)">清空该节点出边</button>
             <button class="sge-btn" @click="panelMode = 'none'">完成</button>
           </div>
@@ -187,9 +232,11 @@
         <template v-else>
           <h4 class="sge-panel-title">操作提示</h4>
           <div class="sge-help">
-            <p>· 拖拽节点可调整位置，位置会自动记忆。</p>
+            <p>· 拖拽节点可调整位置，位置会自动记忆；按住 Ctrl/Shift 点击可多选并整组拖动。</p>
             <p>· 按住节点右侧的圆点，拖到另一个节点即可新建分支。</p>
             <p>· 点击实线可编辑「选项文案」与「显示条件」，或删除连线。</p>
+            <p>· Ctrl+C 复制选中连线/节点的出边，选中目标节点后 Ctrl+V 粘贴为新分支。</p>
+            <p>· Ctrl+Z 撤销、Ctrl+Shift+Z 重做；「适配视图」会把全部节点缩放到可视野。</p>
             <p>· 虚线是自然顺序播放（自动生成，不可编辑）。</p>
             <p>· 改完记得点右上角「保存拓扑」写回服务器。</p>
           </div>
@@ -205,12 +252,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getStoryGraph, batchSaveBranches } from '@/api/branch'
 import { listVariables } from '@/api/variable'
+import { createProjectVersion } from '@/api/version'
 
-const props = defineProps<{ projectId: number }>()
+const props = defineProps<{ projectId: number; focusContentId?: number | null }>()
+
+const emit = defineEmits<{
+  (e: 'locate', sceneId: number, contentId: number | null): void
+}>()
 
 const NODE_W = 210
 const NODE_H = 70
@@ -220,6 +272,34 @@ const MAX_SCALE = 2
 const nodes = ref<any[]>([])
 const edges = ref<any[]>([])
 const variables = ref<any[]>([])
+// 大项目按场景筛选：只渲染当前场景的节点与场景内连线
+const sceneFilter = ref<number | null>(null)
+
+const sceneOptions = computed(() => {
+  const map = new Map<number, { scene_id: number; title: string; order: number }>()
+  for (const n of nodes.value) {
+    if (!map.has(n.scene_id)) {
+      map.set(n.scene_id, {
+        scene_id: n.scene_id,
+        title: n.scene_title || `场景 ${n.scene_id}`,
+        order: n.scene_order || 0,
+      })
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.order - b.order)
+})
+
+const displayNodes = computed(() => {
+  if (!sceneFilter.value) return nodes.value
+  const sid = Number(sceneFilter.value)
+  return nodes.value.filter(n => Number(n.scene_id) === sid)
+})
+
+const displayEdgeCount = computed(() => {
+  if (!sceneFilter.value) return edges.value.length
+  const ids = new Set(displayNodes.value.map(n => n.content_id))
+  return edges.value.filter(e => ids.has(e.source_content_id) && ids.has(e.target_content_id)).length
+})
 
 const loading = ref(false)
 const saving = ref(false)
@@ -230,17 +310,28 @@ const scale = ref(1)
 const pan = ref({ x: 0, y: 0 })
 
 const selectedNodeId = ref<number | null>(null)
+// 多选：Ctrl/Shift 点击累加，拖动任意选中节点整组移动
+const selectedNodeIds = ref<number[]>([])
 const selectedEdge = ref<any>(null)
 const panelMode = ref<'node' | 'edge' | 'none'>('none')
 
+// 拓扑撤销/重做：快照 = 连线 + 节点位置
+const history = ref<any[]>([])
+const future = ref<any[]>([])
+const clipboardBranches = ref<any[]>([])
+let pendingHistory: any = null
+let edgeEditHistoryTaken = false
+
 const edgeForm = ref<any>({ choice_text: '', variable: '', op: '>=', value: 0 })
+const edgeGroupLock = ref(false)
 let formSyncing = false
 
 const connecting = ref<{ from: any; x: number; y: number; hoverId: number | null } | null>(null)
 
-let dragNode: any = null
-let dragOffset = { x: 0, y: 0 }
+let dragGroup: Array<{ node: any; startX: number; startY: number }> = []
+let dragStartPoint = { x: 0, y: 0 }
 let nodeMoved = false
+let suppressNextClick = false
 let panning = false
 let panStart = { x: 0, y: 0 }
 
@@ -253,13 +344,13 @@ const innerStyle = computed(() => ({
 
 const canvasW = computed(() => {
   let maxX = 0
-  for (const n of nodes.value) maxX = Math.max(maxX, n._x || 0)
+  for (const n of displayNodes.value) maxX = Math.max(maxX, n._x || 0)
   return Math.max(1200, maxX + NODE_W + 220)
 })
 
 const canvasH = computed(() => {
   let maxY = 0
-  for (const n of nodes.value) maxY = Math.max(maxY, n._y || 0)
+  for (const n of displayNodes.value) maxY = Math.max(maxY, n._y || 0)
   return Math.max(720, maxY + NODE_H + 200)
 })
 
@@ -359,6 +450,7 @@ const persistPositions = () => {
 }
 
 const autoLayout = () => {
+  pushHistory()
   computeAutoLayout()
   persistPositions()
   resetView()
@@ -378,11 +470,150 @@ const onWheel = (e: WheelEvent) => {
   zoom(e.deltaY > 0 ? -0.1 : 0.1)
 }
 
+// 适配视图：把全部节点缩放到可视区域
+const zoomToFit = () => {
+  const list = displayNodes.value
+  if (!list.length) return
+  const w = canvasRef.value?.clientWidth || 0
+  const h = canvasRef.value?.clientHeight || 0
+  if (!w || !h) return
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const n of list) {
+    minX = Math.min(minX, n._x || 0)
+    minY = Math.min(minY, n._y || 0)
+    maxX = Math.max(maxX, (n._x || 0) + NODE_W)
+    maxY = Math.max(maxY, (n._y || 0) + NODE_H)
+  }
+  const pad = 48
+  const fitScale = Math.min(
+    (w - pad * 2) / Math.max(1, maxX - minX),
+    (h - pad * 2) / Math.max(1, maxY - minY),
+  )
+  scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(fitScale * 100) / 100))
+  pan.value = {
+    x: (w - (maxX - minX) * scale.value) / 2 - minX * scale.value,
+    y: (h - (maxY - minY) * scale.value) / 2 - minY * scale.value,
+  }
+}
+
+// ==================== 撤销 / 重做 ====================
+
+const snapshotTopology = () => ({
+  edges: edges.value.map(e => ({ ...e })),
+  positions: Object.fromEntries(nodes.value.map(n => [String(n.content_id), [n._x, n._y]])),
+})
+
+const pushHistory = (snap?: any) => {
+  history.value.push(snap || snapshotTopology())
+  if (history.value.length > 60) history.value.shift()
+  future.value = []
+}
+
+/** 节点拖拽：按下时暂存快照，真的移动了才提交一条历史，避免单击也产生撤销记录 */
+const commitPendingHistory = () => {
+  if (!pendingHistory) return
+  pushHistory(pendingHistory)
+  pendingHistory = null
+}
+
+const restoreTopology = (snap: any) => {
+  if (!snap) return
+  edges.value = (snap.edges || []).map((e: any) => ({ ...e }))
+  for (const n of nodes.value) {
+    const p = snap.positions?.[String(n.content_id)]
+    if (Array.isArray(p) && p.length === 2) {
+      n._x = Number(p[0])
+      n._y = Number(p[1])
+    }
+  }
+  persistPositions()
+  selectedNodeId.value = null
+  selectedNodeIds.value = []
+  selectedEdge.value = null
+  panelMode.value = 'none'
+  dirty.value = true
+}
+
+const undoTopology = () => {
+  if (!history.value.length) return
+  future.value.push(snapshotTopology())
+  restoreTopology(history.value.pop())
+  ElMessage.success('已撤销上一步')
+}
+
+const redoTopology = () => {
+  if (!future.value.length) return
+  history.value.push(snapshotTopology())
+  restoreTopology(future.value.pop())
+  ElMessage.success('已重做')
+}
+
+// ==================== 多选 / 复制粘贴分支 ====================
+
+const isNodeSelected = (contentId: number) => selectedNodeIds.value.includes(contentId)
+
+const toggleNodeSelection = (contentId: number) => {
+  if (isNodeSelected(contentId)) {
+    selectedNodeIds.value = selectedNodeIds.value.filter(id => id !== contentId)
+  } else {
+    selectedNodeIds.value = [...selectedNodeIds.value, contentId]
+  }
+}
+
+const copyBranches = () => {
+  let list: any[] = []
+  if (selectedEdge.value) {
+    list = [selectedEdge.value]
+  } else if (selectedNodeIds.value.length) {
+    list = edges.value.filter(e => selectedNodeIds.value.includes(e.source_content_id))
+  }
+  if (!list.length) {
+    ElMessage.info('没有可复制的分支')
+    return
+  }
+  clipboardBranches.value = list.map(e => ({ ...e, conditions: e.conditions ? JSON.parse(JSON.stringify(e.conditions)) : null }))
+  ElMessage.success(`已复制 ${list.length} 条分支`)
+}
+
+const pasteBranches = () => {
+  const targetSource = selectedNodeId.value
+  if (!targetSource || !clipboardBranches.value.length) return
+  const additions: any[] = []
+  for (const e of clipboardBranches.value) {
+    const target = Number(e.target_content_id)
+    if (!target || target === Number(targetSource)) continue
+    // 剪贴板可能来自刷新前的旧图：目标节点已被删除时不再粘贴
+    if (!nodes.value.some(n => Number(n.content_id) === target)) continue
+    const dup = edges.value.some(x =>
+      Number(x.source_content_id) === Number(targetSource) && Number(x.target_content_id) === target)
+    if (dup) continue
+    additions.push({
+      path_id: undefined,
+      source_content_id: Number(targetSource),
+      target_content_id: target,
+      choice_text: e.choice_text || '',
+      image_url: e.image_url || null,
+      conditions: e.conditions ? JSON.parse(JSON.stringify(e.conditions)) : null,
+    })
+  }
+  if (!additions.length) {
+    ElMessage.info('没有新增分支（目标节点已存在相同连线）')
+    return
+  }
+  pushHistory()
+  edges.value.push(...additions)
+  dirty.value = true
+  ElMessage.success(`已粘贴 ${additions.length} 条分支，别忘点「保存拓扑」`)
+}
+
 // ==================== 渲染边 ====================
 
 const renderEdges = computed(() => {
   const byId: Record<number, any> = {}
-  for (const n of nodes.value) byId[n.content_id] = n
+  for (const n of displayNodes.value) byId[n.content_id] = n
 
   const out: any[] = []
   const explicitOut = new Set<number>()
@@ -408,7 +639,7 @@ const renderEdges = computed(() => {
   }
 
   // 顺序边（后端 auto_sequence 的前端镜像，仅展示，不可编辑）
-  const ordered = [...nodes.value].sort(
+  const ordered = [...displayNodes.value].sort(
     (a, b) => (a.scene_order - b.scene_order) || (a.order_num - b.order_num) || (a.content_id - b.content_id)
   )
   for (let i = 0; i < ordered.length - 1; i++) {
@@ -463,10 +694,14 @@ const onCanvasMove = (ev: MouseEvent) => {
     connecting.value.hoverId = hit ? hit.content_id : null
     return
   }
-  if (dragNode) {
-    dragNode._x = p.x - dragOffset.x
-    dragNode._y = p.y - dragOffset.y
-    nodeMoved = true
+  if (dragGroup.length) {
+    const dx = p.x - dragStartPoint.x
+    const dy = p.y - dragStartPoint.y
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) nodeMoved = true
+    for (const g of dragGroup) {
+      g.node._x = g.startX + dx
+      g.node._y = g.startY + dy
+    }
     return
   }
   if (panning) {
@@ -476,28 +711,96 @@ const onCanvasMove = (ev: MouseEvent) => {
 
 const onCanvasUp = (ev: MouseEvent) => {
   if (connecting.value) finishConnect(ev)
-  if (dragNode && nodeMoved) persistPositions()
-  dragNode = null
+  if (dragGroup.length && nodeMoved) {
+    persistPositions()
+    commitPendingHistory()
+    // 拖拽结束会紧跟一次 click，忽略它以免把多选塌缩成单选
+    suppressNextClick = true
+    setTimeout(() => { suppressNextClick = false }, 0)
+  } else {
+    pendingHistory = null
+  }
+  dragGroup = []
   nodeMoved = false
   panning = false
 }
 
 const onNodeDown = (ev: MouseEvent, n: any) => {
   if (connecting.value) return
+  const additive = ev.metaKey || ev.ctrlKey || ev.shiftKey
+  // 多选交给 click 处理，避免 mousedown + click 各切换一次
+  if (additive) return
+  // 已在多选组里的节点按下时保留整组，直接拖动整组
+  if (!isNodeSelected(n.content_id)) {
+    selectedNodeIds.value = [n.content_id]
+  }
+  selectedNodeId.value = n.content_id
+  selectedEdge.value = null
+  panelMode.value = 'node'
+  pendingHistory = snapshotTopology()
   const p = toCanvas(ev.clientX, ev.clientY)
-  dragNode = n
-  dragOffset = { x: p.x - n._x, y: p.y - n._y }
+  dragStartPoint = p
+  dragGroup = selectedNodeIds.value
+    .map(id => nodes.value.find(x => x.content_id === id))
+    .filter(Boolean)
+    .filter(node => displayNodes.value.some(d => d.content_id === node.content_id))
+    .map(node => ({ node, startX: node._x, startY: node._y }))
   nodeMoved = false
+}
+
+const selectNode = (n: any, ev?: MouseEvent | KeyboardEvent) => {
+  if (suppressNextClick) {
+    suppressNextClick = false
+    return
+  }
+  const additive = ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey)
+  if (additive) {
+    toggleNodeSelection(n.content_id)
+    selectedNodeId.value = isNodeSelected(n.content_id) ? n.content_id : (selectedNodeIds.value[0] ?? null)
+    selectedEdge.value = null
+    panelMode.value = selectedNodeId.value ? 'node' : 'none'
+    return
+  }
+  selectedNodeIds.value = [n.content_id]
   selectedNodeId.value = n.content_id
   selectedEdge.value = null
   panelMode.value = 'node'
 }
 
-const selectNode = (n: any) => {
+/** 优先脚本中定位：切回脚本页并滚动到对应台词 */
+const locateInScript = (node: any) => {
+  if (!node) return
+  emit('locate', Number(node.scene_id), Number(node.content_id))
+}
+
+/** 选中并居中某个节点（从脚本页跳转过来时用） */
+const focusNode = (contentId: number | null | undefined) => {
+  if (contentId == null) return
+  const n = nodes.value.find(x => Number(x.content_id) === Number(contentId))
+  if (!n) return
+  // 定位前清掉场景筛选，避免目标节点被过滤掉
+  sceneFilter.value = null
   selectedNodeId.value = n.content_id
+  selectedNodeIds.value = [n.content_id]
   selectedEdge.value = null
   panelMode.value = 'node'
+  const w = canvasRef.value?.clientWidth || 0
+  const h = canvasRef.value?.clientHeight || 0
+  if (w && h) {
+    pan.value = {
+      x: w / 2 - ((n._x || 0) + NODE_W / 2) * scale.value,
+      y: h / 2 - ((n._y || 0) + NODE_H / 2) * scale.value,
+    }
+  }
 }
+
+watch(
+  () => props.focusContentId,
+  (v) => {
+    if (v == null) return
+    nextTick(() => setTimeout(() => focusNode(v), 0))
+  }
+)
 
 const startConnect = (ev: MouseEvent, n: any) => {
   const p = toCanvas(ev.clientX, ev.clientY)
@@ -522,6 +825,7 @@ const finishConnect = (ev: MouseEvent) => {
     ElMessage.info('这条分支已经存在')
     return
   }
+  pushHistory()
   edges.value.push({
     path_id: undefined,
     source_content_id: c.from.content_id,
@@ -542,8 +846,12 @@ const selectRenderEdge = (e: any) => {
 const selectEdge = (e: any) => {
   selectedEdge.value = e
   selectedNodeId.value = null
+  selectedNodeIds.value = []
   panelMode.value = 'edge'
+  edgeEditHistoryTaken = false
   formSyncing = true
+  // 多条件组（AND/OR）在剧情树里只读，避免保存时被压成单条件
+  edgeGroupLock.value = !!(e.conditions && Array.isArray(e.conditions.items))
   edgeForm.value = {
     choice_text: e.choice_text || '',
     variable: e.conditions && e.conditions.variable ? e.conditions.variable : '',
@@ -561,7 +869,17 @@ watch(
     if (formSyncing) return
     const e = selectedEdge.value
     if (!e) return
+    // 每条连线只记录一次编辑前快照，避免打字时塞满撤销栈
+    if (!edgeEditHistoryTaken) {
+      pushHistory()
+      edgeEditHistoryTaken = true
+    }
     e.choice_text = edgeForm.value.choice_text
+    // 多条件组保持原样，只允许改文案
+    if (edgeGroupLock.value) {
+      dirty.value = true
+      return
+    }
     e.conditions = edgeForm.value.variable
       ? { variable: edgeForm.value.variable, op: edgeForm.value.op, value: Number(edgeForm.value.value) || 0 }
       : null
@@ -572,16 +890,27 @@ watch(
 
 const deleteEdge = (e: any) => {
   const idx = edges.value.indexOf(e)
-  if (idx >= 0) edges.value.splice(idx, 1)
+  if (idx >= 0) {
+    pushHistory()
+    edges.value.splice(idx, 1)
+  }
   selectedEdge.value = null
   panelMode.value = 'none'
   dirty.value = true
 }
 
+// 调试器：从指定节点开始试玩（新窗口，带 debug=1）
+const playFromNode = (node: any) => {
+  if (!node || !node.content_id) return
+  const url = `/view/${props.projectId}?debug=1&start=${node.content_id}`
+  window.open(url, '_blank')
+}
+
 const deleteNodeEdges = (n: any) => {
-  const before = edges.value.length
-  edges.value = edges.value.filter(e => e.source_content_id !== n.content_id)
-  if (edges.value.length !== before) {
+  const next = edges.value.filter(e => e.source_content_id !== n.content_id)
+  if (next.length !== edges.value.length) {
+    pushHistory()
+    edges.value = next
     dirty.value = true
     ElMessage.success('已移除该节点的全部出边（保存后生效）')
   }
@@ -602,9 +931,16 @@ const reload = async () => {
     applyStoredPositions()
     variables.value = vars || []
     selectedNodeId.value = null
+    selectedNodeIds.value = []
     selectedEdge.value = null
     panelMode.value = 'none'
+    history.value = []
+    future.value = []
+    pendingHistory = null
     dirty.value = false
+    if (props.focusContentId != null) {
+      nextTick(() => setTimeout(() => focusNode(props.focusContentId), 0))
+    }
   } catch (e) {
     ElMessage.error('加载剧情节点失败')
     nodes.value = []
@@ -623,11 +959,13 @@ const saveTopology = async () => {
         source_content_id: e.source_content_id,
         target_content_id: e.target_content_id,
         choice_text: e.choice_text || '',
+        image_url: e.image_url || null,
         conditions: e.conditions || null,
       })),
       true
     )
     ElMessage.success('拓扑已保存')
+    createProjectVersion(props.projectId, '保存剧情图').catch(() => {})
     dirty.value = false
     await reload()
   } catch (e: any) {
@@ -637,7 +975,49 @@ const saveTopology = async () => {
   }
 }
 
-onMounted(reload)
+// ==================== 键盘快捷键 ====================
+
+const isEditableTarget = (target: any) => {
+  const tag = target && target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!(target && target.isContentEditable)
+}
+
+// 剧情图组件根节点：用于判断是否处于可见的剧情图页签
+const rootRef = ref<HTMLElement | null>(null)
+
+const onKeyDown = (ev: KeyboardEvent) => {
+  // 剧情图在创作页靠 v-show 常驻：切到脚本页时监听仍在，必须按可见性拦截，
+  // 否则脚本页按 Ctrl+Z / Ctrl+C 会误触剧情图的撤销与复制。
+  const el = rootRef.value
+  if (!el || el.offsetParent === null) return
+  if (isEditableTarget(ev.target)) return
+  const mod = ev.ctrlKey || ev.metaKey
+  if (!mod) return
+  const key = ev.key.toLowerCase()
+  if (key === 'z') {
+    ev.preventDefault()
+    if (ev.shiftKey) redoTopology()
+    else undoTopology()
+  } else if (key === 'y') {
+    ev.preventDefault()
+    redoTopology()
+  } else if (key === 'c') {
+    ev.preventDefault()
+    copyBranches()
+  } else if (key === 'v') {
+    ev.preventDefault()
+    pasteBranches()
+  }
+}
+
+onMounted(() => {
+  reload()
+  window.addEventListener('keydown', onKeyDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
+})
 
 defineExpose({ reload })
 </script>
@@ -674,6 +1054,12 @@ defineExpose({ reload })
 .sge-dirty {
   color: #e6a23c;
 }
+.sge-filter-total {
+  color: #94a3b8;
+}
+.sge-scene-filter {
+  width: 130px;
+}
 
 .sge-tools {
   display: flex;
@@ -700,6 +1086,10 @@ defineExpose({ reload })
 .sge-btn:hover {
   border-color: #ff8fab;
   color: #c81f4a;
+}
+.sge-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .sge-btn.primary {
   background: #ff8fab;
@@ -810,6 +1200,10 @@ defineExpose({ reload })
 .sge-node.selected {
   border-color: #c81f4a;
   box-shadow: 0 0 0 2px rgba(200, 31, 74, 0.18);
+}
+.sge-node.primary {
+  border-color: #c81f4a;
+  box-shadow: 0 0 0 3px rgba(200, 31, 74, 0.3);
 }
 .sge-node.hovered {
   border-color: #ff8fab;

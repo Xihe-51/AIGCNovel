@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Tuple, List, Dict
 from flask import current_app
-from .. import db
+from .. import db, STATIC_ROOT
 from ..models import AIGeneration
 from ..extensions import cache_get, cache_set
 from .backends import text_ollama, text_deepseek
@@ -220,7 +220,7 @@ def _save_image_record(user_id: int, prompt: str, filename: str):
     generation_record = AIGeneration(
         user_id=user_id,
         prompt_text=prompt,
-        generated_text=filename.replace("app", "", 1),
+        generated_text=_static_rel_url(filename),
         length=1,
         type="image",
         forbidden_words="default"
@@ -239,11 +239,11 @@ def _generate_image_tongyi(user_id: int, prompt: str, width: int, height: int) -
         img_response = requests.get(image_url, timeout=30)
         img_response.raise_for_status()
 
-        directory = f"app/static/images/{user_id}"
+        directory = os.path.join(STATIC_ROOT, 'images', str(user_id))
         os.makedirs(directory, exist_ok=True)
 
         timestamp = int(time.time())
-        filename = f"{directory}/{timestamp}.png"
+        filename = os.path.join(directory, f"{timestamp}.png")
 
         with open(filename, 'wb') as f:
             f.write(img_response.content)
@@ -271,10 +271,10 @@ def _generate_image_local(user_id: int, prompt: str, width: int, height: int) ->
                 "backend": "local",
             }
 
-        directory = f"app/static/images/{user_id}"
+        directory = os.path.join(STATIC_ROOT, 'images', str(user_id))
         os.makedirs(directory, exist_ok=True)
         timestamp = int(time.time())
-        filename = f"{directory}/{timestamp}.png"
+        filename = os.path.join(directory, f"{timestamp}.png")
 
         meta = image_local.generate_to_file(prompt, filename, width=width, height=height)
 
@@ -415,16 +415,25 @@ def _static_rel_url(full_path: str) -> str:
     """
     把磁盘路径转成前端可直接拼 BASE_URL 的 URL 片段。
 
-    坑：`os.path.join('app/static/music/4', 'a.wav')` 在 Windows 上得到
-    `app/static/music/4\\a.wav`，混入反斜杠后前端拼出的 URL 不可靠。
-    这里统一转成 `/static/music/4/a.wav`。
+    统一按 STATIC_ROOT 计算相对路径，返回 `/static/...`：
+    进程无论从哪个目录启动，都不会拼出带盘符或反斜杠的坏 URL。
     """
-    rel = full_path.replace('\\', '/')
-    if rel.startswith('app/'):
-        rel = rel[len('app'):]
-    elif rel.startswith('app'):
-        rel = rel[len('app'):]
-    return rel
+    raw = str(full_path or '')
+    root = os.path.abspath(STATIC_ROOT)
+    try:
+        rel = os.path.relpath(os.path.abspath(raw), root)
+    except ValueError:
+        rel = raw
+    rel = rel.replace('\\', '/')
+    if rel.startswith('../'):
+        # 兼容旧数据/旧记录里的 app/static/... 形式
+        legacy = raw.replace('\\', '/')
+        if legacy.startswith('app/'):
+            legacy = legacy[len('app'):]
+        elif legacy.startswith('app'):
+            legacy = legacy[len('app'):]
+        return legacy if legacy.startswith('/') else '/' + legacy
+    return '/static/' + rel
 
 
 def _save_audio_record(user_id: int, prompt: str, filename: str,
@@ -473,7 +482,7 @@ def generate_music(user_id: int, prompt: str, duration: int,
                 "backend": "local",
             }
 
-        directory = f"app/static/music/{user_id}"
+        directory = os.path.join(STATIC_ROOT, 'music', str(user_id))
         os.makedirs(directory, exist_ok=True)
         timestamp = int(time.time())
         filename = f"music_{timestamp}.wav"
@@ -506,6 +515,15 @@ def generate_music(user_id: int, prompt: str, duration: int,
 # 历史实现把 map 型的 app 塞进了 async 接口，被服务端直接拒绝（HTTP 400）。
 VOLCENGINE_TTS_SYNC_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
+# 配音导演：按台词情绪微调 TTS 语速 / 音量 / 音调
+_TTS_EMOTION_TUNE = {
+    '平静': (1.0, 1.0, 1.0),
+    '犹豫': (0.90, 0.95, 1.0),
+    '生气': (1.15, 1.10, 1.05),
+    '哭腔': (0.90, 0.90, 0.95),
+    '低声': (0.85, 0.80, 0.95),
+}
+
 
 def _volcengine_appid():
     """appid 必须是字符串，转成 int 会被序列化成 2.12e+09 导致服务端解析失败。"""
@@ -517,7 +535,7 @@ def _volcengine_token():
 
 
 def generate_voice(user_id: int, text: str, voice_type: str = None,
-                   duration: int = 0) -> Tuple[bool, Dict]:
+                   duration: int = 0, emotion: str = None) -> Tuple[bool, Dict]:
     """
     把文字合成**配音音频**（火山引擎 TTS，一次性合成接口）。
 
@@ -538,6 +556,9 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
         }
 
     voice_type = voice_type or _cfg('VOLCENGINE_VOICE_TYPE', 'BV001_streaming')
+    emotion = (emotion or '').strip() or None
+    speed_ratio, volume_ratio, pitch_ratio = _TTS_EMOTION_TUNE.get(
+        emotion, (1.0, 1.0, 1.0))
     fmt = 'mp3'
 
     headers = {
@@ -555,9 +576,9 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
         "audio": {
             "voice_type": voice_type,
             "encoding": fmt,
-            "speed_ratio": 1.0,
-            "volume_ratio": 1.0,
-            "pitch_ratio": 1.0,
+            "speed_ratio": speed_ratio,
+            "volume_ratio": volume_ratio,
+            "pitch_ratio": pitch_ratio,
         },
         "request": {
             "reqid": str(uuid.uuid4()),
@@ -589,7 +610,7 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
     except Exception as e:
         return False, {"message": f"音频数据解码失败: {e}"}
 
-    directory = f"app/static/music/{user_id}"
+    directory = os.path.join(STATIC_ROOT, 'music', str(user_id))
     os.makedirs(directory, exist_ok=True)
     filename = f"voice_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{fmt}"
     full_path = os.path.join(directory, filename)
@@ -606,6 +627,10 @@ def generate_voice(user_id: int, text: str, voice_type: str = None,
         "message": "配音生成完成",
         "backend": "volcengine-tts",
         "voice_type": voice_type,
+        "emotion": emotion,
+        "speed_ratio": speed_ratio,
+        "volume_ratio": volume_ratio,
+        "pitch_ratio": pitch_ratio,
         "file": _static_rel_url(full_path),
         "size_bytes": len(audio_bytes),
     }
