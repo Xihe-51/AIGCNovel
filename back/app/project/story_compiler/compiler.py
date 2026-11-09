@@ -5,7 +5,7 @@
 失败时回滚并抛出异常，由视图层统一转换为 500。
 """
 from ... import db
-from ...models import (Character, ProjectSource, Scene, SceneChapter,
+from ...models import (Character, Project, ProjectSource, Scene, SceneChapter,
                        ScriptContent, StoryChapter)
 from ..services import update_project_word_count
 from .report import snippet
@@ -13,19 +13,25 @@ from .report import snippet
 
 def compile_to_project(project_id, parsed, report, *, project_title='',
                        filename='', fmt='txt', uid=None, raw_text='',
-                       existing_names=None, create_characters=True,
-                       create_chapters=True):
+                       create_characters=True, create_chapters=True):
     """把解析结果追加到现有项目，返回前端需要的 data 字典。
 
-    existing_names 是「去掉首尾空白的角色名 → Character」映射，
-    编译过程中新建的角色会同步写入，保证同一说话人只创建一次。
+    写库前先对项目行加 ``FOR UPDATE`` 锁，让同一项目的并发导入串行化；
+    角色、场景与章节序号都在拿到锁之后重新读取，避免两个请求基于同一份
+    旧快照重复创建角色或分配相同序号。
     """
-    existing_names = existing_names if existing_names is not None else {}
     created_chars = []
     source_map = {'chapters': [], 'scenes': [], 'nodes': []}
     scene_index = 0
 
     try:
+        # 同一项目的导入串行化；锁在 commit 时释放
+        db.session.query(Project.project_id).filter_by(
+            project_id=project_id).with_for_update().one()
+
+        existing = Character.query.filter_by(project_id=project_id).all()
+        existing_names = {c.name.strip(): c for c in existing if c.name}
+
         max_scene_order = db.session.query(db.func.max(Scene.order_num)).filter_by(
             project_id=project_id).scalar() or 0
         max_chapter_order = db.session.query(db.func.max(StoryChapter.order_num)).filter_by(

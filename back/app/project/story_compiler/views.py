@@ -90,17 +90,19 @@ def story_compile_apply(project_id):
         return jsonify({'success': False, 'message': '没有解析到任何台词或旁白'}), 400
 
     uid = current_user_id()
+    project_title = project_row.title
+    # 结束报告阶段的只读事务，确保 compiler 里的项目行锁拿到最新快照
+    db.session.rollback()
     try:
         result = compile_to_project(
             project_id,
             parsed,
             report,
-            project_title=project_row.title,
+            project_title=project_title,
             filename=filename,
             fmt=fmt,
             uid=uid,
             raw_text=text,
-            existing_names=existing_names,
             create_characters=create_characters,
             create_chapters=create_chapters,
         )
