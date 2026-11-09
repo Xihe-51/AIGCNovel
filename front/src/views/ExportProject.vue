@@ -855,7 +855,6 @@ import {
 	updateScene,
 } from '@/api/scenes'
 import { listBranches, getStoryGraph } from '@/api/branch'
-import { recordPlayEvent } from '@/api/analytics'
 import { listAchievements, checkAchievements } from '@/api/achievement'
 import { listPublicReleases } from '@/api/release'
 import { listSaves, getSave, putSave, deleteSave } from '@/api/save'
@@ -869,6 +868,8 @@ import { getGallery } from '@/api/cg'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
 import { playerText } from '@/utils/playerI18n'
+import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
+import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -1097,64 +1098,19 @@ const deleteDebugSnapshot = (id) => {
 }
 
 // ===== 试玩埋点（调试模式不记录，避免作者自己测试污染数据）=====
-const telemetrySessionId = (() => {
-	try {
-		if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-	} catch (_) { /* ignore */ }
-	return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)
-})()
-let telemetryStartLogged = false
-let lastSceneLogId = 0
-let lastSceneLogAt = 0
-// 回退后重走已看过的内容时，避免重复计入试玩埋点（列表/选项/结局按会话去重）
-const loggedScenes = new Set()
-const loggedChoices = new Set()
-const loggedEndings = new Set()
-let telemetryFinishLogged = false
-
-// 新一轮从头开始：允许重新记录场景/选项/结局/通关埋点
-const resetTelemetryTracking = () => {
-	loggedScenes.clear()
-	loggedChoices.clear()
-	loggedEndings.clear()
-	telemetryFinishLogged = false
-}
-
-const logPlayEvent = (type, extra = {}) => {
-	// 作者本人的预览/试玩不计入玩家数据，避免污染流失率与选择分布
-	if (debugMode.value || isOwner.value || loading.value || error.value) return
-	if (type === 'scene_enter') {
-		const sid = Number(extra.scene_id) || 0
-		if (!sid || loggedScenes.has(sid)) return
-		loggedScenes.add(sid)
-	} else if (type === 'choice') {
-		const key = `${Number(extra.content_id) || 0}:${Number(extra.path_id) || 0}`
-		if (loggedChoices.has(key)) return
-		loggedChoices.add(key)
-	} else if (type === 'ending') {
-		const eid = Number(extra.ending_id) || 0
-		if (eid && loggedEndings.has(eid)) return
-		if (eid) loggedEndings.add(eid)
-	} else if (type === 'finish') {
-		if (telemetryFinishLogged) return
-		telemetryFinishLogged = true
-	}
-	recordPlayEvent(Number(props.projectId), {
-		session_id: telemetrySessionId,
-		event_type: type,
-		...extra,
-	}).catch(() => { /* 埋点失败不影响试玩 */ })
-}
-
-const logCurrentScene = () => {
-	const sid = Number(currentScene.value?.scene_id || 0)
-	if (!sid) return
-	const now = Date.now()
-	if (sid === lastSceneLogId && now - lastSceneLogAt < 500) return
-	lastSceneLogId = sid
-	lastSceneLogAt = now
-	logPlayEvent('scene_enter', { scene_id: sid })
-}
+const {
+	resetTelemetryTracking,
+	logPlayEvent,
+	logStartOnce,
+	logCurrentScene,
+} = usePlayerTelemetry({
+	getProjectId: () => Number(props.projectId),
+	getDebugMode: () => debugMode.value,
+	getIsOwner: () => isOwner.value,
+	getLoading: () => loading.value,
+	getError: () => error.value,
+	getCurrentSceneId: () => Number(currentScene.value?.scene_id || 0),
+})
 
 // 周目：二周目继承上一周目的变量值，方便作者做「二周目解锁」
 const playthroughKey = () => `aigc:playthrough:${props.projectId}`
@@ -1449,25 +1405,18 @@ const openGallery = async () => {
 };
 
 // 阅读设置（localStorage 持久化）
-const SETTINGS_KEY = 'aigc:player:settings';
-	const DEFAULT_SETTINGS = {
-	textSpeed: 2,      // 0 瞬间 / 1 快 / 2 正常 / 3 慢
-	autoDelay: 3,      // 自动播放间隔（秒）
-	bgmVolume: 60,     // 0-100
-	voiceVolume: 80,   // 0-100
-	fullscreen: false,
-	skipRead: false,   // 跳过已读
-	boxStyle: 'classic', // classic 经典底栏 / bubble 气泡对话
-	fontSize: 18,      // 对话字号 14-24
-	lineHeight: 1.6,   // 对话行距 1.3-2.2
-	showVariableNotice: true, // 变量变化时显示「好感度 +5」浮层
-	voiceEnabled: true, // 自动播放台词语音
-	spriteMotion: true, // 立绘轻微呼吸动态
-	audioDrama: false, // 有声剧模式：隐藏立绘与背景，只保留对白/旁白/音效/选项
-	language: 'zh-CN', // 阅读语言：zh-CN 原文，其余语言优先显示译文
-};
-const playerSettings = ref({ ...DEFAULT_SETTINGS });
-const settingsVisible = ref(false);
+const {
+	playerSettings,
+	settingsVisible,
+	loadSettings,
+	saveSettings,
+	openSettings,
+	resetSettings,
+	toggleFullscreen,
+} = usePlayerSettings({
+	onSettingsChange: () => applyVolumes(),
+	onReset: () => startTyping(),
+});
 const displayedText = ref('');
 const dialogueVoice = ref(null);
 const isTyping = ref(false);
@@ -1814,10 +1763,7 @@ const fetchProjectData = async () => {
 			// 初始化历史对话
 			initHistoryDialogues();
 			// 试玩数据：记录开局与首个到达场景（调试模式自动跳过）
-			if (!telemetryStartLogged) {
-				telemetryStartLogged = true;
-				logPlayEvent('start');
-			}
+			logStartOnce();
 			nextTick(() => logCurrentScene());
 			scheduleAchievementCheck();
 		}
@@ -1970,27 +1916,6 @@ const onVoicePlay = () => setBgmDucking(true);
 const onVoiceEnded = () => setBgmDucking(false);
 
 // ==================== 阅读设置 ====================
-const loadSettings = () => {
-	try {
-		const raw = localStorage.getItem(SETTINGS_KEY);
-		if (raw) {
-			playerSettings.value = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-		}
-		// 全屏状态以浏览器实际状态为准（刷新后不会自动全屏）
-		playerSettings.value.fullscreen = !!document.fullscreenElement;
-	} catch (e) {
-		console.warn('读取阅读设置失败，使用默认值:', e);
-	}
-};
-
-const saveSettings = () => {
-	try {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(playerSettings.value));
-	} catch (e) {
-		console.warn('保存阅读设置失败:', e);
-	}
-};
-
 const applyVolumes = () => {
 	const bgm = backgroundMusic.value;
 	if (bgm) {
@@ -2011,31 +1936,6 @@ const replayVoice = () => {
 		audio.volume = playerSettings.value.voiceVolume / 100;
 		audio.play().catch(() => { /* 浏览器拦截时忽略 */ });
 	} catch (_) { /* ignore */ }
-};
-
-const openSettings = () => {
-	settingsVisible.value = true;
-};
-
-const resetSettings = () => {
-	playerSettings.value = { ...DEFAULT_SETTINGS };
-	saveSettings();
-	applyVolumes();
-	startTyping();
-};
-
-const toggleFullscreen = async (val) => {
-	try {
-		if (val && !document.fullscreenElement) {
-			await document.documentElement.requestFullscreen();
-		} else if (!val && document.fullscreenElement) {
-			await document.exitFullscreen();
-		}
-	} catch (e) {
-		// 浏览器不允许（或 headless 不支持）时回滚开关状态
-		playerSettings.value.fullscreen = !!document.fullscreenElement;
-		console.warn('全屏切换失败:', e);
-	}
 };
 
 // 逐字显示
@@ -2675,12 +2575,6 @@ const startTyping = () => {
 		}
 	}, interval);
 };
-
-// 设置变化：持久化并立即应用音量
-watch(playerSettings, () => {
-	saveSettings();
-	applyVolumes();
-}, { deep: true });
 
 // 文字速度变化时，当前句按新速度重新显示
 watch(() => playerSettings.value.textSpeed, () => startTyping());
