@@ -56,6 +56,13 @@ class ParserTest(unittest.TestCase):
         # 「第一回合，他赢了」应作为旁白留在第一个场景里
         self.assertEqual(chapter['scenes'][0]['nodes'][-1]['kind'], 'narration')
 
+    def test_bom_and_crlf(self):
+        source = '\ufeff# 第一章\r\n\r\n## 场景\r\n甲：你好。\r\n'
+        parsed = parse_source(source)
+        self.assertEqual(parsed['chapters'][0]['title'], '第一章')
+        self.assertEqual(parsed['chapters'][0]['scenes'][0]['title'], '场景')
+        self.assertEqual(parsed['chapters'][0]['scenes'][0]['nodes'][0]['speaker'], '甲')
+
     def test_empty_source_falls_back_to_default_scene(self):
         parsed = parse_source('   \n\n')
         self.assertEqual(len(parsed['chapters']), 1)
@@ -86,6 +93,17 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(stats['character_unknown'], 1)
         self.assertEqual(stats['unknown_speakers'], ['陌生人'])
         self.assertTrue(any(d['code'] == 'unbound_character' for d in report['diagnostics']))
+
+    def test_all_narration_warning(self):
+        parsed = parse_source('只是旁白。\n又一句。\n')
+        codes = [d['code'] for d in build_report(parsed, set())['diagnostics']]
+        self.assertIn('no_dialogue', codes)
+
+    def test_structure_preview_truncation(self):
+        source = '\n'.join('# 第%d章\n## 场景\n甲：话。\n' % i for i in range(41))
+        preview = structure_preview(parse_source(source))
+        self.assertTrue(preview['truncated'])
+        self.assertEqual(len(preview['chapters']), 40)
 
     def test_structure_preview(self):
         source = '''# 第一章

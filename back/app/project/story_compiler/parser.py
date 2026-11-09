@@ -169,7 +169,11 @@ def _parse_node(line, line_no):
 
 def parse_source(raw_text, filename=''):
     """把源文本解析成章节 / 场景 / 节点三级 AST。"""
-    lines = str(raw_text or '').replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    raw_text = str(raw_text or '')
+    # 部分编辑器/Windows 记事本会在文件头写入 UTF-8 BOM，先去掉再识别标题
+    if raw_text.startswith('\ufeff'):
+        raw_text = raw_text[1:]
+    lines = raw_text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     chapters = []
     current_chapter = None
     current_scene = None
