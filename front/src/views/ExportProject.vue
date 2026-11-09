@@ -861,7 +861,6 @@ import { listSaves, getSave, putSave, deleteSave } from '@/api/save'
 import { listReads, markReads } from '@/api/read'
 import { listChapters } from '@/api/chapter'
 import { listVariables, listEffects, getProjectMeta, saveProjectMeta } from '@/api/variable'
-import { listDirectives } from '@/api/directive'
 import { listEndings, unlockEnding } from '@/api/ending'
 import { listMusicGallery, unlockMusic } from '@/api/gallery'
 import { getGallery } from '@/api/cg'
@@ -870,6 +869,13 @@ import { themeClass } from '@/utils/uiThemes'
 import { playerText } from '@/utils/playerI18n'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
+import {
+	usePlayerStage,
+	layerIdOf,
+	layerNameOf,
+	layerOrderOf,
+	stageDefaultX,
+} from '@/composables/player/usePlayerStage'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -2608,95 +2614,36 @@ watch([currentSceneIndex, currentDialogueIndex], () => {
 });
 
 /* ===== 节点演出指令（任意图层 / 背景切换 / 音效）===== */
-const LEGACY_POSITION_ORDER = { left: 0, center: 1, right: 2 };
-const layerIdOf = (p = {}) => p.layer_id || p.position || 'center';
-const layerNameOf = (p = {}) => p.layer_name || ({ left: '左侧', center: '中间', right: '右侧' }[p.position] || '立绘');
-const layerOrderOf = (p = {}) => {
-	if (p.order !== undefined && p.order !== null && Number.isFinite(Number(p.order))) return Number(p.order);
-	if (p.z !== undefined && p.z !== null && Number.isFinite(Number(p.z))) return Number(p.z);
-	return LEGACY_POSITION_ORDER[p.position || 'center'] ?? 0;
-};
-const stageDefaultX = (layerId) => {
-	if (layerId === 'left') return 20;
-	if (layerId === 'right') return 80;
-	return 50;
-};
-const stageAvatars = ref({});
-const bgFromDirective = ref('');
-const bgTransition = ref('fade');
-const bgDuration = ref(400);
-const fgFromDirective = ref('');
-const directivesByContent = ref({});
-// 节点级舞台层可见性（背景/前景/对话框），由 stage 指令控制
-const stageLayerVisible = ref({ background: true, foreground: true, dialogue: true });
-
-const stageLayers = computed(() => Object.values(stageAvatars.value)
-	.filter(Boolean)
-	.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)));
-
-const hasStageAvatars = computed(() => stageLayers.value.length > 0);
-
-const stageBackground = computed(() => {
-	if (stageLayerVisible.value.background === false) return '';
-	if (bgFromDirective.value) return BASE_URL + bgFromDirective.value;
-	return currentScene.value?.background_url
-		? BASE_URL + currentScene.value.background_url
-		: defaultBackground;
+const {
+	stageAvatars,
+	bgFromDirective,
+	bgTransition,
+	bgDuration,
+	fgFromDirective,
+	directivesByContent,
+	stageLayerVisible,
+	stageLayers,
+	hasStageAvatars,
+	avatarLayersOf,
+	defaultAvatarLayersOf,
+	loadDirectiveData,
+	resetStage,
+	clearStageTransitions,
+	bgShown,
+	bgFading,
+	bgBlackout,
+	fgShown,
+	fgFading,
+} = usePlayerStage({
+	getProjectId: () => Number(props.projectId),
+	getCurrentScene: () => currentScene.value,
+	getCharacters: () => characters.value,
+	getDefaultBackground: () => defaultBackground,
+	onReset: () => {
+		clearWait();
+		clearEffect();
+	},
 });
-
-// 立绘差分层：返回 [基础图, ...叠加层]；按 order 从小到大
-const avatarLayersOf = (avatarId) => {
-	if (!avatarId) return [];
-	for (const char of characters.value) {
-		const avatar = (char.avatars || []).find(a => a.avatar_id === avatarId);
-		if (!avatar || !avatar.image_url) continue;
-		const layers = (avatar.layers || [])
-			.filter(l => l && l.image_url)
-			.slice()
-			.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
-			.map(l => BASE_URL + l.image_url);
-		return [BASE_URL + avatar.image_url, ...layers];
-	}
-	return [];
-};
-
-const defaultAvatarLayersOf = (characterId) => {
-	const c = characters.value.find(x => x.character_id === characterId);
-	if (!c) return [];
-	const list = c.avatars || [];
-	const def = list.find(a => a.is_default) || list[0];
-	if (def && def.avatar_id) {
-		const layers = avatarLayersOf(def.avatar_id);
-		if (layers.length) return layers;
-	}
-	return c.avatar_url ? [BASE_URL + c.avatar_url] : [];
-};
-
-const loadDirectiveData = async () => {
-	try {
-		const rows = await listDirectives(Number(props.projectId));
-		const map = {};
-		for (const r of rows) {
-			if (!map[r.content_id]) map[r.content_id] = [];
-			map[r.content_id].push(r);
-		}
-		directivesByContent.value = map;
-	} catch (e) {
-		console.warn('读取演出指令失败:', e);
-		directivesByContent.value = {};
-	}
-};
-
-const resetStage = () => {
-	stageAvatars.value = {};
-	bgFromDirective.value = '';
-	bgTransition.value = 'fade';
-	bgDuration.value = 400;
-	fgFromDirective.value = '';
-	stageLayerVisible.value = { background: true, foreground: true, dialogue: true };
-	clearWait();
-	clearEffect();
-};
 
 /* ===== 画面效果（effect）===== */
 const activeEffect = ref(null);
@@ -2747,98 +2694,6 @@ const scheduleWait = (ms) => {
 		scheduleAutoAdvance();
 	}, delay);
 };
-
-/* ===== 背景淡入淡出 / 硬切 / 黑场 ===== */
-const bgShown = ref('');
-const bgFading = ref(false);
-const bgBlackout = ref(false);
-let bgSwapTimer = null;
-
-const swapBackground = (url) => {
-	if (bgSwapTimer) {
-		clearTimeout(bgSwapTimer);
-		bgSwapTimer = null;
-	}
-	if (!url || url === bgShown.value) return;
-
-	const transition = bgTransition.value || 'fade';
-	const duration = Math.max(100, Number(bgDuration.value) || 400);
-
-	// 硬切：直接换图，不做任何过渡
-	if (transition === 'cut') {
-		bgFading.value = false;
-		bgBlackout.value = false;
-		bgShown.value = url;
-		return;
-	}
-
-	// 先淡出旧图（黑场则同时压黑），换完图并解码成功后再淡入
-	bgFading.value = true;
-	if (transition === 'black') bgBlackout.value = true;
-	bgSwapTimer = setTimeout(() => {
-		bgShown.value = url;
-		const img = new Image();
-		const done = () => {
-			bgFading.value = false;
-			bgBlackout.value = false;
-			bgSwapTimer = null;
-		};
-		img.onload = done;
-		img.onerror = done;
-		img.src = url;
-	}, transition === 'black' ? Math.floor(duration / 2) : 260);
-};
-
-watch(stageBackground, (url) => {
-	// 背景层被 stage 指令隐藏时，直接清空当前背景，避免残留
-	if (!url) {
-		if (bgSwapTimer) {
-			clearTimeout(bgSwapTimer);
-			bgSwapTimer = null;
-		}
-		bgFading.value = false;
-		bgBlackout.value = false;
-		bgShown.value = '';
-		return;
-	}
-	if (!bgShown.value) {
-		bgShown.value = url;
-		return;
-	}
-	swapBackground(url);
-}, { immediate: true });
-
-/* ===== 前景图层 ===== */
-const fgShown = ref('');
-const fgFading = ref(false);
-let fgSwapTimer = null;
-
-watch(
-	() => (fgFromDirective.value ? BASE_URL + fgFromDirective.value : ''),
-	(url) => {
-		if (fgSwapTimer) {
-			clearTimeout(fgSwapTimer);
-			fgSwapTimer = null;
-		}
-		if (!url) {
-			fgShown.value = '';
-			fgFading.value = false;
-			return;
-		}
-		fgFading.value = true;
-		fgSwapTimer = setTimeout(() => {
-			fgShown.value = url;
-			const img = new Image();
-			const done = () => {
-				fgFading.value = false;
-				fgSwapTimer = null;
-			};
-			img.onload = done;
-			img.onerror = done;
-			img.src = url;
-		}, 180);
-	}
-);
 
 const applyDirectives = (dialogue) => {
 	if (!dialogue) return;
@@ -3711,14 +3566,7 @@ onUnmounted(() => {
 		autoTimer = null;
 	}
 	clearEffect();
-	if (bgSwapTimer) {
-		clearTimeout(bgSwapTimer);
-		bgSwapTimer = null;
-	}
-	if (fgSwapTimer) {
-		clearTimeout(fgSwapTimer);
-		fgSwapTimer = null;
-	}
+	clearStageTransitions();
 	stopBackgroundMusic();
 	if (gamepadTimer) {
 		clearInterval(gamepadTimer);
