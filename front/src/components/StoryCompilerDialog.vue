@@ -17,7 +17,7 @@
 			<button type="button" class="cp-file-btn is-ghost" :disabled="applying" @click="toggleHistory">
 				历史导入{{ historyList.length ? '（' + historyList.length + '）' : '' }}
 			</button>
-			<span class="cp-filename">{{ filename || '未选择文件，可直接粘贴文本' }}</span>
+			<span class="cp-filename">{{ filename || '未选择文件，可直接粘贴文本' }}<template v-if="filename && detectedEncoding"> · {{ detectedEncoding.toUpperCase() }}</template></span>
 			<span class="cp-count">{{ text.length }} 字</span>
 		</div>
 
@@ -195,6 +195,7 @@
 		type CompileSourceSummary,
 	} from '@/api/storyCompiler'
 	import { getStoryRegression, type RegressionSummary } from '@/api/patrol'
+	import { decodeTextBuffer } from '@/utils/textEncoding'
 
 	const props = defineProps<{
 		modelValue: boolean
@@ -214,6 +215,7 @@
 
 	const fileInput = ref<HTMLInputElement | null>(null)
 	const filename = ref('')
+	const detectedEncoding = ref('')
 	const text = ref('')
 	const createChapters = ref(true)
 	const createCharacters = ref(true)
@@ -269,11 +271,17 @@
 			return
 		}
 		try {
-			text.value = await file.text()
+			const buffer = await file.arrayBuffer()
+			const decoded = decodeTextBuffer(buffer)
+			text.value = decoded.text
+			detectedEncoding.value = decoded.encoding
 			filename.value = file.name
 			preview.value = null
 			applied.value = null
 			regressionSummary.value = null
+			if (decoded.encoding !== 'utf-8') {
+				ElMessage.info(`检测到 ${decoded.encoding.toUpperCase()} 编码，已自动转换`)
+			}
 		} catch (e) {
 			ElMessage.error('读取文件失败')
 		}
