@@ -291,7 +291,7 @@
 import { ref, computed, onMounted, watch, nextTick ,onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import * as echarts from 'echarts'
+import type { ECharts } from 'echarts'
 import {
   MagicStick,
   Plus,
@@ -344,9 +344,12 @@ const wordCountChartRef = ref<HTMLDivElement | null>(null)
 const statusChartRef = ref<HTMLDivElement | null>(null)
 
 // 图表实例
-let genreChart: echarts.ECharts | null = null
-let wordCountChart: echarts.ECharts | null = null
-let statusChart: echarts.ECharts | null = null
+let genreChart: ECharts | null = null
+let wordCountChart: ECharts | null = null
+let statusChart: ECharts | null = null
+// ECharts 只在真正需要画图时加载，避免首页路由预取 1MB 图表库
+let echartsModule: Promise<typeof import('echarts')> | null = null
+const loadEcharts = () => (echartsModule ||= import('echarts'))
 
 const projectForm = ref<ProjectForm>({
   title: '',
@@ -405,8 +408,24 @@ const refreshCharts = () => {
   }
 }
 
+// 窗口尺寸变化时重绘图表；在 setup 阶段注册一次，避免 initCharts 多次调用重复绑定
+const handleChartResize = () => {
+  genreChart?.resize()
+  wordCountChart?.resize()
+  statusChart?.resize()
+}
+window.addEventListener('resize', handleChartResize)
+onUnmounted(() => {
+  window.removeEventListener('resize', handleChartResize)
+  genreChart?.dispose()
+  wordCountChart?.dispose()
+  statusChart?.dispose()
+})
+
 // 初始化图表
-const initCharts = () => {
+const initCharts = async () => {
+  if (!genreChartRef.value && !wordCountChartRef.value && !statusChartRef.value) return
+  const echarts = await loadEcharts()
   // 处理时间范围过滤
   const filteredProjects = filterProjectsByTimeRange(projects.value, statsTimeRange.value)
   
@@ -670,22 +689,6 @@ if (background) {
 }
 
 
-  // 处理窗口大小变化
-  const handleResize = () => {
-    genreChart?.resize()
-    wordCountChart?.resize()
-    statusChart?.resize()
-  }
-  
-  window.addEventListener('resize', handleResize)
-  
-  // 组件卸载时清除事件监听
-  onUnmounted(() => {
-    window.removeEventListener('resize', handleResize)
-    genreChart?.dispose()
-    wordCountChart?.dispose()
-    statusChart?.dispose()
-  })
 }
 
 // 根据时间范围过滤项目

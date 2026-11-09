@@ -236,7 +236,6 @@
 
 <script lang="ts">
 import { defineComponent, ref, onMounted } from 'vue'
-import * as echarts from 'echarts'
 import { 
   Camera, Message, Iphone, Clock, 
   Plus, Edit, Delete, Cpu, Picture, Microphone, Collection
@@ -380,8 +379,10 @@ export default defineComponent({
       }
     }
 
-    const initChart = () => {
+    const initChart = async () => {
       if (!chartRef.value) return
+      // 图表库按需加载，避免个人页首屏预取 echarts
+      const echarts = await import('echarts')
       const chart = echarts.init(chartRef.value)
       chart.setOption({
         backgroundColor: 'transparent',
