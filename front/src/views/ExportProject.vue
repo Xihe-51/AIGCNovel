@@ -791,58 +791,21 @@
 		</el-dialog>
 
 		<!-- 更新记录 -->
-		<el-dialog v-model="changelogVisible" :title="t('changelog.title')" width="440px" class="changelog-dialog">
-			<div v-if="!publicReleases.length" class="changelog-empty">{{ t('changelog.empty') }}</div>
-			<div v-else class="changelog-list">
-				<div v-for="r in publicReleases" :key="r.release_id" class="changelog-item">
-					<div class="changelog-head">
-						<span class="changelog-no">v{{ r.release_no }}</span>
-						<span class="changelog-time">{{ formatSaveTime(r.created_at) }}</span>
-					</div>
-					<div class="changelog-notes">{{ r.notes || t('changelog.noNotes') }}</div>
-					<div class="changelog-stats">
-						{{ t('changelog.stats', { scenes: r.stats.scene_count, nodes: r.stats.content_count }) }}
-					</div>
-				</div>
-			</div>
-		</el-dialog>
+		<PlayerChangelogDialog
+			v-model:visible="changelogVisible"
+			:releases="publicReleases"
+			:language="playerSettings.language"
+		/>
 
 		<!-- 章节快捷跳转 / 路线图鉴 -->
-		<el-dialog v-model="chaptersVisible" :title="t('chapters.title')" width="560px" class="chapter-dialog">
-			<div class="chapter-summary">
-				<span>{{ t('chapters.readStats', { read: routeStats.read, total: routeStats.total }) }}</span>
-				<span>{{ t('chapters.endingStats', { unlocked: routeStats.endingUnlocked, total: endings.length }) }}</span>
-			</div>
-			<div class="chapter-list">
-				<button
-					v-for="c in chapterRoute"
-					:key="c.chapter_id"
-					type="button"
-					:class="['chapter-item', { 'is-locked': !c.unlocked }]"
-					@click="jumpToChapter(c)"
-				>
-					<span class="chapter-order">{{ c.order_num }}</span>
-					<span class="chapter-title">{{ c.title }}</span>
-					<span class="chapter-progress">{{ c.read }}/{{ c.total }}</span>
-					<span class="chapter-action">{{ c.unlocked ? t('chapters.jump') : t('chapters.locked') }}</span>
-				</button>
-				<div v-if="!chapterRoute.length" class="chapter-empty">{{ t('chapters.empty') }}</div>
-			</div>
-			<div class="chapter-section-title">{{ t('chapters.endingRoutes') }}</div>
-			<div class="route-endings">
-				<div
-					v-for="e in endings"
-					:key="e.ending_id"
-					:class="['route-ending', { 'is-unlocked': e.unlocked }]"
-				>
-					<span class="route-ending-title">{{ e.title }}</span>
-					<el-tag :type="e.unlocked ? 'success' : 'info'" size="small">
-						{{ e.unlocked ? t('chapters.reached') : t('chapters.notReached') }}
-					</el-tag>
-				</div>
-				<div v-if="!endings.length" class="chapter-empty">{{ t('chapters.noEndings') }}</div>
-			</div>
-		</el-dialog>
+		<PlayerChaptersDialog
+			v-model:visible="chaptersVisible"
+			:chapters="chapterRoute"
+			:route-stats="routeStats"
+			:endings="endings"
+			:language="playerSettings.language"
+			@jump-chapter="jumpToChapter"
+		/>
 
 		<!-- 鉴赏 / 收藏 -->
 		<el-dialog v-model="galleryDialogVisible" width="680px" class="gallery-dialog">
@@ -986,6 +949,8 @@ import { getGallery } from '@/api/cg'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
 import { playerText } from '@/utils/playerI18n'
+import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
+import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import { PLAYER_LANGUAGES } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
@@ -4319,169 +4284,6 @@ const backToHome = () => {
 
 .player-chapter-btn:hover {
   background: rgba(0, 0, 0, 0.45);
-}
-
-.chapter-summary {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 12px;
-  font-size: 12px;
-  color: #8a7f92;
-}
-
-.chapter-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 40vh;
-  overflow-y: auto;
-}
-
-.chapter-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #f0e3e8;
-  background: #fffafc;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.chapter-item:hover:not(.is-locked) {
-  border-color: #e8467c;
-  background: #fff3f7;
-}
-
-.chapter-item.is-locked {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.chapter-order {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #ffe3ec;
-  color: #e8467c;
-  font-size: 12px;
-}
-
-.chapter-title {
-  flex: 1;
-  font-size: 14px;
-  color: #5b4b55;
-}
-
-.chapter-progress {
-  font-size: 12px;
-  color: #b99aa5;
-}
-
-.chapter-action {
-  font-size: 12px;
-  color: #e8467c;
-}
-
-.chapter-item.is-locked .chapter-action {
-  color: #b99aa5;
-}
-
-.chapter-section-title {
-  margin: 16px 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #5b4b55;
-}
-
-.route-endings {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 24vh;
-  overflow-y: auto;
-}
-
-.route-ending {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #faf7f9;
-  font-size: 13px;
-  color: #8a7f92;
-}
-
-.route-ending.is-unlocked {
-  background: #fff3f7;
-  color: #5b4b55;
-}
-
-.chapter-empty {
-  padding: 16px;
-  text-align: center;
-  font-size: 12px;
-  color: #b99aa5;
-}
-
-.changelog-list {
-  max-height: 50vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.changelog-item {
-  border: 1px solid #f5e4ea;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: #fffafc;
-}
-
-.changelog-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.changelog-no {
-  font-size: 13px;
-  font-weight: 600;
-  color: #c81f4a;
-}
-
-.changelog-time {
-  font-size: 11px;
-  color: #b99aa5;
-}
-
-.changelog-notes {
-  font-size: 13px;
-  color: #475569;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.changelog-stats {
-  margin-top: 5px;
-  font-size: 10px;
-  color: #b99aa5;
-}
-
-.changelog-empty {
-  padding: 24px;
-  text-align: center;
-  font-size: 13px;
-  color: #b37d8f;
 }
 
 /* 调试器入口与面板 */
