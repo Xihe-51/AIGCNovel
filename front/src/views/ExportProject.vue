@@ -1,14 +1,14 @@
 <template>
 	<div class="export-project-container" @touchstart.passive="onTouchStart" @touchend="onTouchEnd">
 		<!-- 阅读设置入口 -->
-		<button v-if="!loading && !error" class="player-settings-btn" @click="openSettings" title="阅读设置">
+		<button v-if="!loading && !error" class="player-settings-btn" @click="openSettings" :title="t('player.settingsTitle')">
 			<el-icon><Setting /></el-icon>
 		</button>
 		<button
 			v-if="!loading && !error && canRollback"
 			class="player-back-btn"
 			@click="rollbackOneLine"
-			title="回到上一句（←）"
+			:title="t('player.backOneLine')"
 		>
 			<el-icon><RefreshLeft /></el-icon>
 		</button>
@@ -22,20 +22,20 @@
 			<el-icon><EditPen /></el-icon>
 		</button>
 		<button v-if="!loading && !error && projectVariables.length" class="player-status-btn"
-				@click="statusDialogVisible = true" title="当前状态">
+				@click="statusDialogVisible = true" :title="t('player.statusTitle')">
 			<el-icon><DataLine /></el-icon>
 		</button>
 		<button v-if="!loading && !error" class="player-gallery-btn"
-				@click="openGallery" title="鉴赏 / 收藏">
+				@click="openGallery" :title="t('player.galleryTitle')">
 			<el-icon><Picture /></el-icon>
 		</button>
 		<button v-if="!loading && !error && publicReleases.length" class="player-changelog-btn"
-				@click="changelogVisible = true" title="更新记录">
-			更新
+				@click="changelogVisible = true" :title="t('changelog.title')">
+			{{ t('player.updateBtn') }}
 		</button>
 		<button v-if="!loading && !error && chapterRoute.length" class="player-chapter-btn"
-				@click="chaptersVisible = true" title="章节跳转 / 路线图鉴">
-			章节
+				@click="chaptersVisible = true" :title="t('chapters.title')">
+			{{ t('player.chapterBtn') }}
 		</button>
 
 		<!-- 演出模式：仅作者预览（?edit=1）可见，公开发布后玩家端不会出现 -->
@@ -239,8 +239,8 @@
 
 		<!-- 竖屏提示 -->
 		<div v-if="showRotateHint && !loading && !error" class="rotate-hint">
-			<span>建议横屏体验</span>
-			<button @click.stop="dismissRotateHint">知道了</button>
+			<span>{{ t('player.rotateHint') }}</span>
+			<button @click.stop="dismissRotateHint">{{ t('player.gotIt') }}</button>
 		</div>
 		<!-- 预览区域 -->
 		<div class="preview-panel">
@@ -363,14 +363,14 @@
 				<!-- 加载状态 -->
 				<div v-if="loading" class="loading-indicator">
 					<span class="ui-spinner ui-spinner-lg"></span>
-					<p>加载项目中...</p>
+					<p>{{ t('common.loading') }}</p>
 				</div>
 				
 				<!-- 错误信息 -->
 				<div v-if="error" class="error-message">
 					<el-icon color="#F56C6C" size="24"><WarningFilled /></el-icon>
-					<p>错误: {{ error }}</p>
-					<el-button type="primary" size="small" @click="backToHome">返回项目列表</el-button>
+					<p>{{ t('common.error') }}: {{ error }}</p>
+					<el-button type="primary" size="small" @click="backToHome">{{ t('common.backToList') }}</el-button>
 				</div>
 				
 				<!-- 历史对话弹窗 -->
@@ -381,7 +381,7 @@
 				>
 					<div class="history-dialogue-content">
 						<div class="history-header">
-							<h3>历史对话</h3>
+							<h3>{{ t('history.title') }}</h3>
 							<el-icon @click.stop="toggleHistoryDialogue" class="close-btn">
 								<CloseBold />
 							</el-icon>
@@ -395,7 +395,7 @@
 								<div v-if="historySceneTitle(dialogue)" class="history-scene">{{ historySceneTitle(dialogue) }}</div>
 								<span class="history-character">{{ getCharacterName(dialogue.character_id) }}</span>
 								<span class="history-text">{{ localizedText(dialogue) }}</span>
-								<div v-if="dialogue.chosen" class="history-chosen">选择：{{ historyChoiceText(dialogue) }}</div>
+								<div v-if="dialogue.chosen" class="history-chosen">{{ t('history.choiceLabel') }}{{ historyChoiceText(dialogue) }}</div>
 							</div>
 						</div>
 					</div>
@@ -421,9 +421,9 @@
 							v-if="currentDialogue?.voice_url && playerSettings.voiceEnabled"
 							type="button"
 							class="voice-replay-btn"
-							title="重播本句语音"
+							:title="t('player.voiceReplay')"
 							@click.stop="replayVoice"
-						>语音</button>
+						>{{ t('player.voiceBtn') }}</button>
 						<div
 							class="dialogue-text"
 							:style="{ fontSize: playerSettings.fontSize + 'px', lineHeight: playerSettings.lineHeight }"
@@ -443,7 +443,7 @@
 								:key="choice.path_id"
 								:class="['choice-option', { 'has-image': !!choice.image_url, 'is-locked': choice.locked }]"
 								:disabled="choice.locked"
-								:title="choice.locked ? ('条件未满足：' + conditionText(choice.conditions)) : ''"
+								:title="choice.locked ? t('choice.conditionNotMet', { cond: conditionText(choice.conditions) }) : ''"
 								@click.stop="selectBranch(choice)"
 							>
 								<img
@@ -453,52 +453,52 @@
 									alt=""
 									loading="lazy"
 								/>
-								<span class="choice-label">{{ localizedChoice(choice) || '继续' }}</span>
+								<span class="choice-label">{{ localizedChoice(choice) || t('choice.continue') }}</span>
 								<span v-if="choice.locked" class="choice-lock-hint">
-									未解锁 · {{ conditionText(choice.conditions) }}
+									{{ t('choice.locked', { cond: conditionText(choice.conditions) }) }}
 								</span>
 							</button>
 						</div>
 						
 						<!-- 功能按钮区 -->
 						<div class="function-buttons">
-							<el-tooltip content="查看历史对话" placement="top">
+							<el-tooltip :content="t('tooltip.history')" placement="top">
 								<el-icon @click.stop="toggleHistoryDialogue" class="func-btn">
 									<Search />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="隐藏对话框" placement="top">
+							<el-tooltip :content="t('tooltip.hideBox')" placement="top">
 								<el-icon @click.stop="toggleDialogueBox" class="func-btn">
 									<Hide />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="快进" placement="top">
+							<el-tooltip :content="t('tooltip.skip')" placement="top">
 								<el-icon @click.stop="skipToNextScene" class="func-btn">
 									<DArrowRight />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip :content="autoPlay ? '关闭自动播放' : '开启自动播放'" placement="top">
+							<el-tooltip :content="autoPlay ? t('tooltip.autoOff') : t('tooltip.autoOn')" placement="top">
 								<el-icon @click.stop="toggleAutoPlay" class="func-btn">
 									<VideoPlay />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="重新开始" placement="top">
+							<el-tooltip :content="t('tooltip.restart')" placement="top">
 								<el-icon @click.stop="restartGame" class="func-btn">
 									<SwitchButton />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="存档当前进度" placement="top">
+							<el-tooltip :content="t('tooltip.saveProgress')" placement="top">
 								<el-icon @click.stop="openSaveDialog" class="func-btn save-func-btn">
 									<DocumentAdd />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="退出游戏" placement="top">
+							<el-tooltip :content="t('tooltip.exitGame')" placement="top">
 								<el-icon @click.stop="exitGame" class="func-btn">
 									<CloseBold />
 								</el-icon>
@@ -510,43 +510,43 @@
 					<div v-if="currentDialogueIndex >= currentSceneDialogues.length && currentSceneDialogues.length > 0" class="dialogue-end">
 						<!-- 功能按钮区 -->
 						<div class="function-buttons">
-							<el-tooltip content="查看历史对话" placement="top">
+							<el-tooltip :content="t('tooltip.history')" placement="top">
 								<el-icon @click.stop="toggleHistoryDialogue" class="func-btn">
 									<Search />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="隐藏对话框" placement="top">
+							<el-tooltip :content="t('tooltip.hideBox')" placement="top">
 								<el-icon @click.stop="toggleDialogueBox" class="func-btn">
 									<Hide />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="快进" placement="top">
+							<el-tooltip :content="t('tooltip.skip')" placement="top">
 								<el-icon @click.stop="skipToNextScene" class="func-btn">
 									<DArrowRight />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip :content="autoPlay ? '关闭自动播放' : '开启自动播放'" placement="top">
+							<el-tooltip :content="autoPlay ? t('tooltip.autoOff') : t('tooltip.autoOn')" placement="top">
 								<el-icon @click.stop="toggleAutoPlay" class="func-btn">
 									<VideoPlay />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="重新开始" placement="top">
+							<el-tooltip :content="t('tooltip.restart')" placement="top">
 								<el-icon @click.stop="restartGame" class="func-btn">
 									<SwitchButton />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="存档当前进度" placement="top">
+							<el-tooltip :content="t('tooltip.saveProgress')" placement="top">
 								<el-icon @click.stop="openSaveDialog" class="func-btn save-func-btn">
 									<DocumentAdd />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="退出游戏" placement="top">
+							<el-tooltip :content="t('tooltip.exitGame')" placement="top">
 								<el-icon @click.stop="exitGame" class="func-btn">
 									<CloseBold />
 								</el-icon>
@@ -558,43 +558,43 @@
 					<div v-if="currentSceneDialogues.length === 0" class="no-dialogues-preview">
 						<!-- 功能按钮区 -->
 						<div class="function-buttons">
-							<el-tooltip content="查看历史对话" placement="top">
+							<el-tooltip :content="t('tooltip.history')" placement="top">
 								<el-icon @click.stop="toggleHistoryDialogue" class="func-btn">
 									<Search />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="隐藏对话框" placement="top">
+							<el-tooltip :content="t('tooltip.hideBox')" placement="top">
 								<el-icon @click.stop="toggleDialogueBox" class="func-btn">
 									<Hide />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="快进" placement="top">
+							<el-tooltip :content="t('tooltip.skip')" placement="top">
 								<el-icon @click.stop="skipToNextScene" class="func-btn">
 									<DArrowRight />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip :content="autoPlay ? '关闭自动播放' : '开启自动播放'" placement="top">
+							<el-tooltip :content="autoPlay ? t('tooltip.autoOff') : t('tooltip.autoOn')" placement="top">
 								<el-icon @click.stop="toggleAutoPlay" class="func-btn">
 									<VideoPlay />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="重新开始" placement="top">
+							<el-tooltip :content="t('tooltip.restart')" placement="top">
 								<el-icon @click.stop="restartGame" class="func-btn">
 									<SwitchButton />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="存档当前进度" placement="top">
+							<el-tooltip :content="t('tooltip.saveProgress')" placement="top">
 								<el-icon @click.stop="openSaveDialog" class="func-btn save-func-btn">
 									<DocumentAdd />
 								</el-icon>
 							</el-tooltip>
 							
-							<el-tooltip content="退出游戏" placement="top">
+							<el-tooltip :content="t('tooltip.exitGame')" placement="top">
 								<el-icon @click.stop="exitGame" class="func-btn">
 									<CloseBold />
 								</el-icon>
@@ -605,7 +605,7 @@
 				
 				<!-- 对话框隐藏时显示的显示按钮 -->
 				<div v-if="!loading && !error && !showDialogueBox && stageLayerVisible.dialogue !== false" class="show-dialogue-btn" @click="toggleDialogueBox">
-					<el-tooltip content="显示对话框" placement="top">
+					<el-tooltip :content="t('tooltip.showBox')" placement="top">
 						<el-icon size="30">
 							<View />
 						</el-icon>
@@ -620,25 +620,25 @@
 			<div class="ending-content">
 				<div class="ending-badge">ENDING</div>
 				<h2>{{ currentEnding?.title }}</h2>
-				<p>{{ currentEnding?.description || '恭喜达成这个结局。' }}</p>
+				<p>{{ currentEnding?.description || t('ending.congrats') }}</p>
 			</div>
 			<template #footer>
-				<el-button @click="endingDialogVisible = false">继续阅读</el-button>
-				<el-button @click="resetGame">从头开始（重置数值）</el-button>
-				<el-button type="primary" @click="startNextPlaythrough">开始第 {{ playthrough + 1 }} 周目</el-button>
-				<el-button @click="backToHome">返回项目</el-button>
+				<el-button @click="endingDialogVisible = false">{{ t('ending.continueReading') }}</el-button>
+				<el-button @click="resetGame">{{ t('ending.restartReset') }}</el-button>
+				<el-button type="primary" @click="startNextPlaythrough">{{ t('ending.nextPlaythrough', { n: playthrough + 1 }) }}</el-button>
+				<el-button @click="backToHome">{{ t('ending.backToProject') }}</el-button>
 			</template>
 		</el-dialog>
 
 		<!-- 当前状态 -->
-		<el-dialog v-model="statusDialogVisible" title="当前状态" width="420px" class="status-dialog">
+		<el-dialog v-model="statusDialogVisible" :title="t('status.title')" width="420px" class="status-dialog">
 			<div class="status-row">
-				<span class="status-label">当前周目</span>
-				<span class="status-value">第 {{ playthrough }} 周目</span>
+				<span class="status-label">{{ t('status.playthroughLabel') }}</span>
+				<span class="status-value">{{ t('status.playthroughValue', { n: playthrough }) }}</span>
 			</div>
 
 			<template v-if="affinityVariables.length">
-				<div class="status-section">角色好感</div>
+				<div class="status-section">{{ t('status.affinity') }}</div>
 				<div v-for="v in affinityVariables" :key="v.variable_id" class="affinity-item">
 					<div class="affinity-head">
 						<span class="affinity-name">{{ characterNameOf(v.character_id) }}</span>
@@ -652,27 +652,27 @@
 					</div>
 					<div class="affinity-label">
 						{{ v.label }}
-						<el-tag v-if="v.persist" type="warning" size="small" class="persist-badge">跨周目</el-tag>
+						<el-tag v-if="v.persist" type="warning" size="small" class="persist-badge">{{ t('status.persist') }}</el-tag>
 					</div>
 				</div>
 			</template>
 
 			<template v-if="otherVariables.length">
-				<div class="status-section">其他属性</div>
+				<div class="status-section">{{ t('status.other') }}</div>
 				<div v-for="v in otherVariables" :key="v.variable_id" class="status-row">
 					<span class="status-label">
 						{{ v.label }}
-						<el-tag v-if="v.persist" type="warning" size="small" class="persist-badge">跨周目</el-tag>
+						<el-tag v-if="v.persist" type="warning" size="small" class="persist-badge">{{ t('status.persist') }}</el-tag>
 					</span>
 					<span class="status-value">{{ variableValues[v.name] ?? v.initial_value }}</span>
 				</div>
 			</template>
 
-			<div v-if="!projectVariables.length" class="status-empty">项目还没有定义变量</div>
+			<div v-if="!projectVariables.length" class="status-empty">{{ t('status.empty') }}</div>
 		</el-dialog>
 
 		<!-- 存档 / 读档 -->
-		<el-dialog v-model="saveDialogVisible" title="存档 / 读档" width="540px" class="save-dialog">
+		<el-dialog v-model="saveDialogVisible" :title="t('save.title')" width="540px" class="save-dialog">
 			<div v-for="s in slotDefs" :key="s.slot" class="save-slot">
 				<div class="save-slot-thumb">
 					<img
@@ -681,39 +681,39 @@
 						alt=""
 						loading="lazy"
 					/>
-					<span v-else class="save-slot-thumb-empty">无画面</span>
+					<span v-else class="save-slot-thumb-empty">{{ t('save.noImage') }}</span>
 					<span v-if="saveSlotTitle(saveMap[s.slot])" class="save-slot-thumb-title">
 						{{ saveSlotTitle(saveMap[s.slot]) }}
 					</span>
 				</div>
 				<div class="save-slot-info">
 					<div class="save-slot-title">{{ s.label }}</div>
-					<div class="save-slot-summary">{{ saveMap[s.slot]?.summary || '空存档位' }}</div>
+					<div class="save-slot-summary">{{ saveMap[s.slot]?.summary || t('save.emptySlot') }}</div>
 					<div v-if="saveMap[s.slot]?.updated_at" class="save-slot-time">
 						{{ formatSaveTime(saveMap[s.slot].updated_at) }}
 					</div>
 				</div>
 				<div class="save-slot-actions">
-					<el-button size="small" @click="saveToSlot(s.slot)">保存</el-button>
-					<el-button size="small" :disabled="!saveMap[s.slot]" @click="loadFromSlot(s.slot)">读取</el-button>
-					<el-button size="small" type="danger" :disabled="!saveMap[s.slot]" @click="deleteSlot(s.slot)">删除</el-button>
+					<el-button size="small" @click="saveToSlot(s.slot)">{{ t('save.save') }}</el-button>
+					<el-button size="small" :disabled="!saveMap[s.slot]" @click="loadFromSlot(s.slot)">{{ t('save.load') }}</el-button>
+					<el-button size="small" type="danger" :disabled="!saveMap[s.slot]" @click="deleteSlot(s.slot)">{{ t('save.delete') }}</el-button>
 				</div>
 			</div>
 		</el-dialog>
 
 		<!-- 阅读设置 -->
-		<el-dialog v-model="settingsVisible" title="阅读设置" width="420px" class="player-settings-dialog">
+		<el-dialog v-model="settingsVisible" :title="t('settings.title')" width="420px" class="player-settings-dialog">
 			<div class="setting-row">
-				<span class="setting-label">文字速度</span>
+				<span class="setting-label">{{ t('settings.textSpeed') }}</span>
 				<el-select v-model="playerSettings.textSpeed" size="small" style="width: 140px">
-					<el-option label="瞬间显示" :value="0" />
-					<el-option label="快" :value="1" />
-					<el-option label="正常" :value="2" />
-					<el-option label="慢" :value="3" />
+					<el-option :label="t('settings.instant')" :value="0" />
+					<el-option :label="t('settings.fast')" :value="1" />
+					<el-option :label="t('settings.normal')" :value="2" />
+					<el-option :label="t('settings.slow')" :value="3" />
 				</el-select>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label" title="切换阅读语言；没有译文的句子自动回退简体中文原文">语言</span>
+				<span class="setting-label">{{ t('settings.language') }}</span>
 				<el-select v-model="playerSettings.language" size="small" style="width: 140px">
 					<el-option
 						v-for="lang in PLAYER_LANGUAGES"
@@ -724,94 +724,94 @@
 				</el-select>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">自动播放间隔</span>
+				<span class="setting-label">{{ t('settings.autoDelay') }}</span>
 				<el-slider v-model="playerSettings.autoDelay" :min="1" :max="6" :step="0.5" style="flex: 1" />
 				<span class="setting-value">{{ playerSettings.autoDelay }}s</span>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">背景音乐</span>
+				<span class="setting-label">{{ t('settings.bgm') }}</span>
 				<el-slider v-model="playerSettings.bgmVolume" :min="0" :max="100" style="flex: 1" />
 				<span class="setting-value">{{ playerSettings.bgmVolume }}%</span>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">语音音量</span>
+				<span class="setting-label">{{ t('settings.voiceVolume') }}</span>
 				<el-slider v-model="playerSettings.voiceVolume" :min="0" :max="100" style="flex: 1" />
 				<span class="setting-value">{{ playerSettings.voiceVolume }}%</span>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">语音播放</span>
+				<span class="setting-label">{{ t('settings.voicePlayback') }}</span>
 				<el-switch v-model="playerSettings.voiceEnabled" />
 			</div>
 			<div class="setting-row">
-				<span class="setting-label" title="隐藏立绘与背景，只保留对白、旁白、音效与选项">有声剧模式</span>
+				<span class="setting-label" :title="t('settings.audioDramaHint')">{{ t('settings.audioDrama') }}</span>
 				<el-switch v-model="playerSettings.audioDrama" />
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">对话字号</span>
+				<span class="setting-label">{{ t('settings.fontSize') }}</span>
 				<el-slider v-model="playerSettings.fontSize" :min="14" :max="24" :step="1" style="flex: 1" />
 				<span class="setting-value">{{ playerSettings.fontSize }}px</span>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">对话行距</span>
+				<span class="setting-label">{{ t('settings.lineHeight') }}</span>
 				<el-slider v-model="playerSettings.lineHeight" :min="1.3" :max="2.2" :step="0.1" style="flex: 1" />
 				<span class="setting-value">{{ playerSettings.lineHeight.toFixed(1) }}</span>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">对话样式</span>
+				<span class="setting-label">{{ t('settings.boxStyle') }}</span>
 				<el-select v-model="playerSettings.boxStyle" size="small" style="width: 140px">
-					<el-option label="经典底栏" value="classic" />
-					<el-option label="气泡对话" value="bubble" />
+					<el-option :label="t('settings.classic')" value="classic" />
+					<el-option :label="t('settings.bubble')" value="bubble" />
 				</el-select>
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">全屏</span>
+				<span class="setting-label">{{ t('settings.fullscreen') }}</span>
 				<el-switch v-model="playerSettings.fullscreen" @change="toggleFullscreen" />
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">跳过已读</span>
+				<span class="setting-label">{{ t('settings.skipRead') }}</span>
 				<el-switch v-model="playerSettings.skipRead" />
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">数值变化提示</span>
+				<span class="setting-label">{{ t('settings.varNotice') }}</span>
 				<el-switch v-model="playerSettings.showVariableNotice" />
 			</div>
 			<div class="setting-row">
-				<span class="setting-label">立绘动态</span>
+				<span class="setting-label">{{ t('settings.spriteMotion') }}</span>
 				<el-switch v-model="playerSettings.spriteMotion" />
 			</div>
 			<div class="setting-shortcuts">
-				<span>快捷键：空格 / 回车 / → 继续，← 上一句，A 自动播放，S 跳过已读，H 回想，Esc 关闭面板</span>
-				<span>手柄：A 继续，B 回想，X 自动播放</span>
-				<span>有声剧模式：隐藏立绘与背景，保留对白、旁白、音效与选项</span>
+				<span>{{ t('settings.shortcuts') }}</span>
+				<span>{{ t('settings.gamepad') }}</span>
+				<span>{{ t('settings.audioDramaHint') }}</span>
 			</div>
 			<template #footer>
-				<el-button @click="resetSettings">恢复默认</el-button>
-				<el-button type="primary" @click="settingsVisible = false">完成</el-button>
+				<el-button @click="resetSettings">{{ t('settings.reset') }}</el-button>
+				<el-button type="primary" @click="settingsVisible = false">{{ t('settings.done') }}</el-button>
 			</template>
 		</el-dialog>
 
 		<!-- 更新记录 -->
-		<el-dialog v-model="changelogVisible" title="更新记录" width="440px" class="changelog-dialog">
-			<div v-if="!publicReleases.length" class="changelog-empty">暂无更新记录</div>
+		<el-dialog v-model="changelogVisible" :title="t('changelog.title')" width="440px" class="changelog-dialog">
+			<div v-if="!publicReleases.length" class="changelog-empty">{{ t('changelog.empty') }}</div>
 			<div v-else class="changelog-list">
 				<div v-for="r in publicReleases" :key="r.release_id" class="changelog-item">
 					<div class="changelog-head">
 						<span class="changelog-no">v{{ r.release_no }}</span>
 						<span class="changelog-time">{{ formatSaveTime(r.created_at) }}</span>
 					</div>
-					<div class="changelog-notes">{{ r.notes || '本次更新没有填写说明' }}</div>
+					<div class="changelog-notes">{{ r.notes || t('changelog.noNotes') }}</div>
 					<div class="changelog-stats">
-						{{ r.stats.scene_count }} 场景 · {{ r.stats.content_count }} 节点
+						{{ t('changelog.stats', { scenes: r.stats.scene_count, nodes: r.stats.content_count }) }}
 					</div>
 				</div>
 			</div>
 		</el-dialog>
 
 		<!-- 章节快捷跳转 / 路线图鉴 -->
-		<el-dialog v-model="chaptersVisible" title="章节 / 路线图鉴" width="560px" class="chapter-dialog">
+		<el-dialog v-model="chaptersVisible" :title="t('chapters.title')" width="560px" class="chapter-dialog">
 			<div class="chapter-summary">
-				<span>已读节点 {{ routeStats.read }} / {{ routeStats.total }}</span>
-				<span>已达成结局 {{ routeStats.endingUnlocked }} / {{ endings.length }}</span>
+				<span>{{ t('chapters.readStats', { read: routeStats.read, total: routeStats.total }) }}</span>
+				<span>{{ t('chapters.endingStats', { unlocked: routeStats.endingUnlocked, total: endings.length }) }}</span>
 			</div>
 			<div class="chapter-list">
 				<button
@@ -824,11 +824,11 @@
 					<span class="chapter-order">{{ c.order_num }}</span>
 					<span class="chapter-title">{{ c.title }}</span>
 					<span class="chapter-progress">{{ c.read }}/{{ c.total }}</span>
-					<span class="chapter-action">{{ c.unlocked ? '跳转' : '未解锁' }}</span>
+					<span class="chapter-action">{{ c.unlocked ? t('chapters.jump') : t('chapters.locked') }}</span>
 				</button>
-				<div v-if="!chapterRoute.length" class="chapter-empty">作者还没有划分章节</div>
+				<div v-if="!chapterRoute.length" class="chapter-empty">{{ t('chapters.empty') }}</div>
 			</div>
-			<div class="chapter-section-title">结局路线</div>
+			<div class="chapter-section-title">{{ t('chapters.endingRoutes') }}</div>
 			<div class="route-endings">
 				<div
 					v-for="e in endings"
@@ -837,10 +837,10 @@
 				>
 					<span class="route-ending-title">{{ e.title }}</span>
 					<el-tag :type="e.unlocked ? 'success' : 'info'" size="small">
-						{{ e.unlocked ? '已达成' : '未达成' }}
+						{{ e.unlocked ? t('chapters.reached') : t('chapters.notReached') }}
 					</el-tag>
 				</div>
-				<div v-if="!endings.length" class="chapter-empty">还没有配置结局</div>
+				<div v-if="!endings.length" class="chapter-empty">{{ t('chapters.noEndings') }}</div>
 			</div>
 		</el-dialog>
 
@@ -867,20 +867,20 @@
 					<div v-for="cg in galleryItems" :key="cg.cg_id" class="gallery-item">
 						<img v-if="cg.unlocked && cg.image_url" :src="BASE_URL + cg.image_url"
 							 class="gallery-image" :alt="cg.title" loading="lazy" decoding="async" />
-						<div v-else class="gallery-locked">未解锁</div>
+						<div v-else class="gallery-locked">{{ t('gallery.locked') }}</div>
 						<div class="gallery-title">{{ cg.title }}</div>
 						<div class="gallery-desc">
 							{{ cg.unlocked ? (cg.description || '') :
-								('解锁条件：达成结局「' + (cg.unlock_ending_title || '未知结局') + '」') }}
+								t('gallery.unlockEndingCondition', { title: cg.unlock_ending_title || t('gallery.lockedEnding') }) }}
 						</div>
 					</div>
 				</div>
-				<div v-else class="gallery-empty">这部作品还没有登记 CG。</div>
+				<div v-else class="gallery-empty">{{ t('gallery.emptyCg') }}</div>
 			</template>
 
 			<!-- BGM -->
 			<template v-else-if="galleryTab === 'bgm'">
-				<div v-if="musicLoading" class="gallery-empty">加载中…</div>
+				<div v-if="musicLoading" class="gallery-empty">{{ t('gallery.loading') }}</div>
 				<div v-else-if="musicItems.length" class="music-gallery-list">
 					<div
 						v-for="m in musicItems"
@@ -888,9 +888,9 @@
 						:class="['music-gallery-item', { 'is-locked': !m.unlocked }]"
 					>
 						<div class="music-gallery-meta">
-							<span class="music-gallery-title">{{ m.unlocked ? m.title : '未解锁曲目' }}</span>
-							<span class="music-gallery-sub">{{ m.unlocked ? 'BGM' : '进入使用该音乐的场景后解锁' }}</span>
-						</div>
+								<span class="music-gallery-title">{{ m.unlocked ? m.title : t('gallery.lockedTrack') }}</span>
+								<span class="music-gallery-sub">{{ m.unlocked ? 'BGM' : t('gallery.unlockBgmHint') }}</span>
+							</div>
 						<audio
 							v-if="m.unlocked"
 							:src="BASE_URL + m.music_url"
@@ -898,10 +898,10 @@
 							preload="none"
 							class="music-gallery-audio"
 						></audio>
-						<span v-else class="music-gallery-lock">未解锁</span>
+						<span v-else class="music-gallery-lock">{{ t('gallery.locked') }}</span>
 					</div>
 				</div>
-				<div v-else class="gallery-empty">这部作品还没有背景音乐。</div>
+				<div v-else class="gallery-empty">{{ t('gallery.emptyBgm') }}</div>
 			</template>
 
 			<!-- 成就 -->
@@ -914,14 +914,14 @@
 					>
 						<div class="achievement-gallery-badge">{{ a.unlocked ? '★' : '?' }}</div>
 						<div class="achievement-gallery-meta">
-							<span class="achievement-gallery-title">{{ a.unlocked ? a.title : '未解锁成就' }}</span>
-							<span class="achievement-gallery-desc">
-								{{ a.unlocked ? (a.description || '已解锁') : '达成对应条件后解锁' }}
-							</span>
-						</div>
+								<span class="achievement-gallery-title">{{ a.unlocked ? a.title : t('gallery.lockedAchievement') }}</span>
+								<span class="achievement-gallery-desc">
+									{{ a.unlocked ? (a.description || t('gallery.achievementUnlocked')) : t('gallery.unlockAchievementHint') }}
+								</span>
+							</div>
 					</div>
 				</div>
-				<div v-else class="gallery-empty">这部作品还没有成就。</div>
+				<div v-else class="gallery-empty">{{ t('gallery.emptyAchievement') }}</div>
 			</template>
 
 			<!-- 结局 -->
@@ -934,14 +934,14 @@
 					>
 						<div class="ending-gallery-badge">{{ e.unlocked ? 'END' : '?' }}</div>
 						<div class="ending-gallery-meta">
-							<span class="ending-gallery-title">{{ e.unlocked ? e.title : '未解锁结局' }}</span>
-							<span class="ending-gallery-desc">
-								{{ e.unlocked ? (e.description || '已达成这个结局') : '达成对应条件后解锁' }}
-							</span>
-						</div>
+								<span class="ending-gallery-title">{{ e.unlocked ? e.title : t('gallery.lockedEnding') }}</span>
+								<span class="ending-gallery-desc">
+									{{ e.unlocked ? (e.description || t('gallery.endingReached')) : t('gallery.unlockEndingHint') }}
+								</span>
+							</div>
 					</div>
 				</div>
-				<div v-else class="gallery-empty">这部作品还没有登记结局。</div>
+				<div v-else class="gallery-empty">{{ t('gallery.emptyEnding') }}</div>
 			</template>
 		</el-dialog>
 	</div>
@@ -985,6 +985,7 @@ import { listMusicGallery, unlockMusic } from '@/api/gallery'
 import { getGallery } from '@/api/cg'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
+import { playerText } from '@/utils/playerI18n'
 import { PLAYER_LANGUAGES } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
@@ -1016,15 +1017,23 @@ const props = defineProps({
 	projectId: {
 		type: String,
 		required: true
+	},
+	// 静态网页包 / 发布预览：固定剥离调试器与演出编辑工具
+	releaseMode: {
+		type: Boolean,
+		default: false
 	}
 })
 
 // 定义emit事件
 const emit = defineEmits(['close'])
 
-// 调试器：?debug=1 显示面板，?start=<content_id> 从指定节点开始
+// 发布模式：静态包固定开启；也支持 ?release=1 让作者以玩家视角预览
 const route = useRoute()
-const debugMode = ref(route.query.debug === '1')
+const releaseView = computed(() => props.releaseMode || route.query.release === '1')
+// 调试器：仅作者且非发布模式时，?debug=1 才生效；?start=<content_id> 同理
+const debugRequested = route.query.debug === '1'
+const debugMode = ref(false)
 const debugPanelVisible = ref(false)
 
 // 演出模式：仅作者本人带 ?edit=1 预览时可用；公开发布的玩家端不会渲染编辑入口
@@ -1043,8 +1052,12 @@ const isOwner = computed(() =>
 	&& projectOwnerId.value > 0
 	&& String(projectOwnerId.value) === currentUserId
 )
-const canPerform = computed(() => route.query.edit === '1' && isOwner.value)
-const performMode = ref(route.query.edit === '1')
+const canPerform = computed(() =>
+	!releaseView.value
+	&& route.query.edit === '1'
+	&& isOwner.value
+)
+const performMode = ref(false)
 const performSaving = ref(false)
 const performText = ref('')
 const performAvatarId = ref('')
@@ -1294,12 +1307,12 @@ const sceneHasDialogues = (sceneId) => (allDialogues.value[sceneId] || []).lengt
 const saveDialogVisible = ref(false);
 const saves = ref([]);
 const isRestoring = ref(false);
-const slotDefs = [
-	{ slot: 0, label: '自动存档' },
-	{ slot: 1, label: '存档 1' },
-	{ slot: 2, label: '存档 2' },
-	{ slot: 3, label: '存档 3' },
-];
+const slotDefs = computed(() => [
+	{ slot: 0, label: t('save.slotAuto') },
+	{ slot: 1, label: t('save.slotN', { n: 1 }) },
+	{ slot: 2, label: t('save.slotN', { n: 2 }) },
+	{ slot: 3, label: t('save.slotN', { n: 3 }) },
+]);
 const saveMap = computed(() => {
 	const map = {};
 	for (const s of saves.value) map[s.slot] = s;
@@ -1362,7 +1375,7 @@ const otherVariables = computed(() =>
 );
 const characterNameOf = (id) => {
 	const c = characters.value.find((x) => x.character_id === id);
-	return c ? c.name : '未命名角色';
+	return c ? localizedCharacterName(c) : t('character.unnamed');
 };
 const affinityPercent = (v) => {
 	const max = v.max_value == null ? 100 : Number(v.max_value);
@@ -1462,7 +1475,7 @@ const routeStats = computed(() => {
 // 跳到章节内第一个可播放场景的第一条可播放台词
 const jumpToChapter = (chapter) => {
 	if (!chapter.unlocked) {
-		ElMessage.warning('该章节还未读过，先按顺序阅读解锁');
+		ElMessage.warning(t('chapters.lockedToast'));
 		return;
 	}
 	const sceneIdx = chapter.sceneIndexes.find((idx) => (
@@ -1470,7 +1483,7 @@ const jumpToChapter = (chapter) => {
 		&& (allDialogues.value[scenes.value[idx].scene_id] || []).length
 	));
 	if (sceneIdx === undefined) {
-		ElMessage.warning('该章节暂时没有可播放的场景');
+		ElMessage.warning(t('chapters.emptyToast'));
 		return;
 	}
 	const di = firstPlayableNodeIndex(scenes.value[sceneIdx].scene_id);
@@ -1480,15 +1493,15 @@ const jumpToChapter = (chapter) => {
 	currentDialogueIndex.value = di;
 	chaptersVisible.value = false;
 	nextTick(() => startPreview());
-	ElMessage.success(`已跳转到「${chapter.title}」`);
+	ElMessage.success(t('chapters.jumpedToast', { title: chapter.title }));
 };
 const galleryTab = ref('cg');
-const galleryTabs = [
-	{ key: 'cg', label: 'CG 鉴赏' },
-	{ key: 'bgm', label: 'BGM 鉴赏' },
-	{ key: 'ending', label: '结局收藏' },
-	{ key: 'achievement', label: '成就' },
-];
+const galleryTabs = computed(() => [
+	{ key: 'cg', label: t('gallery.tabCg') },
+	{ key: 'bgm', label: t('gallery.tabBgm') },
+	{ key: 'ending', label: t('gallery.tabEnding') },
+	{ key: 'achievement', label: t('gallery.tabAchievement') },
+]);
 const galleryItems = ref([]);
 const galleryTotal = ref(0);
 const galleryUnlocked = ref(0);
@@ -1498,13 +1511,13 @@ const musicUnlocked = ref(0);
 const musicLoading = ref(false);
 
 const galleryCountText = computed(() => {
-	if (galleryTab.value === 'cg') return `已解锁 ${galleryUnlocked.value} / ${galleryTotal.value}`;
-	if (galleryTab.value === 'bgm') return `已解锁 ${musicUnlocked.value} / ${musicTotal.value}`;
+	if (galleryTab.value === 'cg') return t('gallery.unlockedStats', { n: galleryUnlocked.value, total: galleryTotal.value });
+	if (galleryTab.value === 'bgm') return t('gallery.unlockedStats', { n: musicUnlocked.value, total: musicTotal.value });
 	if (galleryTab.value === 'achievement') {
-		return `已解锁 ${unlockedAchievementCount.value} / ${achievements.value.length}`;
+		return t('gallery.unlockedStats', { n: unlockedAchievementCount.value, total: achievements.value.length });
 	}
 	const unlocked = endings.value.filter((e) => e.unlocked).length;
-	return `已达成 ${unlocked} / ${endings.value.length}`;
+	return t('gallery.reachedStats', { n: unlocked, total: endings.value.length });
 });
 
 const loadCgGallery = async () => {
@@ -1517,7 +1530,7 @@ const loadCgGallery = async () => {
 		galleryItems.value = [];
 		galleryTotal.value = 0;
 		galleryUnlocked.value = 0;
-		ElMessage.error(e?.response?.data?.message || '读取鉴赏数据失败');
+		ElMessage.error(e?.response?.data?.message || t('gallery.loadFailed'));
 	}
 };
 
@@ -1573,6 +1586,19 @@ const settingsVisible = ref(false);
 const displayedText = ref('');
 const dialogueVoice = ref(null);
 const isTyping = ref(false);
+
+// 播放器界面文案：随阅读语言切换，缺失时回退简体中文
+const t = (key, params) => playerText(playerSettings.value.language, key, params);
+
+// 当前语言下的角色名：优先译名，缺失时回退原名
+const localizedCharacterName = (character) => {
+	if (!character) return '';
+	const lang = playerSettings.value.language;
+	const translated = lang && lang !== 'zh-CN'
+		? character.name_translations?.[lang]
+		: '';
+	return (translated && String(translated).trim()) ? translated : (character.name || '');
+};
 
 // 当前语言下的台词文本：优先译文，缺失时回退原文
 const localizedText = (dialogue) => {
@@ -1796,6 +1822,10 @@ const fetchProjectData = async () => {
 			projectOwnerId.value = 0;
 		}
 
+		// 发布版只保留玩家能力：调试器 / 演出入口 / 节点跳转均需作者身份
+		debugMode.value = debugRequested && isOwner.value && !releaseView.value;
+		performMode.value = canPerform.value;
+
 		// 获取项目下的所有场景（按顺序排列）
 		const scenesData = await getProjectScenes(projectIdNum);
 		scenes.value = scenesData.sort((a, b) => a.order_num - b.order_num);
@@ -1855,7 +1885,7 @@ const fetchProjectData = async () => {
 		await loadPublicReleases();
 
 		// 调试：从 ?start=<content_id> 指定节点开始
-		const startId = Number(route.query.start || 0);
+		const startId = debugMode.value ? Number(route.query.start || 0) : 0;
 		if (startId) {
 			let found = false;
 			for (let si = 0; si < scenes.value.length; si++) {
@@ -1868,7 +1898,7 @@ const fetchProjectData = async () => {
 					break;
 				}
 			}
-			if (!found) ElMessage.warning(`找不到起始节点 #${startId}，将从开头播放`);
+			if (!found) ElMessage.warning(t('toast.startNodeMissing', { id: startId }));
 		}
 		
 		// 获取角色列表及对应的头像
@@ -2124,7 +2154,7 @@ const toggleFullscreen = async (val) => {
 };
 
 // 逐字显示
-const fullText = () => judge(localizedText(currentDialogue.value)) || '';
+const fullText = () => localizedText(currentDialogue.value) || '';
 
 const clearTyping = () => {
 	if (typingTimer) {
@@ -2554,7 +2584,7 @@ const debugJump = () => {
 			return;
 		}
 	}
-	ElMessage.warning(`找不到节点 #${id}`);
+	ElMessage.warning(t('toast.nodeMissing', { id }));
 };
 
 // 覆盖率列表点节点：直接跳过去，顺便把它标记为已走
@@ -2604,7 +2634,7 @@ const runAchievementCheck = async () => {
 		if (res?.achievements) achievements.value = res.achievements;
 		const fresh = res?.newly_unlocked || [];
 		for (const a of fresh) {
-			ElMessage.success(`成就解锁：${a.title}`);
+			ElMessage.success(t('toast.achievementUnlocked', { title: a.title }));
 		}
 	} catch (e) {
 		/* 成就检查失败不影响试玩 */
@@ -2703,10 +2733,11 @@ const startNextPlaythrough = () => {
 		localStorage.setItem(playthroughKey(), String(playthrough.value));
 	} catch (_) { /* ignore */ }
 	nextTick(() => startPreview());
-	ElMessage.success(`已进入第 ${playthrough.value} 周目，变量沿用上一周目`);
+	ElMessage.success(t('toast.nextPlaythrough', { n: playthrough.value }));
 };
 
 const startTyping = () => {
+	if (!currentDialogue.value) return;
 	applyEffectsForCurrent();
 	// 回退/演出编辑后强制展示当前句：即使命中结局分支也要先消费标记，避免标记泄漏到下一句
 	const forceShowRestored = skipRestoredLine;
@@ -3202,7 +3233,7 @@ const nextDialogue = () => {
 				return;
 			}
 			if (result === 'locked') {
-				ElMessage.warning('跳转目标场景尚未解锁，改为顺序播放');
+				ElMessage.warning(t('toast.targetSceneLocked'));
 			}
 		}
 	}
@@ -3235,7 +3266,7 @@ const nextDialogue = () => {
 const selectBranch = (branch) => {
 	if (!branch) return;
 	if (branch.locked) {
-		ElMessage.warning('条件未满足：' + conditionText(branch.conditions));
+		ElMessage.warning(t('choice.conditionNotMet', { cond: conditionText(branch.conditions) }));
 		return;
 	}
 	// 活叙事：记录玩家在这个选择节点上犹豫的秒数
@@ -3274,11 +3305,11 @@ const selectBranch = (branch) => {
 		const di = list.findIndex(d => d.content_id === targetId);
 		if (di >= 0) {
 			if (!scenePlayable(scenes.value[si].scene_id)) {
-				ElMessage.warning('目标场景尚未解锁，先推进剧情或调整条件');
+				ElMessage.warning(t('toast.sceneLocked'));
 				return;
 			}
 			if (!nodePlayable(list[di])) {
-				ElMessage.warning('目标台词条件未满足：' + conditionText(list[di].branch_condition));
+				ElMessage.warning(t('toast.targetDialogueLocked', { cond: conditionText(list[di].branch_condition) }));
 				return;
 			}
 			pushLineSnapshot(lineSnapshot);
@@ -3295,7 +3326,7 @@ const selectBranch = (branch) => {
 		}
 	}
 
-	ElMessage.warning('分支目标不存在，可能已被删除');
+	ElMessage.warning(t('toast.branchMissing'));
 };
 
 // 自动前进对话：统一交给 scheduleAutoAdvance（受设置里的间隔控制）
@@ -3341,8 +3372,8 @@ const nextScene = () => {
 		});
 		scheduleAchievementCheck(true);
 		isPlaying.value = false;
-		ElMessageBox.alert('游戏结束', '提示', {
-			confirmButtonText: '确定',
+		ElMessageBox.alert(t('ending.gameOverText'), t('ending.gameOverTitle'), {
+			confirmButtonText: t('common.confirm'),
 			callback: () => {
 				proxy.$router.push('/home');
 			}
@@ -3359,11 +3390,11 @@ const skipToNextScene = () => {
 // 重新开始游戏
 const restartGame = () => {
 	ElMessageBox.confirm(
-		'确定要重新开始游戏吗？当前进度将会丢失。',
-		'重新开始',
+		t('toast.restartConfirm'),
+		t('toast.restartTitle'),
 		{
-			confirmButtonText: '确定',
-			cancelButtonText: '取消',
+			confirmButtonText: t('common.confirm'),
+			cancelButtonText: t('common.cancel'),
 			type: 'info',
 		}
 	)
@@ -3385,7 +3416,7 @@ const restartGame = () => {
 			startPreview();
 		});
 		
-		ElMessage.success('游戏已重新开始');
+		ElMessage.success(t('toast.restarted'));
 	})
 	.catch(() => {
 		// 用户取消重新开始
@@ -3428,10 +3459,10 @@ const saveProgress = (silent = false) => {
 		};
 		
 		localStorage.setItem(`gameProgress_${props.projectId}`, JSON.stringify(progressData));
-		if (!silent) ElMessage.success('进度已保存');
+		if (!silent) ElMessage.success(t('save.saved'));
 	} catch (error) {
 		console.error('保存进度失败:', error);
-		if (!silent) ElMessage.error('保存进度失败，请重试');
+		if (!silent) ElMessage.error(t('save.saveFailed'));
 	}
 };
 
@@ -3445,7 +3476,7 @@ const formatSaveTime = (iso) => {
 };
 
 const currentSaveSummary = () => {
-	const title = localizedSceneTitle(currentScene.value) || '未命名场景';
+	const title = localizedSceneTitle(currentScene.value) || t('save.unnamedScene');
 	const text = localizedText(currentDialogue.value).replace(/\s+/g, ' ').slice(0, 24);
 	return text ? `${title} · ${text}` : title;
 };
@@ -3501,12 +3532,12 @@ const saveToSlot = async (slot, silent = false) => {
 		saves.value = [...saves.value.filter(s => s.slot !== slot), info]
 			.sort((a, b) => a.slot - b.slot);
 		if (!silent) {
-			ElMessage.success(slot === 0 ? '自动存档已更新' : '存档成功');
+			ElMessage.success(slot === 0 ? t('save.autoSaved') : t('save.saved'));
 		}
 	} catch (e) {
 		console.warn('云端存档失败，回退到本地:', e);
 		saveProgress(true);
-		if (!silent) ElMessage.warning('云端存档失败，已保存到本地');
+		if (!silent) ElMessage.warning(t('save.cloudSaveFailed'));
 	}
 };
 
@@ -3535,7 +3566,7 @@ const loadFromSlot = async (slot) => {
 		await nextTick();
 		startTyping();
 		applyVolumes();
-		ElMessage.success('已读取存档');
+		ElMessage.success(t('save.loaded'));
 	} catch (e) {
 		console.warn('读取云端存档失败，尝试本地:', e);
 		loadProgress();
@@ -3547,18 +3578,18 @@ const loadFromSlot = async (slot) => {
 
 const deleteSlot = async (slot) => {
 	try {
-		await ElMessageBox.confirm('确定删除该存档吗？', '删除存档', {
-			confirmButtonText: '删除',
-			cancelButtonText: '取消',
+		await ElMessageBox.confirm(t('save.deleteConfirm'), t('save.deleteTitle'), {
+			confirmButtonText: t('save.delete'),
+			cancelButtonText: t('common.cancel'),
 			type: 'warning',
 		});
 		await deleteSave(Number(props.projectId), slot);
 		saves.value = saves.value.filter(s => s.slot !== slot);
-		ElMessage.success('存档已删除');
+		ElMessage.success(t('save.deleted'));
 	} catch (e) {
 		if (e !== 'cancel' && e !== 'close') {
 			console.warn('删除存档失败:', e);
-			ElMessage.error('删除存档失败');
+			ElMessage.error(t('save.deleteFailed'));
 		}
 	}
 };
@@ -3700,7 +3731,7 @@ const loadProgress = () => {
 			if (Array.isArray(savedEndings)) {
 				triggeredEndings.value = new Set(savedEndings);
 			}
-			ElMessage.success('已加载上次保存的进度');
+			ElMessage.success(t('toast.progressLoaded'));
 		}
 	} catch (error) {
 		console.error('加载进度失败:', error);
@@ -3711,11 +3742,11 @@ const loadProgress = () => {
 // 退出游戏
 const exitGame = () => {
 	ElMessageBox.confirm(
-		'确定要退出游戏吗？建议先保存当前进度。',
-		'退出游戏',
+		t('toast.exitConfirm'),
+		t('toast.exitTitle'),
 		{
-			confirmButtonText: '退出',
-			cancelButtonText: '取消',
+			confirmButtonText: t('toast.exitBtn'),
+			cancelButtonText: t('common.cancel'),
 			type: 'warning',
 		}
 	)
@@ -3726,7 +3757,7 @@ const exitGame = () => {
 	})
 	.catch(() => {
 		// 用户取消退出
-		ElMessage.info('已取消退出');
+		ElMessage.info(t('toast.exitCancelled'));
 	});
 };
 
@@ -3738,19 +3769,11 @@ const handleWheel = (e) => {
 	}
 };
 
-// 获取角色名称
+// 获取角色名称（按当前阅读语言显示译名）
 const getCharacterName = (characterId) => {
 	const char = characters.value.find(c => c.character_id === characterId);
-	return char ? char.name : '';
+	return char ? localizedCharacterName(char) : '';
 };
-const judge = (content_text) => {
-	if(content_text===""){
-		showDialogueBox.value = !showDialogueBox.value;
-	}
-	else {
-		return content_text
-	}
-}
 // 素材文件丢失时不显示裂图
 const hideBrokenImage = (e) => {
 	if (e && e.target) e.target.style.visibility = 'hidden';
@@ -3817,7 +3840,7 @@ const handleKeydown = (e) => {
 	if (key === 's') {
 		e.preventDefault();
 		playerSettings.value.skipRead = !playerSettings.value.skipRead;
-		ElMessage.info(playerSettings.value.skipRead ? '已开启跳过已读' : '已关闭跳过已读');
+		ElMessage.info(playerSettings.value.skipRead ? t('toast.skipOn') : t('toast.skipOff'));
 		return;
 	}
 	if (isPanelOpen()) return;

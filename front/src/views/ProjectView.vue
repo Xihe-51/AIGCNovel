@@ -50,6 +50,10 @@
                       <el-icon><VideoPlay /></el-icon>
                       <span>试玩</span>
                     </button>
+                    <button class="hero-ghost" @click="openReleasePreview">
+                      <el-icon><Promotion /></el-icon>
+                      <span>发布预览</span>
+                    </button>
                     <button class="hero-ghost" @click="openFeaturePreview">
                       <el-icon><View /></el-icon>
                       <span>剧情树预览</span>
@@ -439,6 +443,24 @@
                         :rows="3" 
                         placeholder="请输入角色描述" 
                       />
+                    </el-form-item>
+                    <el-form-item label="角色名译文" v-if="!isAdd">
+                      <div class="character-name-translations">
+                        <div
+                          v-for="lang in TRANSLATION_LANGUAGES"
+                          :key="lang.code"
+                          class="character-name-translation-row"
+                        >
+                          <span class="character-name-translation-label">{{ lang.label }}</span>
+                          <el-input
+                            v-model="characterNameTranslations[lang.code]"
+                            :placeholder="`留空则使用「${currentCharacter.name}」`"
+                          />
+                        </div>
+                        <div class="character-name-translation-tip">
+                          播放器、导出包与静态网页包会按阅读语言显示对应译名，缺失时回退简体中文。
+                        </div>
+                      </div>
                     </el-form-item>
                   </el-form>
 
@@ -994,12 +1016,13 @@ import { useRouter } from 'vue-router'
 import { 
   DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture, 
   Film, ChatLineRound, Loading, Plus, Search, Sort, Close, Refresh,
-  ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled
+  ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getProject, getDialogueCount } from '@/api/project'
 import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar, cutoutCharacterAvatar, uploadCharacterAvatarLayer, updateCharacterAvatarLayer, deleteCharacterAvatarLayer } from '@/api/character'
 import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
+import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
 import { getScenes, uploadSceneFile } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
 import { getStoryGraph } from '@/api/branch'
@@ -1033,6 +1056,7 @@ interface Character {
   character_id: number
   project_id: number
   name: string
+  name_translations?: Record<string, string>
   age?: number
   description?: string
   settings?: Record<string, any>
@@ -1094,7 +1118,7 @@ export default defineComponent({
   components: {
     DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture,
     Film, ChatLineRound, Loading, Plus, Search, Sort, Close, Refresh,
-    ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled,
+    ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion,
     TechNavCircle
   },
   props: {
@@ -1196,6 +1220,8 @@ export default defineComponent({
     const cgMarketSelected = ref<number | null>(null)
     const characterDrawerVisible = ref(false)
     const currentCharacter = ref<Character | null>(null)
+    // 角色名译文：{ 'zh-TW': '…', en: '…', ja: '…' }
+    const characterNameTranslations = ref<Record<string, string>>({})
     const avatarDialogVisible = ref(false)
     const newAvatar = ref<Partial<CharacterAvatar>>({ avatar_type: '正常', is_default: false })
     const selectedAvatar = ref<CharacterAvatar | null>(null)
@@ -1492,6 +1518,11 @@ export default defineComponent({
       window.open(router.resolve({ path: `/view/${props.projectId}`, query: { edit: '1' } }).href, '_blank')
     }
 
+    // 以玩家视角打开发布版：关闭调试器与演出编辑入口
+    const openReleasePreview = () => {
+      window.open(router.resolve({ path: `/view/${props.projectId}`, query: { release: '1' } }).href, '_blank')
+    }
+
     // 第 10 批：节点级剧情图编辑器（content-level 节点 + 拖拽连线 + 条件编辑）
     const openNodeEditor = () => {
       showNodeEditor.value = true
@@ -1597,6 +1628,7 @@ export default defineComponent({
 
     const showAddCharacterDialog = () => {
       currentCharacter.value = { character_id: 0, project_id: props.projectId, name: '', is_main: false, created_at: new Date().toISOString() }
+      characterNameTranslations.value = {}
       isAdd.value = true
       currentCharacterAvatars.value = []
       characterDrawerVisible.value = true
@@ -1604,6 +1636,7 @@ export default defineComponent({
 
     const editCharacter = (character: Character) => {
       currentCharacter.value = { ...character }
+      characterNameTranslations.value = { ...(character.name_translations || {}) }
       characterDrawerVisible.value = true
       isAdd.value = false
       fetchCharacterAvatarsForCharacter(character.character_id)
@@ -1613,19 +1646,39 @@ export default defineComponent({
       currentCharacterAvatars.value = characterAvatars.value.filter(a => a.character_id === characterId)
     }
 
-    const saveCharacter = () => {
+    const saveCharacter = async () => {
       if (!currentCharacter.value) return
-      if (currentCharacter.value.character_id === 0) {
-        createCharacter(currentCharacter.value)
-        characters.value.push(currentCharacter.value)
-        ElMessage.success('角色添加成功')
-        setTimeout(() => location.reload(), 1500)
-      } else {
-        updateCharacter(currentCharacter.value)
-        const index = characters.value.findIndex(c => c.character_id === currentCharacter.value?.character_id)
-        if (index !== -1) { characters.value[index] = { ...currentCharacter.value }; ElMessage.success('角色更新成功') }
+      const character = currentCharacter.value
+      if (character.character_id === 0) {
+        try {
+          const created = await createCharacter(character)
+          characters.value.push(created || character)
+          ElMessage.success('角色添加成功')
+          setTimeout(() => location.reload(), 1200)
+        } catch (e: any) {
+          ElMessage.error('角色添加失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+        }
+        characterDrawerVisible.value = false
+        return
       }
-      characterDrawerVisible.value = false
+
+      try {
+        const updated = await updateCharacter(character)
+        // 角色名译文：逐语言保存，空值由后端删除
+        const translations: Record<string, string> = {}
+        for (const lang of TRANSLATION_LANGUAGES) {
+          const name = String(characterNameTranslations.value[lang.code] || '').trim()
+          const saved = await saveCharacterNameTranslation(character.character_id, lang.code, name)
+          if (saved?.name) translations[lang.code] = saved.name
+        }
+        const merged: Character = { ...(updated || character), name_translations: translations }
+        const index = characters.value.findIndex(c => c.character_id === character.character_id)
+        if (index !== -1) characters.value[index] = merged
+        ElMessage.success('角色更新成功')
+        characterDrawerVisible.value = false
+      } catch (e: any) {
+        ElMessage.error('角色更新失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      }
     }
 
     const deleteCharacter = async (characterId: number) => {
@@ -2444,7 +2497,8 @@ export default defineComponent({
       cgMarketVisible, cgMarketLoading, cgMarketOptions, cgMarketSelected,
       fetchCGs, openCreateCG, openEditCG, pickCGFile, onCGFileChange,
       openCGMarketPicker, applyCGMarket, saveCG, removeCG,
-      characterDrawerVisible, currentCharacter, avatarDialogVisible, newAvatar,
+      characterDrawerVisible, currentCharacter, characterNameTranslations,
+      TRANSLATION_LANGUAGES, avatarDialogVisible, newAvatar,
       selectedAvatar, cutoutLoadingId, cutoutBatchRunning,
       cutoutDialogVisible, cutoutTarget, cutoutPercent, cutoutStage, cutoutStatus, cutoutError,
       stopCutoutTimer, retryCutout, batchCutout,
@@ -2470,7 +2524,7 @@ export default defineComponent({
       storyGraph, storyValidation, graphSource,
       zoomIn, zoomOut, resetCanvas, refreshCanvas,
       handleWheel, startPan, onPan, endPan, startDragNode, selectNode,
-      openFeaturePreview, openNodeEditor, generateFlowFromScenes, goCreate, openPlayer,
+      openFeaturePreview, openNodeEditor, generateFlowFromScenes, goCreate, openPlayer, openReleasePreview,
       // 补充原有方法的引用
       fetchCharacters, fetchProjectDetails, fetchCharacterAvatars
     }
@@ -3185,6 +3239,31 @@ $cg-text-light: #999999;
   }
   
   .drawer-content {
+    .character-name-translations {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .character-name-translation-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .character-name-translation-label {
+      flex: 0 0 72px;
+      font-size: 12px;
+      color: #8a7a86;
+    }
+
+    .character-name-translation-tip {
+      font-size: 11px;
+      line-height: 1.5;
+      color: #9b8b96;
+    }
+
     .avatar-section-head {
       display: flex;
       align-items: center;

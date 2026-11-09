@@ -95,7 +95,7 @@ loadStory()
           path: `/view/${pid}`,
           name: 'static-player',
           component: ExportProject,
-          props: { projectId: pid },
+          props: { projectId: pid, releaseMode: true },
         },
         { path: '/home', name: 'static-home', component: StaticHome },
         { path: '/:pathMatch(.*)*', redirect: `/view/${pid}` },

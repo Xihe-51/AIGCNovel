@@ -44,6 +44,9 @@
 					title="试玩时打开调试面板"
 					@click="debugPlay = !debugPlay"
 				>调试</button>
+				<button type="button" class="cv-debug" title="以玩家视角预览发布版（关闭调试与演出工具）" @click="openReleasePreview">
+					发布预览
+				</button>
 				<button class="cv-play" @click="openPlayer">
 					<el-icon :size="13"><VideoPlay /></el-icon>
 					<span>试玩</span>
@@ -357,6 +360,14 @@
 			path: `/view/${projectId}`,
 			// 作者试玩默认带演出模式入口，可直接在预览里改台词/背景/BGM/差分
 			query: { edit: '1', ...(debugPlay.value ? { debug: '1' } : {}) },
+		}).href
+		window.open(url, '_blank')
+	}
+
+	const openReleasePreview = () => {
+		const url = router.resolve({
+			path: `/view/${projectId}`,
+			query: { release: '1' },
 		}).href
 		window.open(url, '_blank')
 	}

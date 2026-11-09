@@ -1,4 +1,6 @@
 import os
+import shutil
+import uuid
 from datetime import datetime
 
 from sqlalchemy import func, or_
@@ -9,10 +11,42 @@ from ..models import Project, Character, CharacterAvatar, CharacterAvatarLayer, 
     ContentEffect, ProjectVariable, SaveSlot, ReadRecord, Ending, EndingUnlock, ResourceReference, \
     ProjectCG, ContentDirective, SceneChapter, StoryChapter, SceneLock, ProjectVersion, \
     ProjectTerm, PlayEvent, Achievement, AchievementUnlock, ProjectMeta, \
-    ProjectRelease, ProjectSource, MusicUnlock, ContentTranslation, SceneTranslation, BranchPathTranslation
+    ProjectRelease, ProjectSource, MusicUnlock, ContentTranslation, SceneTranslation, BranchPathTranslation, \
+    CharacterNameTranslation
 
 # 配音导演：台词情绪标签（批量配音按情绪微调 TTS 语速/音调）
 EMOTION_OPTIONS = ('平静', '犹豫', '生气', '哭腔', '低声')
+
+# 情绪推断关键词：按顺序匹配，命中即返回（仅作为建议，作者可修改）
+# 注意：不用「滚」「哭」这类单字，避免「滚烫」「哭笑不得」被误判
+_EMOTION_KEYWORDS = (
+    ('哭腔', ('哭泣', '哭了', '哭着', '哭腔', '呜咽', '抽泣', '哽咽', '哭红', '想哭',
+              '泪流', '流泪', '眼泪', '泪水', '泪光', '泪痕')),
+    ('生气', ('滚开', '滚出去', '滚蛋', '滚！', '滚!', '住口', '闭嘴', '混蛋', '可恶',
+              '岂有此理', '放肆', '凭什么', '怒', '吼', '拍桌', '咬牙')),
+    ('低声', ('低声', '轻声', '轻轻', '喃喃', '耳语', '小声', '叹息', '叹了口气')),
+)
+
+
+def detect_dialogue_emotion(text):
+    """
+    按台词文本规则推断情绪，返回 (emotion, reason, confidence)。
+
+    只产出 EMOTION_OPTIONS 中的值，供「配音导演」给出建议，不直接落库。
+    confidence: high（关键词命中）/ medium（标点语气）/ low（无依据的默认值）
+    """
+    t = str(text or '').strip()
+    if not t:
+        return None, '空台词，无法判断', 'low'
+    for emotion, words in _EMOTION_KEYWORDS:
+        hit = next((w for w in words if w in t), None)
+        if hit:
+            return emotion, f'含「{hit}」', 'high'
+    if '！' in t or '!' in t:
+        return '生气', '感叹语气强烈', 'medium'
+    if '……' in t or '...' in t or t.endswith(('？', '?')):
+        return '犹豫', '省略号或疑问语气', 'medium'
+    return '平静', '陈述语气', 'low'
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {
@@ -226,6 +260,29 @@ def _safe_delete_file(file_url):
             print(f"文件删除成功: {file_path}")
     except Exception as e:
         print(f"文件删除失败 {file_url}: {e}")
+
+
+def _copy_cover_for_import(cover_url):
+    """
+    导入项目时复制封面文件，避免导入项目与源项目共用同一张封面。
+
+    否则删除导入项目时会把源项目的封面一起删掉（共享文件没有引用保护）。
+    """
+    if not cover_url:
+        return None
+    rel = str(cover_url).lstrip('/')
+    if rel.startswith('static/'):
+        rel = rel[len('static/'):]
+    static_root = os.path.abspath(STATIC_ROOT)
+    src = os.path.abspath(os.path.join(static_root, rel))
+    if not src.startswith(static_root + os.sep) or not os.path.isfile(src):
+        return None
+    ext = os.path.splitext(src)[1] or '.png'
+    directory = os.path.join(static_root, 'uploads', 'covers')
+    os.makedirs(directory, exist_ok=True)
+    filename = f"imported_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+    shutil.copyfile(src, os.path.join(directory, filename))
+    return f'/static/uploads/covers/{filename}'
 
 
 def _delete_project_files(project_id):
@@ -498,9 +555,15 @@ def delete_project(project_id, user_id):
         # 1. 收集需要删除的文件路径（在删除数据库记录前收集）
         files_to_delete = []
 
-        # 项目封面
+        # 项目封面：只有没有其他项目共用同一张封面时才删除文件，
+        # 避免导入项目与源项目共用封面时误删对方文件。
         if project.cover_url:
-            files_to_delete.append(project.cover_url)
+            shared_cover = Project.query.filter(
+                Project.project_id != project_id,
+                Project.cover_url == project.cover_url,
+            ).first()
+            if not shared_cover:
+                files_to_delete.append(project.cover_url)
 
         # 场景的背景和音乐
         scenes = Scene.query.filter_by(project_id=project_id).all()
@@ -644,6 +707,14 @@ def delete_project(project_id, user_id):
             count = CharacterAvatar.query.filter_by(character_id=character.character_id).delete()
             avatar_count += count
         print(f"  删除 {avatar_count} 个角色头像")
+
+        # 5.1 删除角色名译文（外键引用 characters）
+        character_ids = [c.character_id for c in characters]
+        if character_ids:
+            name_translation_count = CharacterNameTranslation.query.filter(
+                CharacterNameTranslation.character_id.in_(character_ids)
+            ).delete(synchronize_session=False)
+            print(f"  删除 {name_translation_count} 条角色名译文")
 
         # 6. 删除所有角色
         character_count = Character.query.filter_by(project_id=project_id).delete()
@@ -1060,6 +1131,10 @@ def delete_character_with_relations(character_id):
                 CharacterAvatarLayer.avatar_id.in_(avatar_ids)
             ).delete(synchronize_session=False)
         CharacterAvatar.query.filter_by(character_id=character_id).delete()
+
+        # 4.1 删除角色名译文（外键引用 characters）
+        CharacterNameTranslation.query.filter_by(character_id=character_id).delete(
+            synchronize_session=False)
 
         # 5. 删除角色本身
         db.session.delete(character)
@@ -1729,6 +1804,12 @@ def build_project_bundle(project_id, user_id):
     char_ids = [c.character_id for c in characters]
     avatars = (CharacterAvatar.query.filter(CharacterAvatar.character_id.in_(char_ids))
                .order_by(CharacterAvatar.avatar_id).all()) if char_ids else []
+    character_name_translations = (CharacterNameTranslation.query
+                                   .filter(CharacterNameTranslation.character_id.in_(char_ids))
+                                   .all()) if char_ids else []
+    name_trans_map = {}
+    for t in character_name_translations:
+        name_trans_map.setdefault(int(t.character_id), {})[t.language] = t.name
 
     scenes = Scene.query.filter_by(project_id=project_id) \
         .order_by(Scene.order_num, Scene.scene_id).all()
@@ -1768,6 +1849,7 @@ def build_project_bundle(project_id, user_id):
         'characters': [{
             'character_id': c.character_id,
             'name': c.name,
+            'name_translations': name_trans_map.get(int(c.character_id), {}),
             'age': c.age,
             'description': c.description,
             'settings': c.settings,
@@ -1934,7 +2016,7 @@ def import_project_bundle(user_id, bundle):
             user_id=user_id,
             title=title,
             genre=genre,
-            cover_url=proj.get('cover_url'),
+            cover_url=_copy_cover_for_import(proj.get('cover_url')),
             template_type=template_type,
         )
         db.session.add(project)
@@ -1955,6 +2037,16 @@ def import_project_bundle(user_id, bundle):
             db.session.add(ch)
             db.session.flush()
             char_map[c.get('character_id')] = ch.character_id
+
+            # 角色名译文：只接受支持的语言，空值跳过
+            name_translations = c.get('name_translations')
+            if isinstance(name_translations, dict):
+                for lang, name in name_translations.items():
+                    lang = str(lang or '').strip()
+                    name = str(name or '').strip()[:100]
+                    if lang in ('zh-TW', 'en', 'ja') and name:
+                        db.session.add(CharacterNameTranslation(
+                            character_id=ch.character_id, language=lang, name=name))
 
         # 立绘
         avatar_map = {}

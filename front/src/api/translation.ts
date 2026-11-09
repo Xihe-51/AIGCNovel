@@ -26,6 +26,9 @@ export interface ContentTranslationItem {
 export interface ProjectTranslations {
   languages: string[];
   items: ContentTranslationItem[];
+  scenes?: SceneTranslationItem[];
+  branches?: BranchTranslationItem[];
+  characters?: CharacterNameTranslationItem[];
 }
 
 export function translationLabel(code: string): string {
@@ -92,6 +95,24 @@ export async function saveBranchTranslation(
 ): Promise<BranchTranslationItem> {
   const response = await request.put(`/project/translations/branch/${pathId}/${language}`, {
     text,
+  });
+  return response.data.data;
+}
+
+export interface CharacterNameTranslationItem {
+  character_id: number;
+  language: string;
+  name: string;
+}
+
+/** 保存角色名译文；name 为空时后端删除该语言译文 */
+export async function saveCharacterNameTranslation(
+  characterId: number,
+  language: string,
+  name: string
+): Promise<CharacterNameTranslationItem> {
+  const response = await request.put(`/project/translations/character/${characterId}/${language}`, {
+    name,
   });
   return response.data.data;
 }

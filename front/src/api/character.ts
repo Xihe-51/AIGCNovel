@@ -4,6 +4,8 @@ export interface Character {
   character_id: number
   project_id: number
   name: string
+  /** 角色名译文：{ 'zh-TW': '…', en: '…', ja: '…' }，缺失时回退 name */
+  name_translations?: Record<string, string>
   avatar_url?: string
   age?: number
   description?: string

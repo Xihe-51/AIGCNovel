@@ -2,8 +2,9 @@
 from flask import jsonify, request
 
 from .. import db
-from ..models import (BranchPath, BranchPathTranslation, ContentTranslation,
-                      Scene, SceneTranslation, ScriptContent)
+from ..models import (BranchPath, BranchPathTranslation, Character,
+                      CharacterNameTranslation, ContentTranslation, Scene,
+                      SceneTranslation, ScriptContent)
 from . import project
 from .save_views import _owned_project
 
@@ -61,6 +62,21 @@ def _branch_translations_of(path_ids):
     return result
 
 
+def _character_name_translations_of(character_ids):
+    """批量取角色名译文：{character_id: {language: name}}。"""
+    ids = [int(cid) for cid in (character_ids or []) if cid]
+    if not ids:
+        return {}
+    rows = (CharacterNameTranslation.query
+            .filter(CharacterNameTranslation.character_id.in_(ids))
+            .order_by(CharacterNameTranslation.translation_id.asc())
+            .all())
+    result = {}
+    for row in rows:
+        result.setdefault(int(row.character_id), {})[row.language] = row.name or ''
+    return result
+
+
 def _language_or_error(language):
     lang = str(language or '').strip()
     if lang not in _LANGUAGE_SET:
@@ -99,6 +115,14 @@ def list_project_translations(project_id):
         for lang, text in langs.items()
     ]
 
+    character_ids = [c.character_id for c in Character.query.filter_by(project_id=project_id).all()]
+    character_name_translations = _character_name_translations_of(character_ids)
+    character_items = [
+        {'character_id': cid, 'language': lang, 'name': name}
+        for cid, langs in character_name_translations.items()
+        for lang, name in langs.items()
+    ]
+
     return jsonify({
         'success': True,
         'data': {
@@ -106,6 +130,7 @@ def list_project_translations(project_id):
             'items': items,
             'scenes': scene_items,
             'branches': branch_items,
+            'characters': character_items,
         },
     })
 
@@ -288,4 +313,65 @@ def delete_branch_translation(path_id, language):
     return jsonify({
         'success': True,
         'data': {'path_id': int(path_id), 'language': lang, 'text': ''},
+    })
+
+
+@project.route('/translations/character/<int:character_id>/<string:language>', methods=['PUT'])
+def save_character_name_translation(character_id, language):
+    """新增/更新角色名译文；name 为空时删除该语言译文。"""
+    row = db.session.get(Character, character_id)
+    if not row:
+        return jsonify({'success': False, 'message': '角色不存在'}), 404
+    _, err = _owned_project(row.project_id)
+    if err:
+        return err
+    lang, lang_err = _language_or_error(language)
+    if lang_err:
+        return lang_err
+
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name') or '').strip()[:100]
+    existing = CharacterNameTranslation.query.filter_by(
+        character_id=character_id, language=lang).first()
+
+    if not name:
+        if existing:
+            db.session.delete(existing)
+            db.session.commit()
+        return jsonify({
+            'success': True,
+            'data': {'character_id': int(character_id), 'language': lang, 'name': ''},
+        })
+
+    if not existing:
+        existing = CharacterNameTranslation(
+            character_id=character_id, language=lang, name=name)
+        db.session.add(existing)
+    else:
+        existing.name = name
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'data': {'character_id': int(character_id), 'language': lang, 'name': name},
+    })
+
+
+@project.route('/translations/character/<int:character_id>/<string:language>', methods=['DELETE'])
+def delete_character_name_translation(character_id, language):
+    row = db.session.get(Character, character_id)
+    if not row:
+        return jsonify({'success': False, 'message': '角色不存在'}), 404
+    _, err = _owned_project(row.project_id)
+    if err:
+        return err
+    lang, lang_err = _language_or_error(language)
+    if lang_err:
+        return lang_err
+
+    CharacterNameTranslation.query.filter_by(
+        character_id=character_id, language=lang).delete(synchronize_session=False)
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'data': {'character_id': int(character_id), 'language': lang, 'name': ''},
     })
