@@ -1235,126 +1235,30 @@
 		</el-dialog>
 
 		<!-- 逐句译文：一条台词在多种语言下的文本，缺失时播放器回退原文 -->
-		<el-dialog
-			v-model="translationDialogVisible"
-			title="逐句译文"
-			width="520px"
-			append-to-body
-		>
-			<div v-if="translationTarget" class="dlg-translation-dialog">
-				<div class="dlg-translation-original">
-					<span class="dlg-translation-label">简体中文（原文）</span>
-					<p>{{ translationTarget.content_text || '（空）' }}</p>
-				</div>
-				<div class="dlg-translation-row">
-					<span class="dlg-translation-label">目标语言</span>
-					<el-select v-model="translationLang" size="small" style="width: 160px" @change="onTranslationLangChange">
-						<el-option
-							v-for="lang in TRANSLATION_LANGUAGES"
-							:key="lang.code"
-							:label="lang.label"
-							:value="lang.code"
-						/>
-					</el-select>
-					<button type="button" class="dlg-translation-copy" @click="translationText = translationTarget.content_text || ''">
-						复制原文
-					</button>
-				</div>
-				<el-input
-					v-model="translationText"
-					type="textarea"
-					:rows="5"
-					placeholder="留空保存会删除该语言译文；缺失时播放器自动回退原文"
-				/>
-				<p class="dlg-translation-tip">
-					保存后，播放器切到 {{ translationLabel(translationLang) }} 时优先显示这条译文。
-				</p>
-			</div>
-			<template #footer>
-				<el-button @click="translationDialogVisible = false">取消</el-button>
-				<el-button type="primary" :loading="translationSaving" @click="saveTranslation">保存译文</el-button>
-			</template>
-		</el-dialog>
+		<DialogueTranslationDialog
+			v-model:visible="translationDialogVisible"
+			:target="translationTarget"
+			:saving="translationSaving"
+			@save="saveTranslation"
+		/>
 
 		<!-- 场景标题/描述译文 -->
-		<el-dialog
-			v-model="sceneTransVisible"
-			title="场景译文"
-			width="520px"
-			append-to-body
-		>
-			<div class="dlg-translation-dialog">
-				<div class="dlg-translation-original">
-					<span class="dlg-translation-label">简体中文（原文）</span>
-					<p>{{ scene.title || '（无标题）' }}</p>
-					<p v-if="scene.description" class="scene-trans-original-desc">{{ scene.description }}</p>
-				</div>
-				<div class="dlg-translation-row">
-					<span class="dlg-translation-label">目标语言</span>
-					<el-select v-model="sceneTransLang" size="small" style="width: 160px" @change="onSceneTransLangChange">
-						<el-option
-							v-for="lang in TRANSLATION_LANGUAGES"
-							:key="lang.code"
-							:label="lang.label"
-							:value="lang.code"
-						/>
-					</el-select>
-				</div>
-				<el-input v-model="sceneTransTitle" placeholder="译后标题" />
-				<el-input
-					v-model="sceneTransDescription"
-					type="textarea"
-					:rows="4"
-					placeholder="译后描述（可空）"
-				/>
-				<p class="dlg-translation-tip">
-					播放器切到 {{ translationLabel(sceneTransLang) }} 时优先显示译文；全部留空保存会清除该语言译文。
-				</p>
-			</div>
-			<template #footer>
-				<el-button @click="sceneTransVisible = false">取消</el-button>
-				<el-button type="primary" :loading="sceneTransSaving" @click="saveSceneTranslations">保存译文</el-button>
-			</template>
-		</el-dialog>
+		<SceneTranslationDialog
+			v-model:visible="sceneTransVisible"
+			:title="scene.title || ''"
+			:description="scene.description || ''"
+			:translations="scene.translations || {}"
+			:saving="sceneTransSaving"
+			@save="saveSceneTranslations"
+		/>
 
 		<!-- 选项译文 -->
-		<el-dialog
-			v-model="choiceTransVisible"
-			title="选项译文"
-			width="480px"
-			append-to-body
-		>
-			<div class="dlg-translation-dialog">
-				<div class="dlg-translation-original">
-					<span class="dlg-translation-label">简体中文（原文）</span>
-					<p>{{ choiceTransTarget?.choice_text || '（空）' }}</p>
-				</div>
-				<div class="dlg-translation-row">
-					<span class="dlg-translation-label">目标语言</span>
-					<el-select v-model="choiceTransLang" size="small" style="width: 160px" @change="onChoiceTransLangChange">
-						<el-option
-							v-for="lang in TRANSLATION_LANGUAGES"
-							:key="lang.code"
-							:label="lang.label"
-							:value="lang.code"
-						/>
-					</el-select>
-				</div>
-				<el-input
-					v-model="choiceTransText"
-					type="textarea"
-					:rows="3"
-					placeholder="留空保存会清除该语言译文"
-				/>
-				<p class="dlg-translation-tip">
-					播放器切到 {{ translationLabel(choiceTransLang) }} 时优先显示这条选项译文。
-				</p>
-			</div>
-			<template #footer>
-				<el-button @click="choiceTransVisible = false">取消</el-button>
-				<el-button type="primary" :loading="choiceTransSaving" @click="saveChoiceTranslation">保存译文</el-button>
-			</template>
-		</el-dialog>
+		<ChoiceTranslationDialog
+			v-model:visible="choiceTransVisible"
+			:target="choiceTransTarget"
+			:saving="choiceTransSaving"
+			@save="saveChoiceTranslation"
+		/>
 
 		<!-- 从项目素材库选择，复用已有背景/音乐 -->
 		<el-dialog
@@ -1423,7 +1327,7 @@ import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/b
 import { listVariables, listEffects, saveContentEffects } from '@/api/variable'
 import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
 import { createProjectVersion } from '@/api/version'
-import { saveContentTranslation, saveSceneTranslation, saveBranchTranslation, TRANSLATION_LANGUAGES, translationLabel } from '@/api/translation'
+import { saveContentTranslation, saveSceneTranslation, saveBranchTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import { 
   ArrowLeft, 
@@ -1441,6 +1345,9 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { updateScene, uploadSceneFile, listSceneLocks, setSceneLock } from '@/api/scenes';
 import SceneStagePreview from '@/components/SceneStagePreview.vue';
+import DialogueTranslationDialog from '@/components/scene/DialogueTranslationDialog.vue';
+import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vue';
+import ChoiceTranslationDialog from '@/components/scene/ChoiceTranslationDialog.vue';
 
 const props = defineProps({
 	sceneId: {
@@ -3930,8 +3837,6 @@ const saveDialogue = async (index) => {
 const translationDialogVisible = ref(false)
 const translationSaving = ref(false)
 const translationTarget = ref(null)
-const translationLang = ref(TRANSLATION_LANGUAGES[0]?.code || 'zh-TW')
-const translationText = ref('')
 
 const translationCount = (dialogue) => {
 	return dialogue && dialogue.translations ? Object.keys(dialogue.translations).length : 0
@@ -3942,35 +3847,27 @@ const translatedLanguages = (dialogue) => {
 	return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
 }
 
-const onTranslationLangChange = () => {
-	translationText.value = translationTarget.value?.translations?.[translationLang.value] || ''
-}
-
 const openTranslationDialog = (dialogue) => {
 	if (!dialogue || !dialogue.content_id) {
 		ElMessage.warning('请先保存这条台词，再添加译文')
 		return
 	}
 	translationTarget.value = dialogue
-	// 优先切到还没有译文的语言，方便继续补全
-	const missing = TRANSLATION_LANGUAGES.find(lang => !dialogue.translations?.[lang.code])
-	translationLang.value = (missing || TRANSLATION_LANGUAGES[0]).code
-	translationText.value = dialogue.translations?.[translationLang.value] || ''
 	translationDialogVisible.value = true
 }
 
-const saveTranslation = async () => {
+const saveTranslation = async ({ lang, text }) => {
 	if (!translationTarget.value?.content_id) return
 	translationSaving.value = true
 	try {
 		const saved = await saveContentTranslation(
 			Number(translationTarget.value.content_id),
-			translationLang.value,
-			translationText.value
+			lang,
+			text
 		)
 		const next = { ...(translationTarget.value.translations || {}) }
 		if (saved?.text) next[saved.language] = saved.text
-		else delete next[translationLang.value]
+		else delete next[lang]
 		translationTarget.value.translations = next
 		translationDialogVisible.value = false
 		ElMessage.success(saved?.text ? '译文已保存' : '译文已清除')
@@ -3985,9 +3882,6 @@ const saveTranslation = async () => {
 // ===== 场景标题/描述译文 =====
 const sceneTransVisible = ref(false)
 const sceneTransSaving = ref(false)
-const sceneTransLang = ref(TRANSLATION_LANGUAGES[0]?.code || 'zh-TW')
-const sceneTransTitle = ref('')
-const sceneTransDescription = ref('')
 
 const sceneTranslationCount = computed(() => {
 	return Object.keys(scene.value.translations || {}).length
@@ -3998,38 +3892,29 @@ const translatedSceneLanguages = computed(() => {
 	return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
 })
 
-const onSceneTransLangChange = () => {
-	const payload = scene.value.translations?.[sceneTransLang.value] || {}
-	sceneTransTitle.value = payload.title || ''
-	sceneTransDescription.value = payload.description || ''
-}
-
 const openSceneTranslationDialog = () => {
 	if (!scene.value.scene_id) {
 		ElMessage.warning('场景尚未加载完成')
 		return
 	}
-	const missing = TRANSLATION_LANGUAGES.find(lang => !scene.value.translations?.[lang.code])
-	sceneTransLang.value = (missing || TRANSLATION_LANGUAGES[0]).code
-	onSceneTransLangChange()
 	sceneTransVisible.value = true
 }
 
-const saveSceneTranslations = async () => {
+const saveSceneTranslations = async ({ lang, title, description }) => {
 	if (!scene.value.scene_id) return
 	sceneTransSaving.value = true
 	try {
 		const saved = await saveSceneTranslation(
 			Number(scene.value.scene_id),
-			sceneTransLang.value,
-			sceneTransTitle.value,
-			sceneTransDescription.value
+			lang,
+			title,
+			description
 		)
 		const next = { ...(scene.value.translations || {}) }
 		if (saved?.title || saved?.description) {
 			next[saved.language] = { title: saved.title || '', description: saved.description || '' }
 		} else {
-			delete next[sceneTransLang.value]
+			delete next[lang]
 		}
 		scene.value.translations = next
 		sceneTransVisible.value = false
@@ -4046,15 +3931,9 @@ const saveSceneTranslations = async () => {
 const choiceTransVisible = ref(false)
 const choiceTransSaving = ref(false)
 const choiceTransTarget = ref(null)
-const choiceTransLang = ref(TRANSLATION_LANGUAGES[0]?.code || 'zh-TW')
-const choiceTransText = ref('')
 
 const choiceTranslationCount = (opt) => {
 	return opt && opt.translations ? Object.keys(opt.translations).length : 0
-}
-
-const onChoiceTransLangChange = () => {
-	choiceTransText.value = choiceTransTarget.value?.translations?.[choiceTransLang.value] || ''
 }
 
 const openChoiceTranslationDialog = (opt) => {
@@ -4063,24 +3942,21 @@ const openChoiceTranslationDialog = (opt) => {
 		return
 	}
 	choiceTransTarget.value = opt
-	const missing = TRANSLATION_LANGUAGES.find(lang => !opt.translations?.[lang.code])
-	choiceTransLang.value = (missing || TRANSLATION_LANGUAGES[0]).code
-	onChoiceTransLangChange()
 	choiceTransVisible.value = true
 }
 
-const saveChoiceTranslation = async () => {
+const saveChoiceTranslation = async ({ lang, text }) => {
 	if (!choiceTransTarget.value?.path_id) return
 	choiceTransSaving.value = true
 	try {
 		const saved = await saveBranchTranslation(
 			Number(choiceTransTarget.value.path_id),
-			choiceTransLang.value,
-			choiceTransText.value
+			lang,
+			text
 		)
 		const next = { ...(choiceTransTarget.value.translations || {}) }
 		if (saved?.text) next[saved.language] = saved.text
-		else delete next[choiceTransLang.value]
+		else delete next[lang]
 		choiceTransTarget.value.translations = next
 		choiceTransVisible.value = false
 		ElMessage.success(saved?.text ? '选项译文已保存' : '选项译文已清除')
@@ -6092,63 +5968,6 @@ onBeforeUnmount(() => {
 }
 
 .dlg-translation-hint {
-  font-size: 11px;
-  color: #b99aa5;
-}
-
-.dlg-translation-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dlg-translation-label {
-  font-size: 12px;
-  color: #8a6a76;
-}
-
-.dlg-translation-original {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #fffafc;
-  border: 1px solid #f5e4ea;
-}
-
-.dlg-translation-original p {
-  margin: 6px 0 0;
-  color: #4a3a40;
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
-.dlg-translation-original p.scene-trans-original-desc {
-  color: #8a6a76;
-  font-size: 12px;
-}
-
-.dlg-translation-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dlg-translation-copy {
-  border: 1px solid #f0d6df;
-  background: #fff;
-  color: #b25a76;
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.dlg-translation-copy:hover {
-  background: #fff5f8;
-}
-
-.dlg-translation-tip {
-  margin: 0;
   font-size: 11px;
   color: #b99aa5;
 }
