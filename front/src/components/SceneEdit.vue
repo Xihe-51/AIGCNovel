@@ -824,201 +824,25 @@
 	</el-dialog>
 
 		<!-- 演出指令弹窗 -->
-		<el-dialog
-			v-model="directiveDialogVisible"
-			title="演出指令"
-			width="520px"
-			append-to-body
-			class="directive-dialog"
-		>
-			<div class="dir-target">当前节点：{{ directiveTarget }}</div>
-
-			<div v-if="!directives.length" class="dir-empty">
-				还没有指令。立绘位置、背景切换、音效都可以在这里加。
-			</div>
-			<div v-else class="dir-list">
-				<div v-for="d in directives" :key="d.directive_id" class="dir-row">
-					<span class="dir-type">{{ directiveTypeLabel(d.directive_type) }}</span>
-					<span class="dir-summary">{{ directiveSummary(d) }}</span>
-					<button type="button" class="dir-del" @click="removeDirective(d)">删除</button>
-				</div>
-			</div>
-
-			<div class="dir-add-title">新增指令</div>
-			<div class="dir-add">
-				<el-select v-model="newDirectiveType" size="small" class="dir-select-type">
-					<el-option label="立绘" value="avatar" />
-					<el-option label="背景" value="background" />
-					<el-option label="音乐" value="music" />
-					<el-option label="音效" value="sound" />
-					<el-option label="停顿" value="wait" />
-					<el-option label="画面效果" value="effect" />
-				</el-select>
-
-				<template v-if="newDirectiveType === 'avatar'">
-					<el-select
-						v-model="dirForm.character_id"
-						size="small"
-						placeholder="角色"
-						class="dir-field"
-						@change="onDirCharacterChange"
-					>
-						<el-option v-for="c in characters" :key="c.character_id" :label="c.name" :value="c.character_id" />
-					</el-select>
-
-					<!-- 表情/姿势轮盘：点缩略图快速切换该角色的立绘 -->
-					<div v-if="dirCharacterAvatars.length" class="expr-wheel">
-						<button
-							v-for="a in dirCharacterAvatars"
-							:key="a.avatar_id"
-							type="button"
-							class="expr-option"
-							:class="{ selected: dirForm.avatar_id === a.avatar_id }"
-							:title="avatarOptionLabel(a)"
-							@click="dirForm.avatar_id = a.avatar_id"
-						>
-							<img :src="BASE_URL + a.image_url" alt="" />
-							<span class="expr-name">{{ a.avatar_type }}</span>
-							<span v-if="a.layers && a.layers.length" class="expr-badge">{{ a.layers.length }}差分</span>
-						</button>
-					</div>
-					<p v-else-if="dirForm.character_id" class="expr-empty">该角色还没有立绘，请先去角色管理上传。</p>
-
-					<!-- 素材直出：把素材库图片拖进来，不绑角色也能作为独立立绘层 -->
-					<div
-						class="dir-asset-drop"
-						:class="{ 'is-over': dirAssetOver, 'has-image': !!dirForm.image_url }"
-						@dragover.prevent="onDirAssetDragOver"
-						@dragleave="dirAssetOver = false"
-						@drop.prevent="onDirAssetDrop"
-					>
-						<img v-if="dirForm.image_url" :src="assetSrc(dirForm.image_url)" alt="" />
-						<span class="dir-asset-tip">
-							{{ dirForm.image_url ? '已选择素材图片（选择角色会清除）' : '也可把素材库图片拖到这里，作为独立立绘层' }}
-						</span>
-						<button
-							v-if="dirForm.image_url"
-							type="button"
-							class="dir-asset-clear"
-							@click.prevent="dirForm.image_url = ''"
-						>清除</button>
-					</div>
-
-					<el-select v-model="dirForm.layer_id" size="small" class="dir-field-sm">
-						<el-option label="＋ 新建图层" value="__new__" />
-						<el-option
-							v-for="l in avatarLayerOptions"
-							:key="l.layer_id"
-							:label="`${l.label}（层级 ${l.order}）`"
-							:value="l.layer_id"
-						/>
-					</el-select>
-					<el-input
-						v-if="dirForm.layer_id === '__new__'"
-						v-model="dirForm.layer_name"
-						size="small"
-						class="dir-field-sm"
-						placeholder="新图层名"
-					/>
-					<el-select v-model="dirForm.action" size="small" class="dir-field-sm">
-						<el-option label="显示" value="show" />
-						<el-option label="隐藏" value="hide" />
-					</el-select>
-					<div class="dir-avatar-fine">
-						<el-input-number v-model="dirForm.x" :min="0" :max="100" :controls="false" size="small" placeholder="X%" title="图层中心 X（%）" />
-						<el-input-number v-model="dirForm.y" :min="0" :max="100" :controls="false" size="small" placeholder="Y%" title="图层底边 Y（%）" />
-						<el-input-number v-model="dirForm.scale" :min="0.2" :max="3" :step="0.1" :controls="false" size="small" placeholder="缩放" title="缩放倍数" />
-						<el-input-number v-model="dirForm.opacity" :min="0" :max="1" :step="0.1" :controls="false" size="small" placeholder="透明 0-1" title="不透明度" />
-						<el-input-number v-model="dirForm.rotate" :min="-45" :max="45" :controls="false" size="small" placeholder="旋转°" title="旋转角度" />
-					</div>
-				</template>
-
-				<template v-else-if="newDirectiveType === 'background'">
-					<img v-if="dirForm.url" :src="BASE_URL + dirForm.url" class="dir-preview" alt="背景预览" />
-					<el-input v-model="dirForm.url" size="small" placeholder="上传背景图，或直接填 /static/... 地址" class="dir-field-wide" />
-					<el-upload
-						class="dir-upload"
-						:show-file-list="false"
-						:http-request="handleDirUpload"
-						accept="image/*"
-					>
-						<el-button size="small" :loading="dirUploading">上传图片</el-button>
-					</el-upload>
-					<el-select v-model="dirForm.layer" size="small" class="dir-field-sm">
-						<el-option label="背景" value="background" />
-						<el-option label="前景" value="foreground" />
-					</el-select>
-					<el-select v-model="dirForm.transition" size="small" class="dir-field-sm">
-						<el-option label="淡入淡出" value="fade" />
-						<el-option label="硬切" value="cut" />
-						<el-option label="黑场" value="black" />
-					</el-select>
-					<el-input-number v-model="dirForm.bg_duration" :min="100" :step="100" size="small" class="dir-field-sm" />
-				</template>
-
-				<template v-else-if="newDirectiveType === 'music'">
-					<el-input v-model="dirForm.url" size="small" placeholder="上传 BGM，或直接填地址" class="dir-field-wide" />
-					<el-upload
-						class="dir-upload"
-						:show-file-list="false"
-						:http-request="handleDirUpload"
-						accept="audio/*"
-					>
-						<el-button size="small" :loading="dirUploading">上传音频</el-button>
-					</el-upload>
-					<el-select v-model="dirForm.action" size="small" class="dir-field-sm">
-						<el-option label="播放" value="play" />
-						<el-option label="停止" value="stop" />
-					</el-select>
-				</template>
-
-				<template v-else-if="newDirectiveType === 'sound'">
-					<el-input v-model="dirForm.url" size="small" placeholder="上传音效，或直接填地址" class="dir-field-wide" />
-					<el-upload
-						class="dir-upload"
-						:show-file-list="false"
-						:http-request="handleDirUpload"
-						accept="audio/*"
-					>
-						<el-button size="small" :loading="dirUploading">上传音频</el-button>
-					</el-upload>
-				</template>
-
-				<template v-else-if="newDirectiveType === 'effect'">
-					<el-select v-model="dirForm.effect" size="small" class="dir-field-sm">
-						<el-option label="闪光" value="flash" />
-						<el-option label="震动" value="shake" />
-						<el-option label="天气" value="weather" />
-					</el-select>
-					<template v-if="dirForm.effect === 'flash'">
-						<el-input v-model="dirForm.color" size="small" placeholder="#ffffff" class="dir-field-sm" />
-						<el-input-number v-model="dirForm.duration" :min="100" :step="100" size="small" class="dir-field-sm" />
-					</template>
-					<template v-else-if="dirForm.effect === 'shake'">
-						<el-input-number v-model="dirForm.intensity" :min="1" :max="9" size="small" class="dir-field-sm" />
-						<el-input-number v-model="dirForm.duration" :min="100" :step="100" size="small" class="dir-field-sm" />
-					</template>
-					<template v-else>
-						<el-select v-model="dirForm.weather" size="small" class="dir-field-sm">
-							<el-option label="下雨" value="rain" />
-							<el-option label="下雪" value="snow" />
-							<el-option label="刮风" value="wind" />
-						</el-select>
-						<el-input-number v-model="dirForm.duration" :min="500" :step="500" size="small" class="dir-field-sm" />
-					</template>
-				</template>
-
-				<template v-else>
-					<el-input v-model.number="dirForm.ms" size="small" placeholder="毫秒" class="dir-field-sm" />
-				</template>
-
-				<el-button size="small" type="primary" @click="addDirective">添加</el-button>
-			</div>
-
-			<template #footer>
-				<el-button @click="directiveDialogVisible = false">关闭</el-button>
-			</template>
-		</el-dialog>
+		<DirectiveDialog
+			v-model:visible="directiveDialogVisible"
+			v-model:type="newDirectiveType"
+			:target-label="directiveTarget"
+			:directives="directives"
+			:characters="characters"
+			:form="dirForm"
+			:layer-options="avatarLayerOptions"
+			:character-avatars="dirCharacterAvatars"
+			:uploading="dirUploading"
+			:avatar-label="avatarOptionLabel"
+			:asset-src="assetSrc"
+			:asset-from-event="stageAssetPayload"
+			:is-image="isImageUrl"
+			:character-change="onDirCharacterChange"
+			:upload-request="handleDirUpload"
+			@add="addDirective"
+			@remove="removeDirective"
+		/>
 
 		<!-- 台词显示条件 -->
 		<el-dialog v-model="nodeConditionVisible" title="台词显示条件" width="470px" append-to-body>
@@ -1068,29 +892,10 @@
 		</el-dialog>
 
 		<!-- 批量导入剧本 -->
-		<el-dialog v-model="scriptImportVisible" title="批量导入剧本" width="560px" append-to-body>
-			<div class="import-hint">
-				每行一条，支持下面两种写法；角色名要和项目里已有角色一致，其他行按旁白处理。
-				<div class="import-example">【林瑶】暮尘，我也要。</div>
-				<div class="import-example">林瑶：暮尘，我也要。</div>
-			</div>
-			<el-input
-				v-model="scriptImportText"
-				type="textarea"
-				:rows="10"
-				resize="none"
-				placeholder="在这里粘贴剧本…"
-			/>
-			<div class="import-mode">
-				<span class="import-mode-label">导入方式</span>
-				<label class="import-radio"><input type="radio" value="append" v-model="scriptImportMode" /> 追加到末尾</label>
-				<label class="import-radio"><input type="radio" value="replace" v-model="scriptImportMode" /> 替换全部</label>
-			</div>
-			<template #footer>
-				<el-button @click="scriptImportVisible = false">取消</el-button>
-				<el-button type="primary" @click="applyScriptImport">导入</el-button>
-			</template>
-		</el-dialog>
+		<ScriptImportDialog
+			v-model:visible="scriptImportVisible"
+			@import="handleScriptImport"
+		/>
 
 		<!-- 批量配音：选中台词逐条 TTS 并回填 voice_url -->
 		<VoiceBatchDialog
@@ -1239,6 +1044,8 @@ import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vu
 import ChoiceTranslationDialog from '@/components/scene/ChoiceTranslationDialog.vue';
 import VoiceBatchDialog from '@/components/scene/VoiceBatchDialog.vue';
 import VoiceDirectorDialog from '@/components/scene/VoiceDirectorDialog.vue';
+import ScriptImportDialog from '@/components/scene/ScriptImportDialog.vue';
+import DirectiveDialog from '@/components/scene/DirectiveDialog.vue';
 
 const props = defineProps({
 	sceneId: {
@@ -1777,47 +1584,17 @@ const applyEmotionTags = () => {
 
 // ===== 剧本批量导入 =====
 const scriptImportVisible = ref(false);
-const scriptImportText = ref('');
-const scriptImportMode = ref('append');
 
 const openScriptImport = () => {
-	scriptImportText.value = '';
-	scriptImportMode.value = 'append';
 	scriptImportVisible.value = true;
 };
 
-const stripQuotes = (s) => {
-	let t = String(s || '').trim();
-	const pairs = [['“', '”'], ['"', '"'], ['「', '」'], ['‘', '’']];
-	for (const [l, r] of pairs) {
-		if (t.startsWith(l) && t.endsWith(r)) {
-			t = t.slice(1, -1).trim();
-			break;
-		}
-	}
-	return t;
-};
-
-const parseScriptLine = (line) => {
-	const text = String(line || '').trim();
-	if (!text) return null;
-	let m = text.match(/^【([^】]{1,24})】\s*(.+)$/);
-	if (m) return { name: m[1].trim(), text: stripQuotes(m[2]) };
-	m = text.match(/^([^：:]{1,12})[：:]\s*(.+)$/);
-	if (m) return { name: m[1].trim(), text: stripQuotes(m[2]) };
-	return { name: '', text: stripQuotes(text) };
-};
-
-const applyScriptImport = async () => {
-	const parsed = scriptImportText.value
-		.split(/\r?\n/)
-		.map(parseScriptLine)
-		.filter(Boolean);
-	if (!parsed.length) {
+const handleScriptImport = async ({ mode, entries }) => {
+	if (!entries.length) {
 		ElMessage.warning('没有可导入的内容');
 		return;
 	}
-	if (scriptImportMode.value === 'replace' && dialogues.value.length) {
+	if (mode === 'replace' && dialogues.value.length) {
 		try {
 			await ElMessageBox.confirm('会清空当前场景的全部对话（仅本地，保存后生效），确定替换？', '替换全部对话', {
 				type: 'warning', confirmButtonText: '替换', cancelButtonText: '取消'
@@ -1827,10 +1604,10 @@ const applyScriptImport = async () => {
 		}
 	}
 	pushHistory();
-	if (scriptImportMode.value === 'replace') dialogues.value = [];
+	if (mode === 'replace') dialogues.value = [];
 	const base = dialogues.value.length;
 	const unknown = new Set();
-	parsed.forEach((item, i) => {
+	entries.forEach((item, i) => {
 		const char = item.name ? characters.value.find(c => c.name === item.name) : null;
 		if (item.name && !char) unknown.add(item.name);
 		dialogues.value.push({
@@ -1846,7 +1623,7 @@ const applyScriptImport = async () => {
 	markDirty();
 	clearSelection();
 	scriptImportVisible.value = false;
-	ElMessage.success(`已导入 ${parsed.length} 条，点「保存全部」落库`);
+	ElMessage.success(`已导入 ${entries.length} 条，点「保存全部」落库`);
 	if (unknown.size) {
 		ElMessage.warning(`未找到角色：${[...unknown].join('、')}，这些行已按旁白保留`);
 	}
@@ -1925,7 +1702,6 @@ const directives = ref([]);
 const directiveContentId = ref(null);
 const directiveTarget = ref('');
 const newDirectiveType = ref('avatar');
-const dirAssetOver = ref(false);
 const dirForm = ref({
 	character_id: null,
 	avatar_id: null,
@@ -1949,47 +1725,6 @@ const dirForm = ref({
 	intensity: 5,
 	weather: 'rain'
 });
-
-const directiveTypeLabel = (t) => ({
-	avatar: '立绘',
-	background: '背景',
-	music: '音乐',
-	sound: '音效',
-	wait: '停顿',
-	effect: '画面效果'
-}[t] || t);
-
-const directiveSummary = (d) => {
-	const p = d.payload || {};
-	if (d.directive_type === 'avatar') {
-		const c = characters.value.find(x => x.character_id === p.character_id);
-		const layerName = p.layer_name || layerNameOf(p);
-		const base = `${c ? c.name : '角色'} · ${layerName} · ${p.action === 'hide' ? '隐藏' : '显示'}`;
-		const extra = [];
-		if (Number(p.scale) && Number(p.scale) !== 1) extra.push(`缩放 ${p.scale}`);
-		if (p.opacity !== undefined && Number(p.opacity) < 1) extra.push(`透明 ${Math.round(Number(p.opacity) * 100)}%`);
-		if (Number(p.rotate)) extra.push(`旋转 ${p.rotate}°`);
-		if (Number(p.x) || Number(p.y)) extra.push(`偏移 ${p.x || 0}%,${p.y || 0}%`);
-		return base + (extra.length ? ` · ${extra.join(' · ')}` : '');
-	}
-	if (d.directive_type === 'background') {
-		const layer = p.layer === 'foreground' ? '前景' : '背景';
-		const trans = ({ fade: '淡入淡出', cut: '硬切', black: '黑场' })[p.transition] || '淡入淡出';
-		return `${layer} · ${trans} · ${p.url || '（未填地址）'}`;
-	}
-	if (d.directive_type === 'music') return `${p.action === 'stop' ? '停止' : '播放'} · ${p.url || '（未填）'}`;
-	if (d.directive_type === 'sound') return p.url || '（未填地址）';
-	if (d.directive_type === 'wait') return `${p.ms || 0} 毫秒`;
-	if (d.directive_type === 'effect') {
-		const map = {
-			flash: `闪光 · ${p.color || '#ffffff'} · ${p.duration_ms || 400}ms`,
-			shake: `震动 · 强度 ${p.intensity || 5} · ${p.duration_ms || 400}ms`,
-			weather: `天气 · ${({ rain: '下雨', snow: '下雪', wind: '刮风' })[p.weather] || p.weather || '下雨'} · ${p.duration_ms || 3000}ms`
-		};
-		return map[p.effect] || '（未设置）';
-	}
-	return '';
-};
 
 const loadDirectives = async (contentId) => {
 	directives.value = await listNodeDirectives(Number(projectId.value), Number(contentId));
@@ -3499,26 +3234,6 @@ const hotReloadAssets = () => {
 	const id = currentDialogue.value?.content_id;
 	if (id) loadPreviewDirectives(id);
 	ElMessage.success('已重新加载预览素材');
-};
-
-const onDirAssetDragOver = (ev) => {
-	const types = ev.dataTransfer?.types || [];
-	if (Array.from(types).includes('application/x-aigc-asset')) dirAssetOver.value = true;
-};
-
-const onDirAssetDrop = (ev) => {
-	dirAssetOver.value = false;
-	const asset = stageAssetPayload(ev);
-	if (!asset || !isImageUrl(asset.url)) {
-		ElMessage.warning('请拖入图片素材');
-		return;
-	}
-	dirForm.value.image_url = asset.url;
-	// 素材直出层不绑角色，避免被角色默认立绘覆盖
-	dirForm.value.character_id = null;
-	dirForm.value.avatar_id = null;
-	if (!dirForm.value.layer_name) dirForm.value.layer_name = (asset.label || '素材立绘').slice(0, 30);
-	ElMessage.success('已填入素材图片，可继续调整位置');
 };
 
 // 演出弹窗增删了指令后，如果改的正是预览中的那条对话，立刻刷新预览
@@ -5074,48 +4789,6 @@ onBeforeUnmount(() => {
   border-color: #e8467c;
 }
 
-/* 批量导入剧本 */
-.import-hint {
-  font-size: 12px;
-  color: #8a6a76;
-  line-height: 1.7;
-  margin-bottom: 10px;
-}
-
-.import-example {
-  margin-top: 4px;
-  padding: 4px 8px;
-  background: #fdf3f7;
-  border: 1px dashed #f0cfdc;
-  border-radius: 6px;
-  color: #a84463;
-  font-family: Consolas, Monaco, monospace;
-  font-size: 12px;
-}
-
-.import-mode {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 12px;
-  font-size: 12px;
-  color: #6b4b56;
-}
-
-.import-mode-label {
-  color: #a84463;
-}
-
-.import-radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.import-radio input {
-  accent-color: #e8467c;
-}
 .dialogues-editor { display: flex; flex-direction: column; gap: 18px; }
 
 .dialogue-editor-item {
@@ -5639,232 +5312,4 @@ onBeforeUnmount(() => {
   color: #b99aa5;
 }
 
-.dir-target {
-  font-size: 12px;
-  color: #8a6a76;
-  background: #fffafc;
-  border: 1px solid #f5e4ea;
-  border-radius: 8px;
-  padding: 8px 11px;
-  margin-bottom: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dir-empty {
-  font-size: 12px;
-  color: #b99aa5;
-  text-align: center;
-  padding: 18px 8px;
-  background: #fffdfe;
-  border: 1px dashed #eddbe3;
-  border-radius: 10px;
-}
-
-.dir-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.dir-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid #f5e4ea;
-  border-radius: 9px;
-  background: #fff;
-}
-
-.dir-type {
-  flex-shrink: 0;
-  font-size: 10px;
-  color: #c81f4a;
-  background: #fdeef3;
-  border: 1px solid #f6d6e2;
-  border-radius: 6px;
-  padding: 1px 7px;
-}
-
-.dir-summary {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: #3d2b32;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dir-del {
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: #c98aa0;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.dir-del:hover { color: #d9534f; }
-
-.dir-add-title {
-  font-size: 12px;
-  color: #8a6a76;
-  margin: 16px 0 8px;
-}
-
-.dir-add {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px dashed #eddbe3;
-  border-radius: 10px;
-  background: #fffdfe;
-}
-
-.dir-select-type { width: 96px; flex-shrink: 0; }
-.dir-field { width: 120px; }
-.dir-field-sm { width: 96px; }
-.dir-field-wide { flex: 1; min-width: 150px; }
-
-/* 立绘微调：X/Y 偏移、缩放、透明度、旋转 */
-.dir-avatar-fine {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-}
-
-.dir-avatar-fine .el-input-number {
-  width: 20%;
-  min-width: 0;
-}
-
-/* 表情/姿势轮盘：横向缩略图，点选即切换立绘 */
-.expr-wheel {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  overflow-x: auto;
-  padding: 4px 2px 6px;
-}
-
-.expr-option {
-  position: relative;
-  flex: 0 0 auto;
-  width: 66px;
-  padding: 4px;
-  border: 1px solid #f0dfe6;
-  border-radius: 10px;
-  background: #fff;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-}
-
-.expr-option:hover {
-  border-color: #f6b3cb;
-  transform: translateY(-1px);
-}
-
-.expr-option.selected {
-  border-color: #ff8fab;
-  box-shadow: 0 0 0 2px rgba(255, 143, 171, 0.18);
-}
-
-.expr-option img {
-  width: 54px;
-  height: 64px;
-  object-fit: contain;
-  background: #faf6f8;
-  border-radius: 6px;
-}
-
-.expr-name {
-  font-size: 11px;
-  color: #6b4a55;
-}
-
-.expr-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  font-size: 9px;
-  line-height: 1;
-  color: #fff;
-  background: #ff8fab;
-  padding: 2px 4px;
-  border-radius: 6px;
-}
-
-.expr-empty {
-  width: 100%;
-  margin: 0;
-  font-size: 11px;
-  color: #b99aa5;
-}
-
-/* 素材直出：拖入图片作为独立立绘层 */
-.dir-asset-drop {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px dashed #e8d3dd;
-  border-radius: 8px;
-  background: #fffdfe;
-  font-size: 11px;
-  color: #8a6a76;
-}
-
-.dir-asset-drop.is-over {
-  border-color: #ff8fab;
-  background: #fff6f8;
-}
-
-.dir-asset-drop img {
-  width: 34px;
-  height: 44px;
-  object-fit: contain;
-  background: #faf6f8;
-  border-radius: 4px;
-  flex: none;
-}
-
-.dir-asset-tip {
-  flex: 1;
-  line-height: 1.5;
-}
-
-.dir-asset-clear {
-  flex: none;
-  border: 1px solid #f6d6e2;
-  background: #fff;
-  color: #c81f4a;
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-/* 演出弹窗里的素材上传 */
-.dir-upload { flex-shrink: 0; }
-.dir-upload :deep(.el-upload) { display: inline-flex; }
-.dir-preview {
-  width: 44px;
-  height: 30px;
-  object-fit: cover;
-  border-radius: 6px;
-  border: 1px solid #f5e4ea;
-  flex-shrink: 0;
-}
 </style>
