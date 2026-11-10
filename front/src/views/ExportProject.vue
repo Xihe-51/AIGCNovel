@@ -615,91 +615,36 @@
 		</div>
 
 		<!-- 达成结局 -->
-		<el-dialog v-model="endingDialogVisible" width="420px" class="ending-dialog"
-				   :close-on-click-modal="false" :show-close="false">
-			<div class="ending-content">
-				<div class="ending-badge">ENDING</div>
-				<h2>{{ currentEnding?.title }}</h2>
-				<p>{{ currentEnding?.description || t('ending.congrats') }}</p>
-			</div>
-			<template #footer>
-				<el-button @click="endingDialogVisible = false">{{ t('ending.continueReading') }}</el-button>
-				<el-button @click="resetGame">{{ t('ending.restartReset') }}</el-button>
-				<el-button type="primary" @click="startNextPlaythrough">{{ t('ending.nextPlaythrough', { n: playthrough + 1 }) }}</el-button>
-				<el-button @click="backToHome">{{ t('ending.backToProject') }}</el-button>
-			</template>
-		</el-dialog>
+		<PlayerEndingDialog
+			v-model:visible="endingDialogVisible"
+			:language="playerSettings.language"
+			:ending="currentEnding"
+			:playthrough="playthrough"
+			@restart="resetGame"
+			@next="startNextPlaythrough"
+			@back="backToHome"
+		/>
 
 		<!-- 当前状态 -->
-		<el-dialog v-model="statusDialogVisible" :title="t('status.title')" width="420px" class="status-dialog">
-			<div class="status-row">
-				<span class="status-label">{{ t('status.playthroughLabel') }}</span>
-				<span class="status-value">{{ t('status.playthroughValue', { n: playthrough }) }}</span>
-			</div>
-
-			<template v-if="affinityVariables.length">
-				<div class="status-section">{{ t('status.affinity') }}</div>
-				<div v-for="v in affinityVariables" :key="v.variable_id" class="affinity-item">
-					<div class="affinity-head">
-						<span class="affinity-name">{{ characterNameOf(v.character_id) }}</span>
-						<span class="affinity-num">
-							{{ variableValues[v.name] ?? v.initial_value }}
-							<template v-if="v.max_value != null"> / {{ v.max_value }}</template>
-						</span>
-					</div>
-					<div class="affinity-bar">
-						<i :style="{ width: affinityPercent(v) }"></i>
-					</div>
-					<div class="affinity-label">
-						{{ v.label }}
-						<el-tag v-if="v.persist" type="warning" size="small" class="persist-badge">{{ t('status.persist') }}</el-tag>
-					</div>
-				</div>
-			</template>
-
-			<template v-if="otherVariables.length">
-				<div class="status-section">{{ t('status.other') }}</div>
-				<div v-for="v in otherVariables" :key="v.variable_id" class="status-row">
-					<span class="status-label">
-						{{ v.label }}
-						<el-tag v-if="v.persist" type="warning" size="small" class="persist-badge">{{ t('status.persist') }}</el-tag>
-					</span>
-					<span class="status-value">{{ variableValues[v.name] ?? v.initial_value }}</span>
-				</div>
-			</template>
-
-			<div v-if="!projectVariables.length" class="status-empty">{{ t('status.empty') }}</div>
-		</el-dialog>
+		<PlayerStatusDialog
+			v-model:visible="statusDialogVisible"
+			:language="playerSettings.language"
+			:playthrough="playthrough"
+			:project-variables="projectVariables"
+			:variable-values="variableValues"
+			:character-names="characterNames"
+		/>
 
 		<!-- 存档 / 读档 -->
-		<el-dialog v-model="saveDialogVisible" :title="t('save.title')" width="540px" class="save-dialog">
-			<div v-for="s in slotDefs" :key="s.slot" class="save-slot">
-				<div class="save-slot-thumb">
-					<img
-						v-if="saveMap[s.slot]?.thumbnail_url"
-						:src="thumbSrc(saveMap[s.slot].thumbnail_url)"
-						alt=""
-						loading="lazy"
-					/>
-					<span v-else class="save-slot-thumb-empty">{{ t('save.noImage') }}</span>
-					<span v-if="saveSlotTitle(saveMap[s.slot])" class="save-slot-thumb-title">
-						{{ saveSlotTitle(saveMap[s.slot]) }}
-					</span>
-				</div>
-				<div class="save-slot-info">
-					<div class="save-slot-title">{{ s.label }}</div>
-					<div class="save-slot-summary">{{ saveMap[s.slot]?.summary || t('save.emptySlot') }}</div>
-					<div v-if="saveMap[s.slot]?.updated_at" class="save-slot-time">
-						{{ formatSaveTime(saveMap[s.slot].updated_at) }}
-					</div>
-				</div>
-				<div class="save-slot-actions">
-					<el-button size="small" @click="saveToSlot(s.slot)">{{ t('save.save') }}</el-button>
-					<el-button size="small" :disabled="!saveMap[s.slot]" @click="loadFromSlot(s.slot)">{{ t('save.load') }}</el-button>
-					<el-button size="small" type="danger" :disabled="!saveMap[s.slot]" @click="deleteSlot(s.slot)">{{ t('save.delete') }}</el-button>
-				</div>
-			</div>
-		</el-dialog>
+		<PlayerSaveDialog
+			v-model:visible="saveDialogVisible"
+			:language="playerSettings.language"
+			:saves="saves"
+			:scene-title-of="sceneTitleById"
+			@save="saveToSlot"
+			@load="loadFromSlot"
+			@delete="deleteSlot"
+		/>
 
 		<!-- 阅读设置 -->
 		<PlayerSettingsDialog
@@ -728,105 +673,18 @@
 		/>
 
 		<!-- 鉴赏 / 收藏 -->
-		<el-dialog v-model="galleryDialogVisible" width="680px" class="gallery-dialog">
-			<template #header>
-				<div class="gallery-header">
-					<div class="gallery-tabs">
-						<button
-							v-for="t in galleryTabs"
-							:key="t.key"
-							type="button"
-							:class="['gallery-tab', { 'is-active': galleryTab === t.key }]"
-							@click="switchGalleryTab(t.key)"
-						>{{ t.label }}</button>
-					</div>
-					<span class="gallery-count">{{ galleryCountText }}</span>
-				</div>
-			</template>
-
-			<!-- CG -->
-			<template v-if="galleryTab === 'cg'">
-				<div v-if="galleryItems.length" class="gallery-grid">
-					<div v-for="cg in galleryItems" :key="cg.cg_id" class="gallery-item">
-						<img v-if="cg.unlocked && cg.image_url" :src="BASE_URL + cg.image_url"
-							 class="gallery-image" :alt="cg.title" loading="lazy" decoding="async" />
-						<div v-else class="gallery-locked">{{ t('gallery.locked') }}</div>
-						<div class="gallery-title">{{ cg.title }}</div>
-						<div class="gallery-desc">
-							{{ cg.unlocked ? (cg.description || '') :
-								t('gallery.unlockEndingCondition', { title: cg.unlock_ending_title || t('gallery.lockedEnding') }) }}
-						</div>
-					</div>
-				</div>
-				<div v-else class="gallery-empty">{{ t('gallery.emptyCg') }}</div>
-			</template>
-
-			<!-- BGM -->
-			<template v-else-if="galleryTab === 'bgm'">
-				<div v-if="musicLoading" class="gallery-empty">{{ t('gallery.loading') }}</div>
-				<div v-else-if="musicItems.length" class="music-gallery-list">
-					<div
-						v-for="m in musicItems"
-						:key="m.music_url"
-						:class="['music-gallery-item', { 'is-locked': !m.unlocked }]"
-					>
-						<div class="music-gallery-meta">
-								<span class="music-gallery-title">{{ m.unlocked ? m.title : t('gallery.lockedTrack') }}</span>
-								<span class="music-gallery-sub">{{ m.unlocked ? 'BGM' : t('gallery.unlockBgmHint') }}</span>
-							</div>
-						<audio
-							v-if="m.unlocked"
-							:src="BASE_URL + m.music_url"
-							controls
-							preload="none"
-							class="music-gallery-audio"
-						></audio>
-						<span v-else class="music-gallery-lock">{{ t('gallery.locked') }}</span>
-					</div>
-				</div>
-				<div v-else class="gallery-empty">{{ t('gallery.emptyBgm') }}</div>
-			</template>
-
-			<!-- 成就 -->
-			<template v-else-if="galleryTab === 'achievement'">
-				<div v-if="achievements.length" class="achievement-gallery-list">
-					<div
-						v-for="a in achievements"
-						:key="a.achievement_id"
-						:class="['achievement-gallery-item', { 'is-locked': !a.unlocked }]"
-					>
-						<div class="achievement-gallery-badge">{{ a.unlocked ? '★' : '?' }}</div>
-						<div class="achievement-gallery-meta">
-								<span class="achievement-gallery-title">{{ a.unlocked ? a.title : t('gallery.lockedAchievement') }}</span>
-								<span class="achievement-gallery-desc">
-									{{ a.unlocked ? (a.description || t('gallery.achievementUnlocked')) : t('gallery.unlockAchievementHint') }}
-								</span>
-							</div>
-					</div>
-				</div>
-				<div v-else class="gallery-empty">{{ t('gallery.emptyAchievement') }}</div>
-			</template>
-
-			<!-- 结局 -->
-			<template v-else>
-				<div v-if="endings.length" class="ending-gallery-list">
-					<div
-						v-for="e in endings"
-						:key="e.ending_id"
-						:class="['ending-gallery-item', { 'is-locked': !e.unlocked }]"
-					>
-						<div class="ending-gallery-badge">{{ e.unlocked ? 'END' : '?' }}</div>
-						<div class="ending-gallery-meta">
-								<span class="ending-gallery-title">{{ e.unlocked ? e.title : t('gallery.lockedEnding') }}</span>
-								<span class="ending-gallery-desc">
-									{{ e.unlocked ? (e.description || t('gallery.endingReached')) : t('gallery.unlockEndingHint') }}
-								</span>
-							</div>
-					</div>
-				</div>
-				<div v-else class="gallery-empty">{{ t('gallery.emptyEnding') }}</div>
-			</template>
-		</el-dialog>
+		<PlayerGalleryDialog
+			v-model:visible="galleryDialogVisible"
+			:language="playerSettings.language"
+			:tab="galleryTab"
+			:items="galleryItems"
+			:count-text="galleryCountText"
+			:music-items="musicItems"
+			:music-loading="musicLoading"
+			:achievements="achievements"
+			:endings="endings"
+			@switch-tab="switchGalleryTab"
+		/>
 	</div>
 </template>
 
@@ -879,6 +737,10 @@ import {
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
+import PlayerEndingDialog from '@/components/player/PlayerEndingDialog.vue'
+import PlayerStatusDialog from '@/components/player/PlayerStatusDialog.vue'
+import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
+import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
@@ -1154,17 +1016,6 @@ const sceneHasDialogues = (sceneId) => (allDialogues.value[sceneId] || []).lengt
 const saveDialogVisible = ref(false);
 const saves = ref([]);
 const isRestoring = ref(false);
-const slotDefs = computed(() => [
-	{ slot: 0, label: t('save.slotAuto') },
-	{ slot: 1, label: t('save.slotN', { n: 1 }) },
-	{ slot: 2, label: t('save.slotN', { n: 2 }) },
-	{ slot: 3, label: t('save.slotN', { n: 3 }) },
-]);
-const saveMap = computed(() => {
-	const map = {};
-	for (const s of saves.value) map[s.slot] = s;
-	return map;
-});
 let autoSaveTimer = null;
 
 // 已读记录（跳过已读 / 二周目）
@@ -1212,25 +1063,6 @@ const pushVariableNotices = (items) => {
 	if (variableNotices.value.length > 8) {
 		variableNotices.value = variableNotices.value.slice(-8);
 	}
-};
-// 好感度面板：绑定角色的变量单独展示，其余变量仍走属性列表
-const affinityVariables = computed(() =>
-	projectVariables.value.filter((v) => !!v.character_id)
-);
-const otherVariables = computed(() =>
-	projectVariables.value.filter((v) => !v.character_id && !v.name.startsWith('behavior_'))
-);
-const characterNameOf = (id) => {
-	const c = characters.value.find((x) => x.character_id === id);
-	return c ? localizedCharacterName(c) : t('character.unnamed');
-};
-const affinityPercent = (v) => {
-	const max = v.max_value == null ? 100 : Number(v.max_value);
-	const min = v.min_value == null ? 0 : Number(v.min_value);
-	const val = Number(variableValues.value[v.name] ?? v.initial_value ?? 0);
-	if (max === min) return val >= max ? '100%' : '0%';
-	const pct = ((val - min) / (max - min)) * 100;
-	return Math.max(0, Math.min(100, pct)) + '%';
 };
 // 场景播放条件（剧情锁）：scene_id → 条件组
 const sceneLocks = ref({});
@@ -1343,12 +1175,6 @@ const jumpToChapter = (chapter) => {
 	ElMessage.success(t('chapters.jumpedToast', { title: chapter.title }));
 };
 const galleryTab = ref('cg');
-const galleryTabs = computed(() => [
-	{ key: 'cg', label: t('gallery.tabCg') },
-	{ key: 'bgm', label: t('gallery.tabBgm') },
-	{ key: 'ending', label: t('gallery.tabEnding') },
-	{ key: 'achievement', label: t('gallery.tabAchievement') },
-]);
 const galleryItems = ref([]);
 const galleryTotal = ref(0);
 const galleryUnlocked = ref(0);
@@ -1439,6 +1265,13 @@ const localizedCharacterName = (character) => {
 		: '';
 	return (translated && String(translated).trim()) ? translated : (character.name || '');
 };
+
+// 状态弹窗用：character_id → 当前语言角色名
+const characterNames = computed(() => {
+	const map = {};
+	for (const c of characters.value) map[c.character_id] = localizedCharacterName(c);
+	return map;
+});
 
 // 当前语言下的台词文本：优先译文，缺失时回退原文
 const localizedText = (dialogue) => {
@@ -3101,24 +2934,10 @@ const saveProgress = (silent = false) => {
 };
 
 // ==================== 云端存档 ====================
-const formatSaveTime = (iso) => {
-	try {
-		return new Date(iso).toLocaleString();
-	} catch (e) {
-		return iso;
-	}
-};
-
 const currentSaveSummary = () => {
 	const title = localizedSceneTitle(currentScene.value) || t('save.unnamedScene');
 	const text = localizedText(currentDialogue.value).replace(/\s+/g, ' ').slice(0, 24);
 	return text ? `${title} · ${text}` : title;
-};
-
-// 存档列表里的场景名：新存档带 scene_id 可实时切换语言，老存档回退已存标题
-const saveSlotTitle = (slot) => {
-	if (!slot) return '';
-	return (slot.scene_id ? sceneTitleById(slot.scene_id) : '') || slot.scene_title || '';
 };
 
 const buildSaveState = () => ({
@@ -3135,12 +2954,6 @@ const buildSaveState = () => ({
 	thumbnail_url: currentScene.value.background_url || projectCoverUrl.value || '',
 	savedAt: new Date().toISOString(),
 });
-
-// 本地静态地址补 BASE_URL，外链直接使用
-const thumbSrc = (url) => {
-	if (!url) return '';
-	return /^http/i.test(url) ? url : BASE_URL + url;
-};
 
 const refreshSaves = async () => {
 	try {
@@ -4280,384 +4093,6 @@ const backToHome = () => {
   white-space: nowrap;
 }
 
-/* CG 鉴赏弹窗 */
-.gallery-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.gallery-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.gallery-tab {
-  border: 1px solid transparent;
-  background: transparent;
-  color: #b07d8d;
-  font-size: 14px;
-  padding: 5px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.gallery-tab:hover {
-  color: #c81f4a;
-}
-
-.gallery-tab.is-active {
-  color: #c81f4a;
-  font-weight: 600;
-  border-color: #f3d6df;
-  background: #fff5f8;
-}
-
-/* BGM 鉴赏 */
-.music-gallery-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.music-gallery-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #f3d6df;
-  border-radius: 10px;
-}
-
-.music-gallery-item.is-locked {
-  opacity: 0.55;
-  background: #fafafa;
-}
-
-.music-gallery-meta {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.music-gallery-title {
-  font-size: 14px;
-  color: #3d2b32;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.music-gallery-sub {
-  font-size: 11px;
-  color: #b99aa5;
-}
-
-.music-gallery-audio {
-  width: 220px;
-  height: 32px;
-}
-
-.music-gallery-lock {
-  font-size: 12px;
-  color: #b99aa5;
-}
-
-/* 成就收藏 */
-.achievement-gallery-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.achievement-gallery-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #f3d6df;
-  border-radius: 10px;
-}
-
-.achievement-gallery-item.is-locked {
-  opacity: 0.62;
-  background: #fafafa;
-}
-
-.achievement-gallery-badge {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #ffcf70, #f0a020);
-}
-
-.achievement-gallery-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.achievement-gallery-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #3d2b32;
-}
-
-.achievement-gallery-desc {
-  font-size: 12px;
-  color: #8a6a76;
-}
-
-/* 结局收藏 */
-.ending-gallery-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.ending-gallery-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #f3d6df;
-  border-radius: 10px;
-}
-
-.ending-gallery-item.is-locked {
-  opacity: 0.6;
-  background: #fafafa;
-}
-
-.ending-gallery-badge {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #ff9fba, #e8467c);
-}
-
-.ending-gallery-item.is-locked .ending-gallery-badge {
-  background: #d9d9d9;
-}
-
-.ending-gallery-meta {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ending-gallery-title {
-  font-size: 14px;
-  color: #3d2b32;
-}
-
-.ending-gallery-desc {
-  font-size: 11px;
-  color: #b99aa5;
-}
-
-.gallery-count {
-  color: #ff8fab;
-  font-size: 13px;
-}
-
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.gallery-item {
-  border: 1px solid #f3d6df;
-  border-radius: 10px;
-  background: #fff9fc;
-  padding: 8px;
-}
-
-.gallery-image,
-.gallery-locked {
-  width: 100%;
-  height: 120px;
-  border-radius: 6px;
-  display: block;
-}
-
-.gallery-image {
-  object-fit: cover;
-}
-
-.gallery-locked {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f4eef1;
-  color: #bbb;
-  font-size: 13px;
-  letter-spacing: 2px;
-}
-
-.gallery-title {
-  margin-top: 8px;
-  font-size: 14px;
-  color: #555;
-  font-weight: 600;
-}
-
-.gallery-desc {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #999;
-  line-height: 1.5;
-  min-height: 18px;
-}
-
-.gallery-empty {
-  text-align: center;
-  color: #bbb;
-  padding: 24px 0;
-}
-
-.status-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 4px;
-  border-bottom: 1px dashed #f3d6df;
-}
-
-.status-label {
-  color: #555;
-  font-size: 14px;
-}
-
-.status-value {
-  color: #c81f4a;
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.status-empty {
-  color: #999;
-  text-align: center;
-  padding: 20px;
-}
-
-/* 好感度面板 */
-.status-section {
-  margin-top: 10px;
-  padding: 4px 2px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #b07d8d;
-  letter-spacing: 0.5px;
-}
-
-.affinity-item {
-  padding: 8px 4px 10px;
-  border-bottom: 1px dashed #f3d6df;
-}
-
-.affinity-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.affinity-name {
-  color: #3d2b32;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.affinity-num {
-  color: #c81f4a;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.affinity-bar {
-  margin-top: 6px;
-  height: 8px;
-  border-radius: 4px;
-  background: #fbe7ee;
-  overflow: hidden;
-}
-
-.affinity-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #ff9fba 0%, #e8467c 100%);
-  transition: width 0.3s ease;
-}
-
-.affinity-label {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #b99aa5;
-}
-
-.persist-badge {
-  margin-left: 6px;
-  transform: scale(0.85);
-  transform-origin: left center;
-}
-
-/* 结局页 */
-.ending-content {
-  text-align: center;
-  padding: 10px 0 4px;
-}
-
-.ending-badge {
-  display: inline-block;
-  padding: 4px 14px;
-  border-radius: 999px;
-  background: #ffe4ec;
-  color: #c81f4a;
-  font-size: 12px;
-  letter-spacing: 2px;
-}
-
-.ending-content h2 {
-  margin: 14px 0 8px;
-  color: #c81f4a;
-}
-
-.ending-content p {
-  color: #666;
-  line-height: 1.7;
-}
-
 /* 竖屏提示 */
 .rotate-hint {
   position: absolute;
@@ -4684,88 +4119,6 @@ const backToHome = () => {
   padding: 3px 10px;
   font-size: 12px;
   cursor: pointer;
-}
-
-/* 存档面板 */
-.save-slot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #f3d6df;
-  border-radius: 10px;
-  margin-bottom: 10px;
-  background: #fff8fa;
-}
-
-.save-slot-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.save-slot-thumb {
-  position: relative;
-  width: 96px;
-  height: 58px;
-  border-radius: 7px;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: #f6e9ee;
-}
-
-.save-slot-thumb img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.save-slot-thumb-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  font-size: 10px;
-  color: #b99aa5;
-}
-
-.save-slot-thumb-title {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 2px 5px;
-  font-size: 9px;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
-}
-
-.save-slot-title {
-  font-weight: 600;
-  color: #b3244a;
-  font-size: 14px;
-}
-
-.save-slot-summary {
-  color: #666;
-  font-size: 13px;
-  margin-top: 2px;
-}
-
-.save-slot-time {
-  color: #aaa;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.save-slot-actions {
-  display: flex;
-  gap: 6px;
-  flex: 0 0 auto;
 }
 
 /* 预览区域 */
