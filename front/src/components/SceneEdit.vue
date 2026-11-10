@@ -1093,146 +1093,35 @@
 		</el-dialog>
 
 		<!-- 批量配音：选中台词逐条 TTS 并回填 voice_url -->
-		<el-dialog
-			v-model="voiceBatchVisible"
-			title="批量配音"
-			width="460px"
-			append-to-body
-			:close-on-click-modal="!voiceBatchRunning"
-			:close-on-press-escape="!voiceBatchRunning"
-			:show-close="!voiceBatchRunning"
-		>
-			<div class="voice-batch-hint">
-				将按当前筛选处理 <b>{{ voiceBatchQueueCount }}</b> 条台词（已选 {{ selectedIndexes.length }} 条），生成后写入对应台词的配音。
-			</div>
-			<div class="voice-batch-row">
-				<span class="voice-batch-label">音色</span>
-				<el-select v-model="voiceBatchVoice" size="small" class="voice-batch-select" :disabled="voiceBatchRunning">
-					<el-option
-						v-for="v in voiceOptions"
-						:key="v.value"
-						:label="v.label"
-						:value="v.value"
-					/>
-				</el-select>
-			</div>
-			<div class="voice-batch-row">
-				<span class="voice-batch-label">情绪</span>
-				<el-select v-model="voiceBatchEmotionFilter" size="small" class="voice-batch-select" :disabled="voiceBatchRunning">
-					<el-option label="全部情绪" value="all" />
-					<el-option label="仅未标注情绪" value="none" />
-					<el-option v-for="e in emotionOptions" :key="e" :label="`仅 ${e}`" :value="e" />
-				</el-select>
-			</div>
-			<div class="voice-batch-checks">
-				<label class="voice-batch-check">
-					<input v-model="voiceBatchOverwrite" type="checkbox" :disabled="voiceBatchRunning" />
-					<span>覆盖已有配音</span>
-				</label>
-				<label class="voice-batch-check">
-					<input v-model="voiceBatchUseCharacter" type="checkbox" :disabled="voiceBatchRunning" />
-					<span>优先使用角色默认音色（角色未设置时用上面的音色）</span>
-				</label>
-				<label class="voice-batch-check">
-					<input v-model="voiceBatchUseEmotion" type="checkbox" :disabled="voiceBatchRunning" />
-					<span>按台词情绪调整语速/音调（生气更快、低声更慢、哭腔更轻）</span>
-				</label>
-				<label class="voice-batch-check">
-					<input v-model="voiceBatchAutoTag" type="checkbox" :disabled="voiceBatchRunning" />
-					<span>未标注情绪的台词先自动识别（规则推断，仅补全空白）</span>
-				</label>
-			</div>
-			<div v-if="voiceBatchRunning" class="voice-batch-progress">
-				正在生成 {{ voiceBatchDone }} / {{ voiceBatchTotal }}
-				<div class="voice-batch-bar">
-					<div
-						class="voice-batch-bar-fill"
-						:style="{ width: voiceBatchPercent + '%' }"
-					></div>
-				</div>
-				<div class="voice-batch-current">{{ voiceBatchCurrent }}</div>
-			</div>
-			<div v-if="voiceBatchErrors.length" class="voice-batch-errors">
-				失败 {{ voiceBatchErrors.length }} 条：{{ voiceBatchErrors.join('；') }}
-			</div>
-			<template #footer>
-				<el-button :disabled="voiceBatchRunning" @click="voiceBatchVisible = false">关闭</el-button>
-				<el-button type="primary" :loading="voiceBatchRunning" @click="runVoiceBatch">
-					{{ voiceBatchRunning ? '生成中…' : '开始生成' }}
-				</el-button>
-			</template>
-		</el-dialog>
+		<VoiceBatchDialog
+			v-model:visible="voiceBatchVisible"
+			:items="voiceBatchItems"
+			:selected-count="selectedIndexes.length"
+			:emotion-options="emotionOptions"
+			:running="voiceBatchRunning"
+			:done="voiceBatchDone"
+			:total="voiceBatchTotal"
+			:current="voiceBatchCurrent"
+			:errors="voiceBatchErrors"
+			@run="runVoiceBatch"
+		/>
 
 		<!-- 配音导演：场景情绪分布 + 规则自动标注 -->
-		<el-dialog
-			v-model="voiceDirectorVisible"
-			title="配音导演"
-			width="560px"
-			append-to-body
-		>
-			<div class="director-section">
-				<div class="director-section-title">场景情绪分布</div>
-				<template v-if="sceneEmotionStats.total">
-					<div class="director-dist-bar">
-						<div
-							v-for="row in emotionDistSegments"
-							:key="row.emotion"
-							class="director-dist-seg"
-							:class="emotionClass(row.emotion)"
-							:style="{ width: row.percent + '%' }"
-							:title="`${row.emotion} ${row.count} 条`"
-						></div>
-					</div>
-					<div class="director-dist-legend">
-						<span v-for="row in emotionStatRows" :key="row.emotion" class="director-dist-item">
-							<i class="director-dot" :class="emotionClass(row.emotion)"></i>
-							{{ row.emotion }} {{ row.count }}
-						</span>
-					</div>
-				</template>
-				<div v-else class="director-empty">当前场景还没有可标注情绪的台词。</div>
-			</div>
-
-			<div class="director-section">
-				<div class="director-section-title">自动标注情绪</div>
-				<div class="director-toolbar">
-					<el-select v-model="emotionTagScope" size="small" style="width: 180px" :disabled="emotionTagRunning">
-						<el-option :label="`本场景全部台词（${sceneVoicableCount}）`" value="all" />
-						<el-option :label="`仅选中的 ${selectedIndexes.length} 条`" value="selected" :disabled="!selectedIndexes.length" />
-					</el-select>
-					<label class="voice-batch-check">
-						<input v-model="emotionTagOnlyUnlabeled" type="checkbox" :disabled="emotionTagRunning" />
-						<span>仅补全未标注情绪</span>
-					</label>
-					<el-button size="small" type="primary" :loading="emotionTagRunning" @click="runEmotionAutoTag">
-						识别情绪
-					</el-button>
-				</div>
-				<div v-if="emotionTagRows.length" class="director-suggest-list">
-					<div v-for="row in emotionTagRows" :key="row.index" class="director-suggest-row">
-						<el-checkbox v-model="row.checked" />
-						<div class="director-suggest-main">
-							<div class="director-suggest-text">#{{ row.index + 1 }} {{ row.text || '（空台词）' }}</div>
-							<div class="director-suggest-reason">
-								建议依据：{{ row.reason }}
-								<span v-if="row.confidence === 'low'" class="director-low">（低置信，可手动改）</span>
-							</div>
-						</div>
-						<el-select v-model="row.emotion" size="small" style="width: 100px">
-							<el-option v-for="e in emotionOptions" :key="e" :label="e" :value="e" />
-						</el-select>
-					</div>
-				</div>
-				<div v-else class="director-empty">选择范围后点击「识别情绪」，确认建议后应用为标签。</div>
-			</div>
-
-			<template #footer>
-				<el-button @click="voiceDirectorVisible = false">关闭</el-button>
-				<el-button type="primary" :disabled="!emotionTagRows.length" @click="applyEmotionTags">
-					应用标注（{{ emotionTagCheckedCount }}）
-				</el-button>
-			</template>
-		</el-dialog>
+		<VoiceDirectorDialog
+			v-model:visible="voiceDirectorVisible"
+			v-model:scope="emotionTagScope"
+			v-model:only-unlabeled="emotionTagOnlyUnlabeled"
+			:emotion-options="emotionOptions"
+			:stat-rows="emotionStatRows"
+			:scene-total="sceneEmotionStats.total"
+			:scene-voicable-count="sceneVoicableCount"
+			:selected-count="selectedIndexes.length"
+			:rows="emotionTagRows"
+			:running="emotionTagRunning"
+			:checked-count="emotionTagCheckedCount"
+			@tag="runEmotionAutoTag"
+			@apply="applyEmotionTags"
+		/>
 
 		<!-- 逐句译文：一条台词在多种语言下的文本，缺失时播放器回退原文 -->
 		<DialogueTranslationDialog
@@ -1348,6 +1237,8 @@ import SceneStagePreview from '@/components/SceneStagePreview.vue';
 import DialogueTranslationDialog from '@/components/scene/DialogueTranslationDialog.vue';
 import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vue';
 import ChoiceTranslationDialog from '@/components/scene/ChoiceTranslationDialog.vue';
+import VoiceBatchDialog from '@/components/scene/VoiceBatchDialog.vue';
+import VoiceDirectorDialog from '@/components/scene/VoiceDirectorDialog.vue';
 
 const props = defineProps({
 	sceneId: {
@@ -1617,50 +1508,18 @@ const batchDuplicate = () => {
 };
 
 // ===== 批量配音：选中台词逐条 TTS，生成后回填 voice_url =====
-const voiceOptions = [
-	{ value: 'BV001_streaming', label: '通用女声 · 童声偏亮' },
-	{ value: 'BV002_streaming', label: '通用男声 · 沉稳' },
-	{ value: 'BV700_streaming', label: '通用女声 · 知性' },
-	{ value: 'BV705_streaming', label: '通用女声 · 活泼' },
-	{ value: 'BV701_streaming', label: '通用男声 · 磁性' },
-];
 // 配音导演：台词情绪标签（与后端 EMOTION_OPTIONS 一致）
 const emotionOptions = ['平静', '犹豫', '生气', '哭腔', '低声'];
 const voiceBatchVisible = ref(false);
-const voiceBatchVoice = ref('BV001_streaming');
-const voiceBatchOverwrite = ref(false);
-const voiceBatchUseCharacter = ref(true);
-const voiceBatchUseEmotion = ref(true);
-const voiceBatchAutoTag = ref(true);
-const voiceBatchEmotionFilter = ref('all');
 const voiceBatchRunning = ref(false);
 const voiceBatchDone = ref(0);
 const voiceBatchTotal = ref(0);
 const voiceBatchCurrent = ref('');
 const voiceBatchErrors = ref([]);
-const voiceBatchPercent = computed(() =>
-	voiceBatchTotal.value ? Math.round(voiceBatchDone.value * 100 / voiceBatchTotal.value) : 0
-);
 
-const emotionFilterMatches = (dialogue) => {
-	const filter = voiceBatchEmotionFilter.value;
-	if (filter === 'all') return true;
-	// 非标准值一律视为未标注，避免历史脏数据绕过筛选
-	const labeled = emotionOptions.includes(dialogue.emotion);
-	if (filter === 'none') return !labeled;
-	return dialogue.emotion === filter;
-};
-
-// 批量配音弹窗里的队列预览：与 runVoiceBatch 的筛选条件保持一致
-const voiceBatchQueueCount = computed(() =>
-	selectedIndexes.value.filter(i => {
-		const d = dialogues.value[i];
-		return d &&
-			d.content_type !== '选择' &&
-			String(d.content_text || '').trim() &&
-			(voiceBatchOverwrite.value || !d.voice_url) &&
-			emotionFilterMatches(d);
-	}).length
+// 弹窗队列预览的数据源：当前选中的台词
+const voiceBatchItems = computed(() =>
+	selectedIndexes.value.map(i => ({ index: i, dialogue: dialogues.value[i] }))
 );
 
 const openVoiceBatch = () => {
@@ -1679,38 +1538,44 @@ const characterVoiceFor = (dialogue) => {
 	return (c && c.voice_type) || '';
 };
 
-const runVoiceBatch = async () => {
+const runVoiceBatch = async ({
+	voice,
+	overwrite,
+	useCharacter,
+	useEmotion,
+	autoTag,
+	queue,
+}) => {
 	if (voiceBatchRunning.value) return;
 	const pid = Number(projectId.value || scene.value.project_id);
 	if (!pid) {
 		ElMessage.warning('项目信息加载中，请稍后再试');
 		return;
 	}
-	// 先按当前文本与情绪筛选出要处理的台词
-	const queue = selectedIndexes.value
-		.map(i => ({ index: i, dialogue: dialogues.value[i] }))
+	// 队列由弹窗按当前筛选条件算好，这里只做兜底校验
+	const queue_ = queue
+		.map(index => ({ index, dialogue: dialogues.value[index] }))
 		.filter(({ dialogue }) =>
 			dialogue &&
 			dialogue.content_type !== '选择' &&
 			String(dialogue.content_text || '').trim() &&
-			(voiceBatchOverwrite.value || !dialogue.voice_url) &&
-			emotionFilterMatches(dialogue)
+			(overwrite || !dialogue.voice_url)
 		);
-	if (!queue.length) {
+	if (!queue_.length) {
 		ElMessage.info('没有符合筛选条件的台词，请检查情绪筛选或勾选「覆盖已有配音」');
 		return;
 	}
 
 	voiceBatchRunning.value = true;
 	voiceBatchErrors.value = [];
-	voiceBatchTotal.value = queue.length;
+	voiceBatchTotal.value = queue_.length;
 	voiceBatchDone.value = 0;
 	let success = 0;
 
 	try {
 		// 未标注情绪的台词先按规则补全，确保「按情绪调整语速/音调」生效
-		if (voiceBatchAutoTag.value) {
-			const missing = queue.filter(({ dialogue }) => !emotionOptions.includes(dialogue.emotion));
+		if (autoTag) {
+			const missing = queue_.filter(({ dialogue }) => !emotionOptions.includes(dialogue.emotion));
 			if (missing.length) {
 				try {
 					const suggestions = await autoTagEmotions(
@@ -1733,7 +1598,7 @@ const runVoiceBatch = async () => {
 			}
 		}
 
-		for (const item of queue) {
+		for (const item of queue_) {
 			const index = item.index;
 			let dialogue = dialogues.value[index];
 			if (!dialogue) continue;
@@ -1748,9 +1613,9 @@ const runVoiceBatch = async () => {
 				}
 
 				const text = String(dialogue.content_text || '').trim();
-				const voiceType = (voiceBatchUseCharacter.value && characterVoiceFor(dialogue))
-					|| voiceBatchVoice.value;
-				const emotion = voiceBatchUseEmotion.value ? (dialogue.emotion || '') : '';
+				const voiceType = (useCharacter && characterVoiceFor(dialogue))
+					|| voice;
+				const emotion = useEmotion ? (dialogue.emotion || '') : '';
 				const info = await submitAndWait(
 					() => generateVoice({ text, voice_type: voiceType, emotion }),
 					{ onProgress: (s) => { if (s.progress?.stage) voiceBatchCurrent.value = s.progress.stage; } }
@@ -1819,17 +1684,7 @@ const emotionStatRows = computed(() =>
 			: 0
 	}))
 );
-const emotionDistSegments = computed(() => emotionStatRows.value.filter(r => r.count > 0));
 const emotionTagCheckedCount = computed(() => emotionTagRows.value.filter(r => r.checked).length);
-
-const emotionClass = (emotion) => ({
-	'平静': 'emotion-calm',
-	'犹豫': 'emotion-hesitate',
-	'生气': 'emotion-angry',
-	'哭腔': 'emotion-cry',
-	'低声': 'emotion-whisper',
-	'未标注': 'emotion-none'
-}[emotion] || 'emotion-none');
 
 const openVoiceDirector = () => {
 	emotionTagRows.value = [];
@@ -5204,194 +5059,6 @@ onBeforeUnmount(() => {
 .batch-count {
   font-size: 12px;
   color: #a84463;
-}
-
-/* 批量配音弹窗 */
-.voice-batch-hint {
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 10px;
-  line-height: 1.6;
-}
-
-.voice-batch-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.voice-batch-label {
-  font-size: 12px;
-  color: #8a6a76;
-  flex-shrink: 0;
-}
-
-.voice-batch-select {
-  flex: 1;
-}
-
-.voice-batch-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #8a6a76;
-  cursor: pointer;
-}
-
-.voice-batch-check input {
-  accent-color: #e8467c;
-}
-
-.voice-batch-progress {
-  margin-top: 12px;
-  font-size: 12px;
-  color: #a84463;
-}
-
-.voice-batch-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: #f6dce5;
-  overflow: hidden;
-  margin: 6px 0;
-}
-
-.voice-batch-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #e8467c, #ff9db5);
-  transition: width 0.2s;
-}
-
-.voice-batch-current {
-  font-size: 11px;
-  color: #94a3b8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.voice-batch-errors {
-  margin-top: 10px;
-  max-height: 90px;
-  overflow-y: auto;
-  font-size: 11px;
-  color: #c0392b;
-  background: #fff5f7;
-  border: 1px solid #f3c9d3;
-  border-radius: 7px;
-  padding: 6px 8px;
-}
-
-/* 配音导演：情绪分布与自动标注 */
-.director-section {
-  margin-bottom: 16px;
-}
-
-.director-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #8a4a60;
-  margin-bottom: 8px;
-}
-
-.director-dist-bar {
-  display: flex;
-  height: 12px;
-  border-radius: 6px;
-  overflow: hidden;
-  background: #f4e6ec;
-}
-
-.director-dist-seg {
-  height: 100%;
-}
-
-.director-dist-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-top: 8px;
-}
-
-.director-dist-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: #7c5a66;
-}
-
-.director-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.emotion-calm { background: #7fb2e5; }
-.emotion-hesitate { background: #c9a4e6; }
-.emotion-angry { background: #e8736f; }
-.emotion-cry { background: #e89ab8; }
-.emotion-whisper { background: #7fcbb5; }
-.emotion-none { background: #cbd5e1; }
-
-.director-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.director-suggest-list {
-  max-height: 280px;
-  overflow-y: auto;
-  border: 1px solid #f0dbe4;
-  border-radius: 8px;
-}
-
-.director-suggest-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid #f7ebf1;
-}
-
-.director-suggest-row:last-child {
-  border-bottom: none;
-}
-
-.director-suggest-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.director-suggest-text {
-  font-size: 12px;
-  color: #4b5563;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.director-suggest-reason {
-  font-size: 11px;
-  color: #94a3b8;
-  margin-top: 2px;
-}
-
-.director-low {
-  color: #d97706;
-}
-
-.director-empty {
-  font-size: 12px;
-  color: #94a3b8;
-  padding: 10px 0;
 }
 
 .dlg-select {
