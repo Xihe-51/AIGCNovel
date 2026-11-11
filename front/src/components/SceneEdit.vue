@@ -1011,7 +1011,7 @@ import {
 import { generateText, continueStory, generateVoice, submitAndWait } from '@/api/ai'  
 import { importAiAsset, checkProjectAssets } from '@/api/asset'
 import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/branch'
-import { listVariables, listEffects, saveContentEffects } from '@/api/variable'
+import { listVariables, listEffects } from '@/api/variable'
 import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
 import { createProjectVersion } from '@/api/version'
 import { saveBranchTranslation } from '@/api/translation'
@@ -1043,6 +1043,7 @@ import { MAX_AVATAR_LAYERS } from '@/composables/scene/useDirectiveEditor';
 import { useSceneStagePreview } from '@/composables/scene/useSceneStagePreview';
 import { useSceneStageActions } from '@/composables/scene/useSceneStageActions';
 import { useSceneTranslations } from '@/composables/scene/useSceneTranslations';
+import { useSceneNodeEditors } from '@/composables/scene/useSceneNodeEditors';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1872,79 +1873,31 @@ const buildSceneLockPayload = () => {
 	return { mode: sceneLockMode.value === 'or' ? 'or' : 'and', items };
 };
 
-/* ===== 台词显示条件 ===== */
-const nodeConditionVisible = ref(false);
-const nodeConditionIndex = ref(-1);
-const nodeConditionMode = ref('and');
-const nodeConditionItems = ref([]);
-const nodeConditionTarget = computed(() => {
-	const d = dialogues.value[nodeConditionIndex.value];
-	return d ? (d.content_text || '').slice(0, 30) : '';
+/* ===== 节点级编辑：显示条件 / 数值变化（见 useSceneNodeEditors） ===== */
+const {
+	nodeConditionVisible,
+	nodeConditionIndex,
+	nodeConditionMode,
+	nodeConditionItems,
+	nodeConditionTarget,
+	hasNodeCondition,
+	openNodeConditionDialog,
+	addNodeCondition,
+	removeNodeCondition,
+	applyNodeCondition,
+	clearNodeCondition,
+	getDialogueEffects,
+	addEffect,
+	removeEffect,
+	saveDialogueEffects,
+} = useSceneNodeEditors({
+	projectId,
+	dialogues,
+	variables,
+	effectsMap,
+	markDirty,
+	pushHistory,
 });
-
-const hasNodeCondition = (dialogue) => {
-	const cond = dialogue?.branch_condition;
-	if (!cond || typeof cond !== 'object') return false;
-	if (Array.isArray(cond.items)) return cond.items.some(i => i && i.variable);
-	return !!cond.variable;
-};
-
-const openNodeConditionDialog = (index) => {
-	nodeConditionIndex.value = index;
-	const cond = dialogues.value[index]?.branch_condition;
-	nodeConditionMode.value = cond?.mode === 'or' ? 'or' : 'and';
-	const items = Array.isArray(cond?.items)
-		? cond.items
-		: (cond?.variable ? [cond] : []);
-	nodeConditionItems.value = items.map(c => ({
-		variable: c.variable || '',
-		op: c.op || '>=',
-		value: Math.trunc(Number(c.value) || 0),
-	}));
-	nodeConditionVisible.value = true;
-};
-
-const addNodeCondition = () => {
-	nodeConditionItems.value.push({ variable: '', op: '>=', value: 0 });
-};
-
-const removeNodeCondition = (index) => {
-	nodeConditionItems.value.splice(index, 1);
-};
-
-const buildNodeConditionPayload = () => {
-	const items = nodeConditionItems.value
-		.filter(c => c.variable)
-		.map(c => ({
-			variable: c.variable,
-			op: c.op || '>=',
-			value: Math.trunc(Number(c.value) || 0),
-		}));
-	if (!items.length) return null;
-	return { mode: nodeConditionMode.value === 'or' ? 'or' : 'and', items };
-};
-
-const applyNodeCondition = () => {
-	const dialogue = dialogues.value[nodeConditionIndex.value];
-	if (!dialogue) return;
-	dialogue.branch_condition = buildNodeConditionPayload();
-	markDirty();
-	nodeConditionVisible.value = false;
-	ElMessage.success(
-		dialogue.branch_condition
-			? '已设置台词显示条件，保存全部后生效'
-			: '已清除台词显示条件，保存全部后生效'
-	);
-};
-
-const clearNodeCondition = () => {
-	const dialogue = dialogues.value[nodeConditionIndex.value];
-	if (!dialogue) return;
-	dialogue.branch_condition = null;
-	markDirty();
-	nodeConditionVisible.value = false;
-	ElMessage.success('已清除台词显示条件，保存全部后生效');
-};
 
 const fetchSceneData = async () => {
 	try {
@@ -3065,56 +3018,6 @@ const saveChoices = async (dialogue, index) => {
     console.error('保存分支失败:', e);
     ElMessage.error('保存分支失败：' + (e?.response?.data?.message || e?.message || '未知错误'));
   }
-};
-
-// ==================== 节点数值变化 ====================
-const getDialogueEffects = (dialogue) => {
-	if (!dialogue._effects) {
-		dialogue._effects = (effectsMap.value[dialogue.content_id] || []).map(e => ({ ...e }));
-	}
-	return dialogue._effects;
-};
-
-const addEffect = (dialogue) => {
-	pushHistory();
-	markDirty();
-	const list = getDialogueEffects(dialogue);
-	list.push({
-		variable_id: variables.value[0]?.variable_id || null,
-		delta: 1,
-	});
-};
-
-const removeEffect = (dialogue, index) => {
-	pushHistory();
-	markDirty();
-	getDialogueEffects(dialogue).splice(index, 1);
-};
-
-const saveDialogueEffects = async (dialogue) => {
-	if (!dialogue.content_id) {
-		ElMessage.warning('请先保存本条内容，再配置数值变化');
-		return;
-	}
-	const list = (getDialogueEffects(dialogue) || [])
-		.filter(e => e.variable_id && Number(e.delta) !== 0)
-		.map(e => ({ variable_id: Number(e.variable_id), delta: Math.trunc(Number(e.delta)) }));
-
-	try {
-		await saveContentEffects(Number(projectId.value), dialogue.content_id, list);
-		effectsMap.value = {
-			...effectsMap.value,
-			[dialogue.content_id]: list.map(e => ({
-				...e,
-				label: variables.value.find(v => v.variable_id === e.variable_id)?.label || '',
-			})),
-		};
-		dialogue._effects = (effectsMap.value[dialogue.content_id] || []).map(e => ({ ...e }));
-		ElMessage.success(`已保存 ${list.length} 条数值变化`);
-	} catch (e) {
-		console.error('保存数值变化失败:', e);
-		ElMessage.error('保存数值变化失败：' + (e?.response?.data?.message || e?.message || '未知错误'));
-	}
 };
 
 // 说明（第 2 批改造）：
