@@ -713,9 +713,7 @@ import {
 	updateScene,
 } from '@/api/scenes'
 import { listBranches, getStoryGraph } from '@/api/branch'
-import { listAchievements, checkAchievements } from '@/api/achievement'
 import { listPublicReleases } from '@/api/release'
-import { listSaves, getSave, putSave, deleteSave } from '@/api/save'
 import { listReads, markReads } from '@/api/read'
 import { listChapters } from '@/api/chapter'
 import { listVariables, listEffects, getProjectMeta, saveProjectMeta } from '@/api/variable'
@@ -727,6 +725,9 @@ import { themeClass } from '@/utils/uiThemes'
 import { playerText } from '@/utils/playerI18n'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
+import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
+import { useSaveSlots } from '@/composables/player/useSaveSlots'
+import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import {
 	usePlayerStage,
 	layerIdOf,
@@ -1013,9 +1014,6 @@ const branches = ref([]); // 剧情分支（branch_paths）
 const sceneHasDialogues = (sceneId) => (allDialogues.value[sceneId] || []).length > 0;
 
 // 存档
-const saveDialogVisible = ref(false);
-const saves = ref([]);
-const isRestoring = ref(false);
 let autoSaveTimer = null;
 
 // 已读记录（跳过已读 / 二周目）
@@ -1074,16 +1072,6 @@ const endings = ref([]);
 const triggeredEndings = ref(new Set());
 const endingDialogVisible = ref(false);
 const currentEnding = ref(null);
-
-// 成就
-const achievements = ref([]);
-let achievementTimer = null;
-let achievementRunning = false;
-let achievementFinished = false;
-
-const unlockedAchievementCount = computed(() =>
-	achievements.value.filter(a => a.unlocked).length
-);
 
 // 鉴赏 / 收藏：CG、BGM、结局
 const galleryDialogVisible = ref(false);
@@ -1666,117 +1654,24 @@ const startPreview = () => {
 };
 
 // ==================== 音频混音：BGM 淡入 + 语音闪避 ====================
-// 用 setInterval + Date.now() 计时而非 requestAnimationFrame：
-// 后台标签页 rAF 会被完全暂停，淡入会卡在中间音量（甚至 0，音频仍在播）。
-// setInterval 后台虽被节流，但每个 tick 按真实经过时间推进，回来后会直接补到终值。
-let bgmFadeTimer = null;
-let bgmFadeTarget = 0;
-let bgmDuckActive = false;
-
-const cancelBgmFade = () => {
-	if (bgmFadeTimer) clearInterval(bgmFadeTimer);
-	bgmFadeTimer = null;
-};
-
-// 目标音量：用户设置 × 闪避系数（语音播放时压到 35%）
-const bgmTargetVolume = () => (
-	(playerSettings.value.bgmVolume / 100) * (bgmDuckActive ? 0.35 : 1)
-);
-
-const fadeBgmTo = (target, duration = 600) => {
-	const audio = backgroundMusic.value;
-	if (!audio) return;
-	cancelBgmFade();
-	const from = Number(audio.volume) || 0;
-	const to = Math.max(0, Math.min(1, target));
-	bgmFadeTarget = to;
-	if (duration <= 0 || Math.abs(to - from) < 0.001) {
-		audio.volume = to;
-		return;
-	}
-	const startAt = Date.now();
-	const tick = () => {
-		const t = Math.min(1, (Date.now() - startAt) / duration);
-		audio.volume = from + (to - from) * t;
-		if (t >= 1) {
-			cancelBgmFade();
-			audio.volume = to;   // 终值兜底
-		}
-	};
-	bgmFadeTimer = setInterval(tick, 40);
-	tick();  // 立即走一步，避免等第一个 interval
-};
-
-// 标签页重新可见时，若淡入还没结束就直接补到终值，不依赖被暂停的定时器
-const onBgmVisibilityChange = () => {
-	if (document.visibilityState !== 'visible') return;
-	const audio = backgroundMusic.value;
-	if (audio && bgmFadeTimer) {
-		cancelBgmFade();
-		audio.volume = bgmFadeTarget;
-	}
-};
-
-// 播放背景音乐（同一首持续播放时只微调音量，不重头播放）
-const playBackgroundMusic = () => {
-	const audio = backgroundMusic.value;
-	if (!audio || !currentScene.value.music_url) return;
-	const target = bgmTargetVolume();
-	if (!audio.paused) {
-		fadeBgmTo(target, 400);
-		return;
-	}
-	audio.volume = 0;
-	audio.play().then(() => {
-		fadeBgmTo(target, 900);
-	}).catch(e => {
-		console.log('背景音乐自动播放失败，需要用户交互后才能播放:', e);
-	});
-};
-
-// 停止背景音乐
-const stopBackgroundMusic = () => {
-	cancelBgmFade();
-	if (backgroundMusic.value) {
-		backgroundMusic.value.pause();
-		backgroundMusic.value.currentTime = 0;
-	}
-};
-
-// 语音播放期间压低 BGM，语音结束/暂停后恢复
-const setBgmDucking = (active) => {
-	if (bgmDuckActive === active) return;
-	bgmDuckActive = active;
-	const audio = backgroundMusic.value;
-	if (audio && !audio.paused) fadeBgmTo(bgmTargetVolume(), active ? 250 : 450);
-};
-
-const onVoicePlay = () => setBgmDucking(true);
-const onVoiceEnded = () => setBgmDucking(false);
+const {
+	bgmTargetVolume,
+	fadeBgmTo,
+	playBackgroundMusic,
+	stopBackgroundMusic,
+	setBgmDucking,
+	onVoicePlay,
+	onVoiceEnded,
+	applyVolumes,
+	replayVoice,
+} = usePlayerAudio({
+	backgroundMusic,
+	dialogueVoice,
+	playerSettings,
+	getCurrentScene: () => currentScene.value,
+})
 
 // ==================== 阅读设置 ====================
-const applyVolumes = () => {
-	const bgm = backgroundMusic.value;
-	if (bgm) {
-		if (bgm.paused) bgm.volume = bgmTargetVolume();
-		else fadeBgmTo(bgmTargetVolume(), 200);
-	}
-	document.querySelectorAll('.dialogue-display audio').forEach(audio => {
-		audio.volume = playerSettings.value.voiceVolume / 100;
-	});
-};
-
-// 重播本句语音（语音总开关关闭时按钮不显示）
-const replayVoice = () => {
-	const audio = dialogueVoice.value;
-	if (!audio) return;
-	try {
-		audio.currentTime = 0;
-		audio.volume = playerSettings.value.voiceVolume / 100;
-		audio.play().catch(() => { /* 浏览器拦截时忽略 */ });
-	} catch (_) { /* ignore */ }
-};
-
 // 逐字显示
 const fullText = () => localizedText(currentDialogue.value) || '';
 
@@ -2228,14 +2123,19 @@ const loadEndings = async () => {
 };
 
 // ==================== 成就 ====================
-const loadPlayerAchievements = async () => {
-	try {
-		achievements.value = await listAchievements(Number(props.projectId));
-	} catch (e) {
-		console.warn('读取成就失败:', e);
-		achievements.value = [];
-	}
-};
+const {
+	achievements,
+	unlockedAchievementCount,
+	loadPlayerAchievements,
+	scheduleAchievementCheck,
+	resetAchievementState,
+} = usePlayerAchievements({
+	projectId: () => Number(props.projectId),
+	getDebugMode: () => debugMode.value,
+	getVariables: () => variableValues.value,
+	getEndings: () => [...triggeredEndings.value],
+	t,
+})
 
 // 玩家侧更新日志（公开作品才会返回）
 const loadPublicReleases = async () => {
@@ -2244,37 +2144,6 @@ const loadPublicReleases = async () => {
 	} catch (e) {
 		publicReleases.value = [];
 	}
-};
-
-const runAchievementCheck = async () => {
-	if (debugMode.value || achievementRunning || !achievements.value.length) return;
-	achievementRunning = true;
-	try {
-		const res = await checkAchievements(Number(props.projectId), {
-			variables: variableValues.value,
-			endings: [...triggeredEndings.value],
-			finished: achievementFinished,
-		});
-		if (res?.achievements) achievements.value = res.achievements;
-		const fresh = res?.newly_unlocked || [];
-		for (const a of fresh) {
-			ElMessage.success(t('toast.achievementUnlocked', { title: a.title }));
-		}
-	} catch (e) {
-		/* 成就检查失败不影响试玩 */
-	} finally {
-		achievementRunning = false;
-	}
-};
-
-const scheduleAchievementCheck = (finished = false) => {
-	if (debugMode.value) return;
-	if (finished) achievementFinished = true;
-	if (achievementTimer) clearTimeout(achievementTimer);
-	achievementTimer = setTimeout(() => {
-		achievementTimer = null;
-		runAchievementCheck();
-	}, 900);
 };
 
 const endingMatches = (ending) => {
@@ -2326,7 +2195,7 @@ const resetGame = () => {
 	historyDialogues.value = [];
 	triggeredEndings.value = new Set();
 	endingDialogVisible.value = false;
-	achievementFinished = false;
+	resetAchievementState();
 	resetVariables();
 	clearLineSnapshots();
 	resetTelemetryTracking();
@@ -2345,7 +2214,7 @@ const startNextPlaythrough = () => {
 	currentDialogueIndex.value = 0;
 	historyDialogues.value = [];
 	triggeredEndings.value = new Set();
-	achievementFinished = false;
+	resetAchievementState();
 	clearVariableNotices();
 	lastEffectKey.value = '';
 	clearLineSnapshots();
@@ -2955,44 +2824,18 @@ const buildSaveState = () => ({
 	savedAt: new Date().toISOString(),
 });
 
-const refreshSaves = async () => {
-	try {
-		saves.value = await listSaves(Number(props.projectId));
-	} catch (e) {
-		console.warn('读取云端存档失败:', e);
-	}
-};
-
-const openSaveDialog = () => {
-	saveDialogVisible.value = true;
-	refreshSaves();
-};
-
-const saveToSlot = async (slot, silent = false) => {
-	try {
-		const info = await putSave(
-			Number(props.projectId),
-			slot,
-			buildSaveState(),
-			currentSaveSummary()
-		);
-		saves.value = [...saves.value.filter(s => s.slot !== slot), info]
-			.sort((a, b) => a.slot - b.slot);
-		if (!silent) {
-			ElMessage.success(slot === 0 ? t('save.autoSaved') : t('save.saved'));
-		}
-	} catch (e) {
-		console.warn('云端存档失败，回退到本地:', e);
-		saveProgress(true);
-		if (!silent) ElMessage.warning(t('save.cloudSaveFailed'));
-	}
-};
-
-const loadFromSlot = async (slot) => {
-	try {
-		isRestoring.value = true;
-		const detail = await getSave(Number(props.projectId), slot);
-		const state = detail.state || {};
+const {
+	saves,
+	saveDialogVisible,
+	isRestoring,
+	openSaveDialog,
+	saveToSlot,
+	loadFromSlot,
+	deleteSlot,
+} = useSaveSlots({
+	projectId: () => Number(props.projectId),
+	capture: () => ({ state: buildSaveState(), summary: currentSaveSummary() }),
+	apply: async (state) => {
 		currentSceneIndex.value = Number(state.sceneIndex) || 0;
 		currentDialogueIndex.value = Number(state.dialogueIndex) || 0;
 		historyDialogues.value = state.historyDialogues || [];
@@ -3009,37 +2852,14 @@ const loadFromSlot = async (slot) => {
 		clearLineSnapshots();
 		// 读档后把跨周目变量同步为存档里的值
 		syncProjectMeta(true);
-		saveDialogVisible.value = false;
 		await nextTick();
 		startTyping();
 		applyVolumes();
-		ElMessage.success(t('save.loaded'));
-	} catch (e) {
-		console.warn('读取云端存档失败，尝试本地:', e);
-		loadProgress();
-		saveDialogVisible.value = false;
-	} finally {
-		setTimeout(() => { isRestoring.value = false; }, 300);
-	}
-};
-
-const deleteSlot = async (slot) => {
-	try {
-		await ElMessageBox.confirm(t('save.deleteConfirm'), t('save.deleteTitle'), {
-			confirmButtonText: t('save.delete'),
-			cancelButtonText: t('common.cancel'),
-			type: 'warning',
-		});
-		await deleteSave(Number(props.projectId), slot);
-		saves.value = saves.value.filter(s => s.slot !== slot);
-		ElMessage.success(t('save.deleted'));
-	} catch (e) {
-		if (e !== 'cancel' && e !== 'close') {
-			console.warn('删除存档失败:', e);
-			ElMessage.error(t('save.deleteFailed'));
-		}
-	}
-};
+	},
+	onCloudSaveFailed: () => saveProgress(true),
+	onCloudLoadFailed: () => loadProgress(),
+	t,
+});
 
 // ==================== 演出模式（作者预览热更新） ====================
 const syncPerformForm = () => {
@@ -3352,8 +3172,6 @@ onMounted(() => {
 	updateOrientation();
 	window.addEventListener('resize', updateOrientation);
 	window.addEventListener('orientationchange', updateOrientation);
-	// 后台标签页 rAF/定时器被暂停后，回到前台补一次 BGM 终值
-	document.addEventListener('visibilitychange', onBgmVisibilityChange);
 });
 
 // 组件卸载时清理定时器、音频与全局事件，避免内存泄漏与操作已销毁组件
@@ -3391,7 +3209,6 @@ onUnmounted(() => {
 	document.removeEventListener('touchstart', playBackgroundMusic);
 	window.removeEventListener('resize', updateOrientation);
 	window.removeEventListener('orientationchange', updateOrientation);
-	document.removeEventListener('visibilitychange', onBgmVisibilityChange);
 });
 
 const backToHome = () => {
