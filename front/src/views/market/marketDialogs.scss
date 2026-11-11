@@ -1,0 +1,596 @@
+@use './marketVars' as *;
+
+// 对话框
+:deep(.el-dialog.orange-dialog) {
+  background: linear-gradient(135deg, 
+    rgba(26, 26, 46, 0.98) 0%, 
+    rgba(22, 33, 62, 0.98) 100%);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 183, 197, 0.2);
+  border-radius: 24px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+
+  .el-dialog__header {
+    padding: 20px 24px 0;
+    border-bottom: none;
+    
+    .dialog-header {
+      .dialog-title {
+        color: $text-primary;
+        font-size: 20px;
+        font-weight: 600;
+      }
+    }
+    
+    .el-dialog__headerbtn {
+      .el-dialog__close {
+        color: $text-secondary;
+        
+        &:hover {
+          color: $pink;
+        }
+      }
+    }
+  }
+  
+  .el-dialog__body {
+    padding: 24px;
+  }
+  
+  .el-dialog__footer {
+    padding: 0 24px 24px;
+  }
+}
+
+// 详情页
+.resource-detail {
+  display: flex;
+  gap: 30px;
+  
+  .detail-media {
+    flex: 1;
+    
+    .detail-image {
+      width: 100%;
+      max-height: 400px;
+      object-fit: contain;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid $border-light;
+    }
+    
+    .detail-audio {
+      .audio-visualizer {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        gap: 6px;
+        height: 100px;
+        margin-bottom: 24px;
+        
+        .bar {
+          width: 6px;
+          background: linear-gradient(180deg, $pink, $purple);
+          border-radius: 3px;
+          animation: audioBar 1s ease-in-out infinite;
+          animation-delay: calc(var(--i) * 0.1s);
+          height: calc(30px + var(--i) * 8px);
+        }
+      }
+      
+      .audio-element {
+        width: 100%;
+        
+        &::-webkit-media-controls-panel {
+          background: rgba(255, 255, 255, 0.05);
+        }
+      }
+    }
+  }
+  
+  .detail-link {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 16px;
+    border: 1px solid $border-light;
+    
+    .el-icon {
+      font-size: 48px;
+      color: $mint;
+      margin-bottom: 16px;
+    }
+    
+    p {
+      color: $text-secondary;
+      margin-bottom: 8px;
+    }
+    
+    a {
+      color: $pink;
+      text-decoration: none;
+      word-break: break-all;
+      
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+  
+  .detail-info {
+    flex: 1;
+    
+    .detail-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+      
+      h2 {
+        margin: 0;
+        color: $text-primary;
+        font-size: 24px;
+      }
+      
+      .detail-type {
+        padding: 4px 14px;
+        border-radius: 30px;
+        font-size: 13px;
+        color: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+    }
+    
+    .detail-description {
+      color: $text-secondary;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    
+    .detail-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+      
+      .stat-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid $border-light;
+        border-radius: 14px;
+        
+        .el-icon {
+          font-size: 22px;
+          color: $pink;
+        }
+        
+        .stat-content {
+          display: flex;
+          flex-direction: column;
+          
+          .stat-label {
+            font-size: 11px;
+            color: $text-secondary;
+          }
+          
+          .stat-value {
+            font-size: 15px;
+            color: $text-primary;
+            font-weight: 500;
+          }
+        }
+      }
+    }
+    
+    .detail-price {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 14px;
+      border: 1px solid $border-light;
+      
+      .price-label {
+        color: $text-secondary;
+        font-size: 14px;
+      }
+      
+      .price-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: $warm;
+        
+        &.free {
+          color: $mint;
+        }
+      }
+    }
+    
+    .detail-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      
+      .primary-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 14px;
+        background: linear-gradient(135deg, $pink, $purple);
+        border: none;
+        border-radius: 40px;
+        color: white;
+        font-size: 15px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s;
+        box-shadow: 0 4px 15px rgba(255, 183, 197, 0.3);
+        
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(255, 183, 197, 0.4);
+        }
+      }
+      
+      .secondary-btn {
+        padding: 14px 24px;
+        background: transparent;
+        border: 1px solid $border-light;
+        border-radius: 40px;
+        color: $text-secondary;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.05);
+          color: $text-primary;
+          border-color: rgba(255, 183, 197, 0.3);
+        }
+      }
+      
+      .reference-btn {
+        &:hover {
+          color: $mint;
+          border-color: rgba(168, 230, 207, 0.4);
+        }
+      }
+    }
+  }
+}
+
+// 引用到项目对话框
+.reference-container {
+  .reference-tip {
+    color: $text-secondary;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0 0 16px;
+  }
+  
+  .reference-select {
+    width: 100%;
+    
+    :deep(.el-input__wrapper) {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid $border-light;
+      border-radius: 12px;
+      box-shadow: none;
+      
+      &:hover, &.is-focus {
+        border-color: $pink;
+      }
+      
+      .el-input__inner {
+        color: $text-primary;
+      }
+    }
+  }
+  
+  .reference-empty {
+    margin: 12px 0 0;
+    color: $text-secondary;
+    font-size: 13px;
+  }
+}
+
+@keyframes audioBar {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.8); }
+}
+
+// 上传表单
+.upload-form {
+  :deep(.el-form-item__label) {
+    color: $text-secondary;
+    font-weight: 500;
+  }
+  
+  :deep(.el-input__wrapper) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid $border-light;
+    border-radius: 12px;
+    box-shadow: none;
+    
+    &:hover, &.is-focus {
+      border-color: $pink;
+    }
+    
+    .el-input__inner {
+      color: $text-primary;
+      
+      &::placeholder {
+        color: $text-secondary;
+      }
+    }
+  }
+  
+  :deep(.el-textarea__inner) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid $border-light;
+    border-radius: 12px;
+    color: $text-primary;
+    
+    &:hover, &:focus {
+      border-color: $pink;
+    }
+  }
+  
+  :deep(.el-select) {
+    .el-input__wrapper {
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+  
+  :deep(.el-input-number) {
+    .el-input__wrapper {
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+  
+  .type-options {
+    display: flex;
+    gap: 12px;
+    
+    .type-option {
+      flex: 1;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid $border-light;
+      border-radius: 30px;
+      color: $text-secondary;
+      font-size: 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      
+      &:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      
+      &.selected {
+        background: linear-gradient(135deg, $pink, $purple);
+        border-color: transparent;
+        color: white;
+      }
+    }
+  }
+  
+  .price-hint {
+    margin-left: 12px;
+    color: $text-secondary;
+    font-size: 12px;
+  }
+  
+  .custom-upload {
+    :deep(.el-upload-dragger) {
+      background: rgba(255, 255, 255, 0.03);
+      border: 2px dashed $border-light;
+      border-radius: 16px;
+      
+      &:hover {
+        border-color: $pink;
+      }
+    }
+    
+    .upload-area {
+      padding: 30px;
+      
+      .upload-icon {
+        font-size: 40px;
+        color: $pink;
+        margin-bottom: 12px;
+      }
+      
+      p {
+        color: $text-secondary;
+        margin: 8px 0;
+        
+        em {
+          color: $pink;
+          font-style: normal;
+        }
+      }
+      
+      .upload-tip {
+        font-size: 12px;
+        color: $text-secondary;
+      }
+    }
+  }
+}
+
+// 对话框按钮
+.dialog-btn {
+  padding: 10px 28px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: none;
+  
+  &.cancel {
+    background: transparent;
+    border: 1px solid $border-light;
+    color: $text-secondary;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: $text-primary;
+    }
+  }
+  
+  &.confirm {
+    background: linear-gradient(135deg, $pink, $purple);
+    color: white;
+    margin-left: 12px;
+    box-shadow: 0 4px 15px rgba(255, 183, 197, 0.3);
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 183, 197, 0.4);
+    }
+  }
+}
+
+// 支付对话框
+:deep(.el-dialog.orange-dialog.payment-dialog) {
+  .payment-container {
+    padding: 0 10px;
+  }
+
+  .payment-header {
+    text-align: center;
+    margin-bottom: 20px;
+
+    h3 {
+      margin: 0;
+      color: $text-primary;
+      font-size: 16px;
+    }
+
+    .payment-amount {
+      font-size: 32px;
+      font-weight: 700;
+      color: $warm;
+      margin: 10px 0 0;
+    }
+  }
+
+  .payment-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+
+    .tab {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid $border-light;
+      border-radius: 40px;
+      color: $text-secondary;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &.active {
+        background: linear-gradient(135deg, $pink, $purple);
+        border-color: transparent;
+        color: white;
+      }
+
+      &:hover:not(.active) {
+        background: rgba(255, 255, 255, 0.06);
+      }
+    }
+  }
+
+  .qr-code-container {
+    display: flex;
+    justify-content: center;
+
+    .qr-wrapper {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      background: white;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20 rgba(0, 0, 0, 0.3);
+
+      .qr-code {
+        width: 180px;
+        height: 180px;
+      }
+
+      .qr-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(26, 26, 46, 0.9);
+        backdrop-filter: blur(4px);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+
+        .el-icon {
+          font-size: 40px;
+          margin-bottom: 8px;
+        }
+
+        &.success {
+          background: rgba(168, 230, 207, 0.15);
+
+          .el-icon {
+            color: $mint;
+          }
+        }
+
+        .spinner {
+          animation: rotate 1s linear infinite;
+        }
+      }
+    }
+  }
+
+  .payment-footer {
+    text-align: center;
+    margin-top: 20px;
+
+    .countdown {
+      color: $pink;
+      font-weight: 600;
+    }
+
+    .notice {
+      color: $text-secondary;
+      font-size: 12px;
+    }
+  }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

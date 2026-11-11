@@ -1,0 +1,167 @@
+@use './marketVars' as *;
+
+.orange-market {
+  min-height: 100vh;
+  background: linear-gradient(135deg, $bg-primary 0%, $bg-secondary 100%);
+  padding: 80px 24px 40px;
+}
+
+.market-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+// 头部
+.market-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 32px;
+  
+  .header-left {
+    .market-title {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin: 0 0 8px;
+      
+      .title-main {
+        font-size: 42px;
+        font-weight: 700;
+        background: linear-gradient(135deg, $pink, $purple);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      
+      .title-sub {
+        font-size: 20px;
+        color: $mint;
+        font-weight: 400;
+      }
+    }
+    
+    .market-desc {
+      margin: 0;
+      color: $text-secondary;
+      font-size: 15px;
+      letter-spacing: 1px;
+    }
+  }
+  
+  .upload-work-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 28px;
+    background: linear-gradient(135deg, $pink, $purple);
+    border: none;
+    border-radius: 50px;
+    color: white;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 4px 20px rgba(255, 183, 197, 0.3);
+    
+    &:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(255, 183, 197, 0.4);
+    }
+  }
+}
+
+// 搜索区域
+.search-section {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid $border-light;
+  border-radius: 60px;
+  padding: 8px 8px 8px 24px;
+  margin-bottom: 40px;
+  
+  .search-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    
+    .search-input {
+      flex: 1;
+      
+      :deep(.el-input__wrapper) {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 12px 0;
+        
+        .el-input__inner {
+          color: $text-primary;
+          font-size: 15px;
+          
+          &::placeholder {
+            color: $text-secondary;
+          }
+        }
+        
+        .el-input__prefix {
+          color: $pink;
+        }
+      }
+    }
+    
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      
+      .type-select {
+        width: 140px;
+        
+        :deep(.el-input__wrapper) {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid $border-light;
+          border-radius: 40px;
+          box-shadow: none;
+          
+          .el-input__inner {
+            color: $text-primary;
+          }
+        }
+      }
+      
+      .search-btn {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, $pink, $purple);
+        border: none;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+        
+        &:hover {
+          transform: scale(1.05);
+        }
+      }
+    }
+  }
+  
+  .stats-info {
+    padding: 8px 0 0;
+    
+    .stat-item {
+      color: $text-secondary;
+      font-size: 13px;
+      
+      .stat-value {
+        color: $pink;
+        font-weight: 600;
+        margin-right: 4px;
+      }
+    }
+  }
+}
