@@ -825,23 +825,16 @@
 
 		<!-- 演出指令弹窗 -->
 		<DirectiveDialog
+			ref="directiveDialogRef"
 			v-model:visible="directiveDialogVisible"
-			v-model:type="newDirectiveType"
+			:project-id="Number(projectId)"
+			:content-id="directiveContentId"
 			:target-label="directiveTarget"
-			:directives="directives"
 			:characters="characters"
-			:form="dirForm"
-			:layer-options="avatarLayerOptions"
-			:character-avatars="dirCharacterAvatars"
-			:uploading="dirUploading"
-			:avatar-label="avatarOptionLabel"
-			:asset-src="assetSrc"
-			:asset-from-event="stageAssetPayload"
-			:is-image="isImageUrl"
-			:character-change="onDirCharacterChange"
-			:upload-request="handleDirUpload"
-			@add="addDirective"
-			@remove="removeDirective"
+			:default-character-id="currentDialogue?.character_id || null"
+			:default-avatar-id="currentDialogue?.avatar_id || null"
+			:asset-nonce="assetNonce"
+			@changed="handleDirectivesChanged"
 		/>
 
 		<!-- 台词显示条件 -->
@@ -1046,6 +1039,7 @@ import VoiceBatchDialog from '@/components/scene/VoiceBatchDialog.vue';
 import VoiceDirectorDialog from '@/components/scene/VoiceDirectorDialog.vue';
 import ScriptImportDialog from '@/components/scene/ScriptImportDialog.vue';
 import DirectiveDialog from '@/components/scene/DirectiveDialog.vue';
+import { MAX_AVATAR_LAYERS } from '@/composables/scene/useDirectiveEditor';
 
 const props = defineProps({
 	sceneId: {
@@ -1698,67 +1692,38 @@ const seekMusic = (e) => {
 
 /* ===== 演出指令（节点级）===== */
 const directiveDialogVisible = ref(false);
-const directives = ref([]);
 const directiveContentId = ref(null);
 const directiveTarget = ref('');
-const newDirectiveType = ref('avatar');
-const dirForm = ref({
-	character_id: null,
-	avatar_id: null,
-	image_url: '',
-	layer_id: '__new__',
-	layer_name: '',
-	action: 'show',
-	x: 50,
-	y: 100,
-	scale: 1,
-	opacity: 1,
-	rotate: 0,
-	url: '',
-	ms: 500,
-	layer: 'background',
-	transition: 'fade',
-	bg_duration: 400,
-	effect: 'flash',
-	color: '#ffffff',
-	duration: 400,
-	intensity: 5,
-	weather: 'rain'
-});
+const directiveDialogRef = ref(null);
 
-const loadDirectives = async (contentId) => {
-	directives.value = await listNodeDirectives(Number(projectId.value), Number(contentId));
+// 弹窗自己读写指令，父级只做两件事：入舞台撤销栈、刷新当前预览
+const refreshDirectiveList = async () => {
+	await directiveDialogRef.value?.reload?.();
 };
 
-// 演出弹窗内的素材上传：背景图走 image，BGM / 音效走 audio；成功后直接回填地址
-const dirUploading = ref(false);
-const handleDirUpload = async (options) => {
-	const t = newDirectiveType.value;
-	const fileType = t === 'background' ? 'image' : 'audio';
-	dirUploading.value = true;
-	try {
-		const formData = new FormData();
-		formData.append('file', options.file);
-		formData.append('project_id', projectId.value);
-		formData.append('file_type', fileType);
-		const response = await uploadSceneFile(formData);
-		if (response.success && response.data && response.data.url) {
-			dirForm.value.url = response.data.url;
-			ElMessage.success(t === 'background' ? '背景图上传成功' : '音频上传成功');
-			options.onSuccess && options.onSuccess(response);
-		} else {
-			throw new Error((response && response.message) || '上传失败');
-		}
-	} catch (err) {
-		console.error('演出素材上传失败:', err);
-		ElMessage.error('上传失败: ' + (err.message || '未知错误'));
-		options.onError && options.onError(err);
-	} finally {
-		dirUploading.value = false;
-	}
+const recordStageUndo = (contentId, rows, afterRows) => {
+	const cid = Number(contentId || 0);
+	const snapshot = (rows || []).map(d => ({
+		directive_id: d.directive_id,
+		directive_type: d.directive_type,
+		order_num: d.order_num,
+		payload: { ...(d.payload || {}) }
+	}));
+	const entry = { contentId: cid, rows: snapshot, baseline: directivesFingerprint(snapshot), at: Date.now() };
+	if (afterRows) entry.after = directivesFingerprint(afterRows);
+	stageUndoStack.value.push(entry);
+	if (stageUndoStack.value.length > 20) stageUndoStack.value.shift();
+	// 新的舞台操作让台词重做失效，保持统一撤销的线性语义
+	redoStack.value = [];
+	persistStageUndo();
 };
 
-const openDirectiveDialog = async (index) => {
+const handleDirectivesChanged = ({ contentId, before, after }) => {
+	recordStageUndo(contentId, before, after);
+	syncPreviewIfCurrent(contentId);
+};
+
+const openDirectiveDialog = (index) => {
 	const d = dialogues.value[index];
 	if (!d || !d.content_id) {
 		ElMessage.warning('先保存这条对话，再配置演出');
@@ -1769,141 +1734,9 @@ const openDirectiveDialog = async (index) => {
 	directiveContentId.value = d.content_id;
 	const kind = d.content_type === '描述' ? '旁白' : (d.content_type || '对话');
 	directiveTarget.value = `${kind}：${(d.content_text || '').slice(0, 18) || '（空）'}`;
-	newDirectiveType.value = 'avatar';
-	// 新增立绘指令时默认选中当前说话的角色；优先复用该角色已有图层
-	const matchedLayer = avatarLayerOptions.value.find(l => l.character_id === d.character_id);
-	const defaultAvatarId = d.avatar_id || defaultAvatarIdOf(d.character_id);
-	dirForm.value = {
-		character_id: d.character_id || null,
-		avatar_id: defaultAvatarId,
-		image_url: '',
-		layer_id: matchedLayer ? matchedLayer.layer_id : '__new__',
-		layer_name: matchedLayer ? matchedLayer.label : nextLayerName(),
-		action: 'show',
-		x: nextFreeStageX(),
-		y: 100,
-		scale: 1,
-		opacity: 1,
-		rotate: 0,
-		url: '',
-		ms: 500,
-		layer: 'background',
-		transition: 'fade',
-		bg_duration: 400,
-		effect: 'flash',
-		color: '#ffffff',
-		duration: 400,
-		intensity: 5,
-		weather: 'rain'
-	};
 	directiveDialogVisible.value = true;
-	try {
-		await loadDirectives(d.content_id);
-	} catch (e) {
-		ElMessage.error('读取演出指令失败');
-	}
 };
 
-const addDirective = async () => {
-	if (!directiveContentId.value) return;
-	const t = newDirectiveType.value;
-	let payload = {};
-	if (t === 'avatar') {
-		if (!dirForm.value.character_id && !dirForm.value.image_url) {
-			ElMessage.warning('请选择角色，或拖入一张素材图片');
-			return;
-		}
-		const isNewLayer = !dirForm.value.layer_id || dirForm.value.layer_id === '__new__';
-		if (isNewLayer && avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
-			ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
-			return;
-		}
-		const layerId = isNewLayer
-			? `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-			: dirForm.value.layer_id;
-		const layerMeta = avatarLayerOptions.value.find(l => l.layer_id === layerId);
-		const layerName = layerMeta?.label || dirForm.value.layer_name?.trim() || nextLayerName();
-		const order = layerMeta ? layerMeta.order : nextLayerOrder();
-		const rawX = dirForm.value.x === '' || dirForm.value.x === null ? 50 : Number(dirForm.value.x);
-		const rawY = dirForm.value.y === '' || dirForm.value.y === null ? 100 : Number(dirForm.value.y);
-		payload = {
-			layer_id: layerId,
-			layer_name: layerName,
-			order,
-			character_id: dirForm.value.character_id || null,
-			avatar_id: dirForm.value.image_url ? null : (dirForm.value.avatar_id || null),
-			image_url: dirForm.value.image_url || null,
-			action: dirForm.value.action,
-			coord: 'stage',
-			x: Number.isFinite(rawX) ? Math.max(0, Math.min(100, rawX)) : 50,
-			y: Number.isFinite(rawY) ? Math.max(0, Math.min(100, rawY)) : 100,
-			scale: Number(dirForm.value.scale) || 1,
-			opacity: dirForm.value.opacity === '' || dirForm.value.opacity === null ? 1 : Number(dirForm.value.opacity),
-			rotate: Number(dirForm.value.rotate) || 0
-		};
-	} else if (t === 'background') {
-		if (!dirForm.value.url) {
-			ElMessage.warning('请上传或填写背景图地址');
-			return;
-		}
-		payload = {
-			url: dirForm.value.url,
-			layer: dirForm.value.layer || 'background',
-			transition: dirForm.value.transition || 'fade',
-			duration_ms: Number(dirForm.value.bg_duration) || 400
-		};
-	} else if (t === 'music') {
-		if (!dirForm.value.url) {
-			ElMessage.warning('请上传或填写音乐地址');
-			return;
-		}
-		payload = { url: dirForm.value.url, action: dirForm.value.action, loop: true };
-	} else if (t === 'sound') {
-		if (!dirForm.value.url) {
-			ElMessage.warning('请上传或填写音效地址');
-			return;
-		}
-		payload = { url: dirForm.value.url };
-	} else if (t === 'effect') {
-		const effect = dirForm.value.effect || 'flash';
-		let duration = Number(dirForm.value.duration) || 400;
-		// 天气默认持续更久，避免从闪光切过来时只有 400ms
-		if (effect === 'weather' && duration < 1000) duration = 3000;
-		payload = { effect, duration_ms: duration };
-		if (effect === 'flash') payload.color = dirForm.value.color || '#ffffff';
-		if (effect === 'shake') payload.intensity = Number(dirForm.value.intensity) || 5;
-		if (effect === 'weather') payload.weather = dirForm.value.weather || 'rain';
-	} else {
-		payload = { ms: Number(dirForm.value.ms) || 500 };
-	}
-
-	snapshotStageDirectives(directiveContentId.value);
-	try {
-		await createDirective(Number(projectId.value), {
-			content_id: directiveContentId.value,
-			directive_type: t,
-			payload
-		});
-		await loadDirectives(directiveContentId.value);
-		syncPreviewIfCurrent(directiveContentId.value);
-		ElMessage.success('已添加');
-	} catch (e) {
-		stageUndoStack.value.pop();
-		ElMessage.error('添加失败');
-	}
-};
-
-const removeDirective = async (d) => {
-	snapshotStageDirectives(directiveContentId.value);
-	try {
-		await deleteDirective(Number(projectId.value), d.directive_id);
-		await loadDirectives(directiveContentId.value);
-		syncPreviewIfCurrent(directiveContentId.value);
-	} catch (e) {
-		stageUndoStack.value.pop();
-		ElMessage.error('删除失败');
-	}
-};
 const backgroundMusic = ref(null);
 // 默认静音：只有手动点「BGM 开」才播放，避免打开场景就自动响
 const bgmMuted = ref(true);
@@ -2367,7 +2200,6 @@ const previewAvatarSrc = computed(() => previewAvatarSources.value[0] || '');
 const richPreviewHtml = (text) => renderRichHtml(parseRichText(text || ''), Infinity);
 
 // ===== 舞台图层模型：任意数量图层，layer_id 稳定标识，order 为显式层级 =====
-const MAX_AVATAR_LAYERS = 8;
 const LEGACY_POSITION_ORDER = { left: 0, center: 1, right: 2 };
 const layerIdOf = (p = {}) => p.layer_id || p.position || 'center';
 const layerNameOf = (p = {}) => p.layer_name || ({ left: '左侧', center: '中间', right: '右侧' }[p.position] || '立绘');
@@ -2627,10 +2459,7 @@ const restorePersistedStageUndo = (contentId) => {
 
 const snapshotStageDirectives = (contentId) => {
 	const cid = Number(contentId || currentDialogue.value?.content_id || 0);
-	const source = cid && String(cid) === String(currentDialogue.value?.content_id || '')
-		? previewDirectives.value
-		: directives.value;
-	const rows = source.map(d => ({
+	const rows = previewDirectives.value.map(d => ({
 		directive_id: d.directive_id,
 		directive_type: d.directive_type,
 		order_num: d.order_num,
@@ -2676,7 +2505,7 @@ const undoAvatar = async () => {
 			}
 		}
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		// 撤销后栈顶变化：同步持久化（空栈则清除）
 		const top = stageUndoStack.value[stageUndoStack.value.length - 1];
 		if (top) persistStageUndo();
@@ -2700,33 +2529,6 @@ const undoLast = () => {
 	else undo();
 };
 
-// 角色立绘缩略图：表情/姿势轮盘的数据源
-const avatarsOfCharacter = (characterId) => {
-	if (!characterId) return [];
-	const c = characters.value.find(x => x.character_id === characterId);
-	return (c?.avatars || []).slice();
-};
-
-const dirCharacterAvatars = computed(() => avatarsOfCharacter(dirForm.value.character_id));
-
-const defaultAvatarIdOf = (characterId) => {
-	const list = avatarsOfCharacter(characterId);
-	const def = list.find(a => a.is_default) || list[0];
-	return def ? def.avatar_id : null;
-};
-
-const onDirCharacterChange = (characterId) => {
-	dirForm.value.avatar_id = defaultAvatarIdOf(characterId);
-	// 选了角色就清掉素材直出图片，避免「角色立绘」和「素材图」同时挂在一层
-	dirForm.value.image_url = '';
-	// 选中的既有图层若属于其他角色，自动切回「新建图层」，避免把两个人叠进同一层
-	const layer = avatarLayerOptions.value.find(l => l.layer_id === dirForm.value.layer_id);
-	if (layer && layer.character_id && layer.character_id !== characterId) {
-		dirForm.value.layer_id = '__new__';
-		dirForm.value.layer_name = nextLayerName();
-	}
-};
-
 // 多角色入场自动站位：挑一个没被占用的 X 坐标
 const STAGE_ENTRY_XS = [50, 25, 75, 18, 82, 35, 65];
 const nextFreeStageX = () => {
@@ -2740,20 +2542,6 @@ const nextFreeStageX = () => {
 	}
 	return 50;
 };
-
-// 演出指令弹窗用：按前台→后台展示已有图层
-const avatarLayerOptions = computed(() => avatarLayers.value
-	.slice()
-	.sort((a, b) => b.order - a.order)
-	.map(l => {
-		const slot = previewSlots.value[l.layer_id];
-		return {
-			layer_id: l.layer_id,
-			label: l.label,
-			order: l.order,
-			character_id: slot?.character_id ?? null
-		};
-	}));
 
 const nextLayerOrder = () => (avatarLayers.value.length
 	? Math.max(...avatarLayers.value.map(l => Number(l.order) || 0)) + 1
@@ -2790,7 +2578,7 @@ const handleAvatarVisibility = async (layerId, visible) => {
 			payload: { ...(existing.payload || {}), visible }
 		});
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success(visible ? '立绘已显示' : '立绘已隐藏');
 	} catch (e) {
@@ -2817,7 +2605,7 @@ const applyAvatarLayerOrders = async (layerIds) => {
 			});
 		}
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		return true;
 	} catch (e) {
@@ -2877,7 +2665,7 @@ const handleAvatarRemove = async (layerId) => {
 	try {
 		for (const d of rows) await deleteDirective(pid, d.directive_id);
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success('图层已删除');
 	} catch (e) {
@@ -2920,7 +2708,7 @@ const handleAvatarRename = async (layerId) => {
 			});
 		}
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success('图层已重命名');
 	} catch (e) {
@@ -2946,7 +2734,7 @@ const handleStageVisibility = async (layerKey, visible) => {
 			await createDirective(pid, { content_id: contentId, directive_type: 'stage', payload: next });
 		}
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success(visible ? '已显示' : '已隐藏');
 	} catch (e) {
@@ -3019,7 +2807,7 @@ const handleAvatarGroupMove = async ({ updates }) => {
 			}
 		}
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success(list.length > 1 ? `已移动 ${list.length} 个图层` : '立绘位置已保存');
 	} catch (e) {
@@ -3104,7 +2892,7 @@ const handleAvatarTransform = async ({ layerId, layerName, scale, opacity, rotat
 			});
 		}
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success('立绘属性已保存');
 	} catch (e) {
@@ -3183,7 +2971,7 @@ const onStageAssetDrop = async ({ url, label, x, y }) => {
 			}
 		});
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success(`已用素材创建立绘层「${layerName}」`);
 	} catch (e) {
@@ -3218,7 +3006,7 @@ const onAvatarReplaceAsset = async (layerId, asset) => {
 			}
 		});
 		await loadPreviewDirectives(contentId);
-		await loadDirectives(contentId);
+		await refreshDirectiveList();
 		markStageUndoApplied();
 		ElMessage.success('图层素材已替换');
 	} catch (e) {

@@ -15,13 +15,13 @@
 			<div v-for="d in directives" :key="d.directive_id" class="dir-row">
 				<span class="dir-type">{{ directiveTypeLabel(d.directive_type) }}</span>
 				<span class="dir-summary">{{ directiveSummary(d) }}</span>
-				<button type="button" class="dir-del" @click="emit('remove', d)">删除</button>
+				<button type="button" class="dir-del" :disabled="busy" @click="removeDirective(d)">删除</button>
 			</div>
 		</div>
 
 		<div class="dir-add-title">新增指令</div>
 		<div class="dir-add">
-			<el-select v-model="typeModel" size="small" class="dir-select-type">
+			<el-select v-model="type" size="small" class="dir-select-type">
 				<el-option label="立绘" value="avatar" />
 				<el-option label="背景" value="background" />
 				<el-option label="音乐" value="music" />
@@ -36,7 +36,7 @@
 					size="small"
 					placeholder="角色"
 					class="dir-field"
-					@change="characterChange"
+					@change="onCharacterChange"
 				>
 					<el-option v-for="c in characters" :key="c.character_id" :label="c.name" :value="c.character_id" />
 				</el-select>
@@ -49,7 +49,7 @@
 						type="button"
 						class="expr-option"
 						:class="{ selected: form.avatar_id === a.avatar_id }"
-						:title="avatarLabel(a)"
+						:title="avatarOptionLabel(a)"
 						@click="form.avatar_id = a.avatar_id"
 					>
 						<img :src="BASE_URL + a.image_url" alt="" />
@@ -62,9 +62,9 @@
 				<!-- 素材直出：把素材库图片拖进来，不绑角色也能作为独立立绘层 -->
 				<div
 					class="dir-asset-drop"
-					:class="{ 'is-over': dirAssetOver, 'has-image': !!form.image_url }"
+					:class="{ 'is-over': assetOver, 'has-image': !!form.image_url }"
 					@dragover.prevent="onAssetDragOver"
-					@dragleave="dirAssetOver = false"
+					@dragleave="assetOver = false"
 					@drop.prevent="onAssetDrop"
 				>
 					<img v-if="form.image_url" :src="assetSrc(form.image_url)" alt="" />
@@ -114,7 +114,7 @@
 				<el-upload
 					class="dir-upload"
 					:show-file-list="false"
-					:http-request="uploadRequest"
+					:http-request="upload"
 					accept="image/*"
 				>
 					<el-button size="small" :loading="uploading">上传图片</el-button>
@@ -136,7 +136,7 @@
 				<el-upload
 					class="dir-upload"
 					:show-file-list="false"
-					:http-request="uploadRequest"
+					:http-request="upload"
 					accept="audio/*"
 				>
 					<el-button size="small" :loading="uploading">上传音频</el-button>
@@ -152,7 +152,7 @@
 				<el-upload
 					class="dir-upload"
 					:show-file-list="false"
-					:http-request="uploadRequest"
+					:http-request="upload"
 					accept="audio/*"
 				>
 					<el-button size="small" :loading="uploading">上传音频</el-button>
@@ -187,7 +187,7 @@
 				<el-input v-model.number="form.ms" size="small" placeholder="毫秒" class="dir-field-sm" />
 			</template>
 
-			<el-button size="small" type="primary" @click="emit('add')">添加</el-button>
+			<el-button size="small" type="primary" :loading="busy" @click="addDirective">添加</el-button>
 		</div>
 
 		<template #footer>
@@ -197,34 +197,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { BASE_URL } from '@/utils/request'
 import { layerNameOf } from '@/composables/player/usePlayerStage'
+import { useDirectiveEditor } from '@/composables/scene/useDirectiveEditor'
 
 const props = defineProps<{
 	visible: boolean
+	projectId: number
+	contentId: number | null
 	targetLabel: string
-	directives: any[]
 	characters: any[]
-	type: string
-	form: Record<string, any>
-	layerOptions: any[]
-	characterAvatars: any[]
-	uploading: boolean
-	avatarLabel: (avatar: any) => string
-	assetSrc: (url: string) => string
-	assetFromEvent: (ev: Event) => any
-	isImage: (url: string) => boolean
-	characterChange: (id: any) => void
-	uploadRequest: (options: any) => void
+	defaultCharacterId: number | null
+	defaultAvatarId: number | null
+	assetNonce: number
 }>()
 
 const emit = defineEmits<{
 	(e: 'update:visible', value: boolean): void
-	(e: 'update:type', value: string): void
-	(e: 'add'): void
-	(e: 'remove', directive: any): void
+	(e: 'changed', payload: { contentId: number; before: any[]; after: any[] }): void
 }>()
 
 const visibleModel = computed({
@@ -232,26 +224,66 @@ const visibleModel = computed({
 	set: (value: boolean) => emit('update:visible', value),
 })
 
-const typeModel = computed({
-	get: () => props.type,
-	set: (value: string) => emit('update:type', value),
-})
+const projectId = computed(() => props.projectId)
+const contentId = computed(() => props.contentId)
+const characters = computed(() => props.characters)
+const defaultCharacterId = computed(() => props.defaultCharacterId)
+const defaultAvatarId = computed(() => props.defaultAvatarId)
+const assetNonce = computed(() => props.assetNonce)
 
-const dirAssetOver = ref(false)
+const {
+	directives,
+	type,
+	form,
+	uploading,
+	assetSrc,
+	layerOptions,
+	characterAvatars,
+	load,
+	resetForm,
+	onCharacterChange,
+	upload,
+	add,
+	remove
+} = useDirectiveEditor({ projectId, contentId, characters, defaultCharacterId, defaultAvatarId, assetNonce })
 
-const directiveTypeLabel = (type: string) => ({
+const busy = ref(false)
+const assetOver = ref(false)
+
+// 重新拉取当前节点的指令（父级撤销舞台操作后调用）
+const reload = async () => {
+	try {
+		await load()
+	} catch (e) {
+		ElMessage.error('读取演出指令失败')
+	}
+}
+
+watch(
+	() => [props.visible, props.contentId] as const,
+	async ([open, id], prev) => {
+		if (!open || !id) return
+		await reload()
+		// 同一个节点重复打开时保留上次的表单，切换节点则重新初始化
+		const prevId = prev ? prev[1] : null
+		if (!prev || !prev[0] || String(prevId) !== String(id)) resetForm()
+	},
+	{ immediate: true }
+)
+
+const directiveTypeLabel = (value: string) => ({
 	avatar: '立绘',
 	background: '背景',
 	music: '音乐',
 	sound: '音效',
 	wait: '停顿',
 	effect: '画面效果'
-}[type] || type)
+} as Record<string, string>)[value] || value
 
 const directiveSummary = (d: any) => {
 	const p = d.payload || {}
 	if (d.directive_type === 'avatar') {
-		const c = props.characters.find((x: any) => x.character_id === p.character_id)
+		const c = characters.value.find((x: any) => x.character_id === p.character_id)
 		const layerName = p.layer_name || layerNameOf(p)
 		const base = `${c ? c.name : '角色'} · ${layerName} · ${p.action === 'hide' ? '隐藏' : '显示'}`
 		const extra: string[] = []
@@ -280,25 +312,76 @@ const directiveSummary = (d: any) => {
 	return ''
 }
 
+const avatarOptionLabel = (avatar: any) => {
+	const layers = avatar?.layers || []
+	return `${avatar?.avatar_type || '立绘'}${layers.length ? ` · ${layers.length} 个差分层` : ''}`
+}
+
+const isImageUrl = (url: string) => /\.(png|jpe?g|webp|gif|bmp)(\?|$)/i.test(String(url || ''))
+
+const assetFromEvent = (ev: DragEvent) => {
+	try {
+		const raw = ev.dataTransfer?.getData('application/x-aigc-asset') || ''
+		if (raw) {
+			const data = JSON.parse(raw)
+			const url = data?.url || data?.image_url || ''
+			if (url) return { url, label: data?.label || data?.title || '' }
+		}
+		const text = ev.dataTransfer?.getData('text/plain') || ''
+		if (text && isImageUrl(text)) return { url: text, label: '' }
+	} catch (_) {
+		/* 非素材拖拽数据 */
+	}
+	return null
+}
+
 const onAssetDragOver = (ev: DragEvent) => {
 	const types = ev.dataTransfer?.types || []
-	if (Array.from(types).includes('application/x-aigc-asset')) dirAssetOver.value = true
+	if (Array.from(types).includes('application/x-aigc-asset')) assetOver.value = true
 }
 
 const onAssetDrop = (ev: DragEvent) => {
-	dirAssetOver.value = false
-	const asset = props.assetFromEvent(ev)
-	if (!asset || !props.isImage(asset.url)) {
+	assetOver.value = false
+	const asset = assetFromEvent(ev)
+	if (!asset || !isImageUrl(asset.url)) {
 		ElMessage.warning('请拖入图片素材')
 		return
 	}
-	props.form.image_url = asset.url
+	form.value.image_url = asset.url
 	// 素材直出层不绑角色，避免被角色默认立绘覆盖
-	props.form.character_id = null
-	props.form.avatar_id = null
-	if (!props.form.layer_name) props.form.layer_name = (asset.label || '素材立绘').slice(0, 30)
+	form.value.character_id = null
+	form.value.avatar_id = null
+	if (!form.value.layer_name) form.value.layer_name = (asset.label || '素材立绘').slice(0, 30)
 	ElMessage.success('已填入素材图片，可继续调整位置')
 }
+
+const addDirective = async () => {
+	if (busy.value) return
+	busy.value = true
+	try {
+		const result = await add()
+		if (result && contentId.value) {
+			emit('changed', { contentId: Number(contentId.value), ...result })
+		}
+	} finally {
+		busy.value = false
+	}
+}
+
+const removeDirective = async (directive: any) => {
+	if (busy.value) return
+	busy.value = true
+	try {
+		const result = await remove(directive)
+		if (result && contentId.value) {
+			emit('changed', { contentId: Number(contentId.value), ...result })
+		}
+	} finally {
+		busy.value = false
+	}
+}
+
+defineExpose({ reload })
 </script>
 
 <style scoped>
