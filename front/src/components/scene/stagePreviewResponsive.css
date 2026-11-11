@@ -1,0 +1,9 @@
+	@media (max-width: 1200px) {
+		.character-stand { left: 24px; height: 72%; }
+	}
+
+	@media (max-width: 768px) {
+		.dialogue-text { font-size: 17px; }
+		.toggle-hidden { left: calc(100% - 68px); }
+		.character-stand { left: 12px; height: 62%; }
+	}
