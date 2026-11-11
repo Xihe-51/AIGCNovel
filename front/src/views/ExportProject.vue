@@ -728,6 +728,7 @@ import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { useSaveSlots } from '@/composables/player/useSaveSlots'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
+import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import {
 	usePlayerStage,
 	layerIdOf,
@@ -1956,70 +1957,16 @@ const bumpBehaviorReview = () => {
 	setBehaviorVariable(BEHAVIOR_REVIEW, current + 1);
 };
 
-const evalSingleCondition = (cond) => {
-	if (!cond || !cond.variable) return true;
-	const v = projectVariables.value.find(x => x.name === cond.variable);
-	if (!v) return false;
-	const current = Number(variableValues.value[cond.variable] ?? v.initial_value);
-	const target = Number(cond.value);
-	switch (cond.op) {
-		case '>': return current > target;
-		case '>=': return current >= target;
-		case '<': return current < target;
-		case '<=': return current <= target;
-		case '==': return current === target;
-		case '!=': return current !== target;
-		default: return false;
-	}
-};
-
-// 兼容单条件 {variable,op,value} 与条件组 {mode:'and'|'or', items:[...]}
-const evalCondition = (cond) => {
-	if (!cond || typeof cond !== 'object') return true;
-	if (Array.isArray(cond.items)) {
-		const items = cond.items.filter(c => c && c.variable);
-		if (!items.length) return true;
-		return cond.mode === 'or'
-			? items.some(evalSingleCondition)
-			: items.every(evalSingleCondition);
-	}
-	return evalSingleCondition(cond);
-};
-
-// 场景播放条件（剧情锁）
-const scenePlayable = (sceneId) => evalCondition(sceneLocks.value[String(sceneId)] || null);
-
-// 台词级显示条件：未配置或条件满足时才会播放
-const nodePlayable = (node) => evalCondition(node?.branch_condition || null);
-
-// 从 from 开始找下一条可播放台词；返回列表长度表示本场景没有更多可播放内容
-const firstPlayableNodeIndex = (sceneId, from = 0) => {
-	const list = allDialogues.value[sceneId] || [];
-	for (let i = Math.max(0, from); i < list.length; i++) {
-		if (nodePlayable(list[i])) return i;
-	}
-	return list.length;
-};
-
-// 场景内至少有一条条件满足的台词
-const sceneHasPlayableDialogues = (sceneId) => (
-	firstPlayableNodeIndex(sceneId) < (allDialogues.value[sceneId] || []).length
-);
-
-// 把条件对象描述成「林瑶好感度 ≥ 5 且 线索数 ≥ 1」，用于锁定提示
-const conditionText = (cond) => {
-	if (!cond || typeof cond !== 'object') return '';
-	const items = Array.isArray(cond.items)
-		? cond.items.filter(c => c && c.variable)
-		: (cond.variable ? [cond] : []);
-	if (!items.length) return '';
-	const opLabels = { '>': '>', '>=': '≥', '<': '<', '<=': '≤', '==': '=', '!=': '≠' };
-	const parts = items.map((c) => {
-		const v = projectVariables.value.find(x => x.name === c.variable);
-		return `${v?.label || c.variable} ${opLabels[c.op] || c.op} ${c.value}`;
-	});
-	return parts.join(cond.mode === 'or' ? ' 或 ' : ' 且 ');
-};
+// 条件求值（变量比较 / 条件组 / 剧情锁 / 台词级条件）由 usePlayerConditions 自管
+const {
+	evalSingleCondition,
+	evalCondition,
+	scenePlayable,
+	nodePlayable,
+	firstPlayableNodeIndex,
+	sceneHasPlayableDialogues,
+	conditionText,
+} = usePlayerConditions({ projectVariables, variableValues, sceneLocks, allDialogues });
 
 const applyEffectsForCurrent = () => {
 	const d = currentDialogue.value;
