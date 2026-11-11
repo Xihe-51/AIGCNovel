@@ -1,0 +1,91 @@
+/* ===== 演出指令弹窗 ===== */
+.directive-btn {
+  border-color: #f0cfdc !important;
+  color: #c81f4a !important;
+  background: #fffafc !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+}
+
+.directive-btn:hover {
+  background: #fdeef3 !important;
+  border-color: #e8467c !important;
+}
+
+.condition-btn {
+  border-color: #e6d6c8 !important;
+  color: #8a6a4b !important;
+  background: #fffdf8 !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+}
+
+.condition-btn.has-condition {
+  border-color: #e6a23c !important;
+  color: #b88230 !important;
+  background: #fdf6ec !important;
+}
+
+.node-cond-target {
+  font-size: 12px;
+  color: #8a6a76;
+  background: #fffafc;
+  border: 1px solid #f5e4ea;
+  border-radius: 7px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.node-cond-hint {
+  font-size: 11px;
+  color: #b99aa5;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.rich-markup-tip {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #b99aa5;
+  line-height: 1.5;
+}
+
+/* 逐句译文 */
+.dlg-translation-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.dlg-translation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff8fab;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.dlg-translation-tag {
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: #fff0f5;
+  border: 1px solid #ffd3e0;
+  color: #c2185b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dlg-translation-hint {
+  font-size: 11px;
+  color: #b99aa5;
+}
