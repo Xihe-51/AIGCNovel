@@ -7,7 +7,7 @@
 		:close-on-click-modal="false"
 	>
 		<div v-if="loading" class="asset-loading">
-			<div class="spinner"></div>
+			<span class="ui-spinner ui-spinner-sm"></span>
 			<span>正在核对素材文件…</span>
 		</div>
 		<div v-else-if="result" class="asset-check">
