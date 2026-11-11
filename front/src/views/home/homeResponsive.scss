@@ -1,0 +1,73 @@
+@use './homeVars' as *;
+
+// ========== 响应式调整 ==========
+@media (max-width: 1400px) {
+  .project-container {
+    padding: 70px 24px 24px;
+  }
+  
+  .left-section-title h2 {
+    font-size: 40px;
+  }
+  
+  .left-section-title .subtitle {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .project-container {
+    flex-wrap: wrap;
+  }
+  
+  .stats-container {
+    width: 100%;
+    min-width: auto;
+    height: auto;
+    max-height: 400px;
+  }
+  
+  .left {
+    min-width: auto;
+    height: auto;
+  }
+  
+  .charts-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .project-container {
+    padding: 60px 16px 16px;
+  }
+  
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .project-list {
+    grid-template-columns: 1fr;
+  }
+  
+  .project-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    
+    .header-actions {
+      width: 100%;
+      min-width: auto;
+      justify-content: space-between;
+      padding: 6px 6px 6px 16px;
+    }
+  }
+  
+  .left-section-title h2 {
+    font-size: 32px;
+  }
+  
+  .left-section-title .subtitle {
+    font-size: 18px;
+  }
+}

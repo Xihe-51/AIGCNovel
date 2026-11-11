@@ -1,0 +1,56 @@
+@use './homeVars' as *;
+
+// ========== 全局重置 ==========
+* {
+  box-sizing: border-box;
+}
+
+// ========== 背景样式 ==========
+.background {
+  display: none; // 隐藏原来的背景图
+}
+
+// ========== 主容器 - 100vh 全屏布局 ==========
+.project-container {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 24px;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 80px 32px 32px;
+  height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  background: linear-gradient(135deg, $bg-primary 0%, $bg-secondary 100%);
+  border: none;
+  border-radius: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  
+  // 自定义滚动条
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, $pink, $purple);
+    border-radius: 10px;
+    
+    &:hover {
+      background: linear-gradient(135deg, lighten($pink, 10%), lighten($purple, 10%));
+    }
+  }
+}
