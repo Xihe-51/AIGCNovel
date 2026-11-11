@@ -853,158 +853,36 @@
         </el-tabs>
 
         <!-- 变量编辑 -->
-        <el-dialog v-model="variableDialogVisible"
-                   :title="editingVariableId ? '编辑变量' : '新建变量'"
-                   width="480px" class="custom-dialog">
-          <el-form label-position="top">
-            <el-form-item label="展示名" required>
-              <el-input v-model="variableForm.label" placeholder="如：林瑶好感度" />
-            </el-form-item>
-            <el-form-item label="变量名（英文 key）" required>
-              <el-input v-model="variableForm.name" placeholder="affection_lin"
-                        :disabled="!!editingVariableId" />
-            </el-form-item>
-            <el-form-item label="初始值">
-              <el-input v-model="variableForm.initial_value" placeholder="0" />
-            </el-form-item>
-            <el-form-item label="绑定角色（可选，用于好感度面板）">
-              <el-select v-model="variableForm.character_id" clearable placeholder="不绑定角色" style="width: 100%">
-                <el-option
-                  v-for="c in characters"
-                  :key="c.character_id"
-                  :label="c.name"
-                  :value="String(c.character_id)"
-                />
-              </el-select>
-            </el-form-item>
-            <div class="variable-range">
-              <el-form-item label="最小值">
-                <el-input v-model="variableForm.min_value" placeholder="留空表示不限" />
-              </el-form-item>
-              <el-form-item label="最大值">
-                <el-input v-model="variableForm.max_value" placeholder="留空表示不限" />
-              </el-form-item>
-            </div>
-            <el-form-item label="说明">
-              <el-input v-model="variableForm.description" placeholder="可选" />
-            </el-form-item>
-            <el-form-item label="跨周目保留">
-              <el-switch v-model="variableForm.persist" />
-              <span class="variable-persist-tip">开启后，重新开始/进入下一周目时保留该变量的当前值</span>
-            </el-form-item>
-          </el-form>
-          <template #footer>
-            <button class="dialog-btn cancel" @click="variableDialogVisible = false">取消</button>
-            <button class="dialog-btn confirm" @click="saveVariable" :disabled="variableSaving">保存</button>
-          </template>
-        </el-dialog>
+        <ProjectVariableDialog
+          v-model:visible="variableDialogVisible"
+          :saving="variableSaving"
+          :editing-id="editingVariableId"
+          :initial="variableInitial"
+          :characters="characters"
+          @save="handleSaveVariable"
+        />
 
         <!-- 结局编辑 -->
-        <el-dialog v-model="endingDialogVisible"
-                   :title="editingEndingId ? '编辑结局' : '新建结局'"
-                   width="560px" class="custom-dialog">
-          <el-form label-position="top">
-            <el-form-item label="结局标题" required>
-              <el-input v-model="endingForm.title" placeholder="如：林瑶的告白" />
-            </el-form-item>
-            <el-form-item label="结局描述">
-              <el-input v-model="endingForm.description" type="textarea" :rows="3"
-                        placeholder="结局页展示的文字" />
-            </el-form-item>
-            <el-form-item label="触发节点" required>
-              <el-select v-model="endingForm.content_id" placeholder="选择到达哪个节点时判定"
-                         style="width: 100%" filterable>
-                <el-option v-for="n in storyNodes" :key="n.content_id"
-                           :label="nodeLabel(n.content_id)" :value="n.content_id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="触发条件（全部成立）">
-              <div class="ending-conditions">
-                <div v-for="(c, ci) in endingForm.conditions" :key="ci" class="ending-condition-row">
-                  <el-select v-model="c.variable" size="small" placeholder="变量" class="condition-var">
-                    <el-option v-for="v in variables" :key="v.variable_id"
-                               :label="v.label" :value="v.name" />
-                  </el-select>
-                  <el-select v-model="c.op" size="small" class="condition-op">
-                    <el-option label="≥" value=">=" />
-                    <el-option label=">" value=">" />
-                    <el-option label="≤" value="<=" />
-                    <el-option label="<" value="<" />
-                    <el-option label="=" value="==" />
-                    <el-option label="≠" value="!=" />
-                  </el-select>
-                  <el-input-number v-model="c.value" size="small" :step="1" class="condition-value" />
-                  <button class="action-btn delete" @click="removeEndingCondition(ci)">删除</button>
-                </div>
-                <button class="action-btn" @click="addEndingCondition">添加条件</button>
-              </div>
-            </el-form-item>
-          </el-form>
-          <template #footer>
-            <button class="dialog-btn cancel" @click="endingDialogVisible = false">取消</button>
-            <button class="dialog-btn confirm" @click="saveEnding" :disabled="endingSaving">保存</button>
-          </template>
-        </el-dialog>
+        <ProjectEndingDialog
+          v-model:visible="endingDialogVisible"
+          :saving="endingSaving"
+          :editing-id="editingEndingId"
+          :initial="endingInitial"
+          :node-options="nodeOptions"
+          :variables="variables"
+          @save="handleSaveEnding"
+        />
 
         <!-- CG 编辑 -->
-        <el-dialog v-model="cgDialogVisible"
-                   :title="editingCGId ? '编辑 CG' : '添加 CG'"
-                   width="520px" class="custom-dialog">
-          <el-form label-position="top">
-            <el-form-item label="标题" required>
-              <el-input v-model="cgForm.title" placeholder="如：雨中告白" />
-            </el-form-item>
-            <el-form-item label="CG 图片" required>
-              <div class="cg-image-picker">
-                <img v-if="cgForm.image_url" :src="BASE_URL + cgForm.image_url"
-                     class="cg-thumb-lg" alt="CG 预览" />
-                <div v-else class="cg-thumb-lg cg-thumb-empty">未选择图片</div>
-                <div class="cg-image-actions">
-                  <input ref="cgFileInput" type="file" accept="image/*" style="display: none"
-                         @change="onCGFileChange" />
-                  <button class="action-btn" @click="pickCGFile" :disabled="cgUploading">
-                    {{ cgUploading ? '上传中…' : '上传本地图片' }}
-                  </button>
-                  <button class="action-btn" @click="openCGMarketPicker">从市场选 CG</button>
-                </div>
-              </div>
-            </el-form-item>
-            <el-form-item label="说明">
-              <el-input v-model="cgForm.description" type="textarea" :rows="2"
-                        placeholder="可选，鉴赏页展示的文字" />
-            </el-form-item>
-            <el-form-item label="解锁条件">
-              <el-select v-model="cgForm.unlock_ending_id" clearable style="width: 100%"
-                         placeholder="初始可见（无需解锁）">
-                <el-option v-for="e in endings" :key="e.ending_id"
-                           :label="e.title" :value="e.ending_id" />
-              </el-select>
-            </el-form-item>
-          </el-form>
-          <template #footer>
-            <button class="dialog-btn cancel" @click="cgDialogVisible = false">取消</button>
-            <button class="dialog-btn confirm" @click="saveCG" :disabled="cgSaving">保存</button>
-          </template>
-        </el-dialog>
-
-        <!-- 从市场选 CG 素材 -->
-        <el-dialog v-model="cgMarketVisible" title="选择市场 CG 素材" width="480px" class="custom-dialog">
-          <el-select v-model="cgMarketSelected" filterable placeholder="搜索「CG」类型素材"
-                     style="width: 100%" :loading="cgMarketLoading">
-            <el-option v-for="r in cgMarketOptions" :key="r.resource_id"
-                       :label="`${r.title}（${r.username || '匿名'}）`" :value="r.resource_id" />
-          </el-select>
-          <p class="variables-tip" style="margin-top: 10px">
-            选择后会引用该素材（计入素材引用数），并自动带出图片地址。
-          </p>
-          <div v-if="!cgMarketLoading && !cgMarketOptions.length" class="variables-empty">
-            市场上还没有「CG」类型素材。
-          </div>
-          <template #footer>
-            <button class="dialog-btn cancel" @click="cgMarketVisible = false">取消</button>
-            <button class="dialog-btn confirm" @click="applyCGMarket" :disabled="!cgMarketSelected">确定</button>
-          </template>
-        </el-dialog>
+        <ProjectCgDialog
+          v-model:visible="cgDialogVisible"
+          :saving="cgSaving"
+          :editing-id="editingCGId"
+          :initial="cgInitial"
+          :project-id="Number(projectId)"
+          :endings="endings"
+          @save="handleSaveCG"
+        />
       </div>
     </div>
   </div>
@@ -1023,19 +901,21 @@ import { getProject, getDialogueCount } from '@/api/project'
 import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar, cutoutCharacterAvatar, uploadCharacterAvatarLayer, updateCharacterAvatarLayer, deleteCharacterAvatarLayer } from '@/api/character'
 import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
 import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
-import { getScenes, uploadSceneFile } from '@/api/scenes'
+import { getScenes } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
 import { getStoryGraph } from '@/api/branch'
 import { listVariables, createVariable, updateVariable, deleteVariable } from '@/api/variable'
 import { listEndings, createEnding, updateEnding, deleteEnding } from '@/api/ending'
 import { listCGs, createCG, updateCG, deleteCG } from '@/api/cg'
-import { searchResources, getResourceDetail } from '@/api/market'
 import { checkProjectAssets } from '@/api/asset'
 import type { AssetCheckResult } from '@/api/asset'
 import { BASE_URL } from '@/utils/request'
 import defaultAvatarImg from '@/assets/default.jpg'
 import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
 import TechNavCircle from '@/components/TechNavCircle.vue'
+import ProjectVariableDialog from '@/components/project/ProjectVariableDialog.vue'
+import ProjectEndingDialog from '@/components/project/ProjectEndingDialog.vue'
+import ProjectCgDialog from '@/components/project/ProjectCgDialog.vue'
 
 // 接口定义保持不变
 interface Project {
@@ -1119,7 +999,8 @@ export default defineComponent({
     DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture,
     Film, ChatLineRound, Loading, Plus, Search, Sort, Close, Refresh,
     ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion,
-    TechNavCircle
+    TechNavCircle, StoryGraphEditor,
+    ProjectVariableDialog, ProjectEndingDialog, ProjectCgDialog
   },
   props: {
     projectId: { type: Number, required: true }
@@ -1170,16 +1051,8 @@ export default defineComponent({
     const variableDialogVisible = ref(false)
     const editingVariableId = ref<number | null>(null)
     const variableSaving = ref(false)
-    const variableForm = ref({
-      label: '',
-      name: '',
-      character_id: '',
-      initial_value: '0',
-      min_value: '',
-      max_value: '',
-      description: '',
-      persist: false,
-    })
+    // 交给变量弹窗的初始行；null 表示新建
+    const variableInitial = ref<any | null>(null)
 
     // 变量绑定角色后，播放器「好感度」页按角色展示
     const characterName = (id: number | null | undefined) => {
@@ -1193,31 +1066,16 @@ export default defineComponent({
     const editingEndingId = ref<number | null>(null)
     const endingSaving = ref(false)
     const storyNodes = ref<any[]>([])
-    const endingForm = ref({
-      title: '',
-      description: '',
-      content_id: null as number | null,
-      conditions: [] as { variable: string; op: string; value: number }[],
-    })
+    // 交给结局弹窗的初始行；null 表示新建
+    const endingInitial = ref<any | null>(null)
 
     // CG 图鉴
     const cgs = ref<any[]>([])
     const cgDialogVisible = ref(false)
     const editingCGId = ref<number | null>(null)
     const cgSaving = ref(false)
-    const cgUploading = ref(false)
-    const cgFileInput = ref<HTMLInputElement | null>(null)
-    const cgForm = ref({
-      title: '',
-      description: '',
-      image_url: '',
-      resource_id: null as number | null,
-      unlock_ending_id: null as number | null,
-    })
-    const cgMarketVisible = ref(false)
-    const cgMarketLoading = ref(false)
-    const cgMarketOptions = ref<any[]>([])
-    const cgMarketSelected = ref<number | null>(null)
+    // 交给 CG 弹窗的初始行；null 表示新建
+    const cgInitial = ref<any | null>(null)
     const characterDrawerVisible = ref(false)
     const currentCharacter = ref<Character | null>(null)
     // 角色名译文：{ 'zh-TW': '…', en: '…', ja: '…' }
@@ -2103,73 +1961,24 @@ export default defineComponent({
       }
     }
 
-    const resetVariableForm = () => {
-      variableForm.value = {
-        label: '',
-        name: '',
-        character_id: '',
-        initial_value: '0',
-        min_value: '',
-        max_value: '',
-        description: '',
-        persist: false,
-      }
-    }
-
     const openCreateVariable = () => {
       editingVariableId.value = null
-      resetVariableForm()
+      variableInitial.value = null
       variableDialogVisible.value = true
     }
 
     const openEditVariable = (row: any) => {
       editingVariableId.value = row.variable_id
-      variableForm.value = {
-        label: row.label || '',
-        name: row.name || '',
-        character_id: row.character_id ? String(row.character_id) : '',
-        initial_value: String(row.initial_value ?? 0),
-        min_value: row.min_value == null ? '' : String(row.min_value),
-        max_value: row.max_value == null ? '' : String(row.max_value),
-        description: row.description || '',
-        persist: !!row.persist,
-      }
+      variableInitial.value = row
       variableDialogVisible.value = true
     }
 
-    const parseOptionalInt = (value: string) => {
-      if (value === '' || value === null || value === undefined) return null
-      const n = Number(value)
-      return Number.isFinite(n) ? Math.trunc(n) : null
-    }
-
-    const saveVariable = async () => {
-      const label = variableForm.value.label.trim()
-      const name = variableForm.value.name.trim()
-      if (!label) {
-        ElMessage.warning('请填写展示名')
-        return
-      }
-      if (!/^[A-Za-z_][A-Za-z0-9_]{0,49}$/.test(name)) {
-        ElMessage.warning('变量名只能包含字母/数字/下划线，且以字母或下划线开头')
-        return
-      }
-      const payload = {
-        name,
-        label,
-        character_id: variableForm.value.character_id
-          ? Number(variableForm.value.character_id)
-          : null,
-        initial_value: parseOptionalInt(variableForm.value.initial_value) ?? 0,
-        min_value: parseOptionalInt(variableForm.value.min_value),
-        max_value: parseOptionalInt(variableForm.value.max_value),
-        description: variableForm.value.description.trim(),
-        persist: !!variableForm.value.persist,
-      }
+    // 变量弹窗已完成校验，这里只负责落库与刷新
+    const handleSaveVariable = async ({ variableId, payload }: { variableId: number | null; payload: any }) => {
       variableSaving.value = true
       try {
-        if (editingVariableId.value) {
-          await updateVariable(Number(props.projectId), editingVariableId.value, payload)
+        if (variableId) {
+          await updateVariable(Number(props.projectId), variableId, payload)
           ElMessage.success('变量已更新')
         } else {
           await createVariable(Number(props.projectId), payload)
@@ -2230,69 +2039,32 @@ export default defineComponent({
       return conds.map(c => `${c.variable} ${c.op} ${c.value}`).join(' 且 ')
     }
 
-    const resetEndingForm = () => {
-      endingForm.value = {
-        title: '',
-        description: '',
-        content_id: null,
-        conditions: [],
-      }
-    }
+    // 结局弹窗的触发节点下拉：节点 id → 可读标签
+    const nodeOptions = computed(() => storyNodes.value.map(n => ({
+      content_id: n.content_id,
+      label: nodeLabel(n.content_id),
+    })))
 
     const openCreateEnding = async () => {
       editingEndingId.value = null
-      resetEndingForm()
+      endingInitial.value = null
       await loadStoryNodes()
       endingDialogVisible.value = true
     }
 
     const openEditEnding = async (row: any) => {
       editingEndingId.value = row.ending_id
-      endingForm.value = {
-        title: row.title || '',
-        description: row.description || '',
-        content_id: row.content_id,
-        conditions: (row.conditions || []).map((c: any) => ({ ...c })),
-      }
+      endingInitial.value = row
       await loadStoryNodes()
       endingDialogVisible.value = true
     }
 
-    const addEndingCondition = () => {
-      endingForm.value.conditions.push({ variable: '', op: '>=', value: 0 })
-    }
-
-    const removeEndingCondition = (index: number) => {
-      endingForm.value.conditions.splice(index, 1)
-    }
-
-    const saveEnding = async () => {
-      const title = endingForm.value.title.trim()
-      if (!title) {
-        ElMessage.warning('请填写结局标题')
-        return
-      }
-      if (!endingForm.value.content_id) {
-        ElMessage.warning('请选择触发节点')
-        return
-      }
-      const conditions = endingForm.value.conditions
-        .filter(c => c.variable)
-        .map(c => ({
-          variable: c.variable,
-          op: c.op || '>=',
-          value: Math.trunc(Number(c.value) || 0),
-        }))
-      const payload = {
-        title,
-        description: endingForm.value.description.trim(),
-        content_id: endingForm.value.content_id,
-        conditions,
-      }
+    // 结局弹窗已完成校验，这里只负责落库与刷新
+    const handleSaveEnding = async ({ endingId, payload }: { endingId: number | null; payload: any }) => {
       endingSaving.value = true
       try {
-        if (editingEndingId.value) {
-          await updateEnding(Number(props.projectId), editingEndingId.value, payload)
+        if (endingId) {
+          await updateEnding(Number(props.projectId), endingId, payload)
           ElMessage.success('结局已更新')
         } else {
           await createEnding(Number(props.projectId), payload)
@@ -2332,19 +2104,9 @@ export default defineComponent({
       }
     }
 
-    const resetCGForm = () => {
-      cgForm.value = {
-        title: '',
-        description: '',
-        image_url: '',
-        resource_id: null,
-        unlock_ending_id: null,
-      }
-    }
-
     const openCreateCG = async () => {
       editingCGId.value = null
-      resetCGForm()
+      cgInitial.value = null
       await fetchEndings()
       cgDialogVisible.value = true
     }
@@ -2352,95 +2114,16 @@ export default defineComponent({
     const openEditCG = async (row: any) => {
       editingCGId.value = row.cg_id
       await fetchEndings()
-      cgForm.value = {
-        title: row.title || '',
-        description: row.description || '',
-        image_url: row.image_url || '',
-        resource_id: row.resource_id ?? null,
-        unlock_ending_id: row.unlock_ending_id ?? null,
-      }
+      cgInitial.value = row
       cgDialogVisible.value = true
     }
 
-    const pickCGFile = () => {
-      cgFileInput.value?.click()
-    }
-
-    const onCGFileChange = async (event: Event) => {
-      const input = event.target as HTMLInputElement
-      const file = input.files?.[0]
-      input.value = ''
-      if (!file) return
-      cgUploading.value = true
-      try {
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('project_id', String(props.projectId))
-        formData.append('file_type', 'image')
-        const res: any = await uploadSceneFile(formData)
-        const url = res?.data?.url
-        if (!res?.success || !url) throw new Error(res?.error || '上传失败')
-        cgForm.value.image_url = url
-        cgForm.value.resource_id = null
-        ElMessage.success('图片已上传')
-      } catch (e: any) {
-        ElMessage.error(e?.message || '图片上传失败')
-      } finally {
-        cgUploading.value = false
-      }
-    }
-
-    const openCGMarketPicker = async () => {
-      cgMarketSelected.value = null
-      cgMarketVisible.value = true
-      cgMarketLoading.value = true
-      try {
-        const res: any = await searchResources({ type: 'CG', page: 1, per_page: 50 } as any)
-        cgMarketOptions.value = res?.data?.data?.resources || []
-      } catch (e) {
-        cgMarketOptions.value = []
-      } finally {
-        cgMarketLoading.value = false
-      }
-    }
-
-    const applyCGMarket = async () => {
-      if (!cgMarketSelected.value) return
-      try {
-        const res: any = await getResourceDetail(cgMarketSelected.value)
-        const resource = res?.data?.data
-        if (!resource?.file_url) throw new Error('素材缺少图片地址')
-        cgForm.value.image_url = resource.file_url
-        cgForm.value.resource_id = resource.resource_id
-        if (!cgForm.value.title) cgForm.value.title = resource.title || ''
-        cgMarketVisible.value = false
-        ElMessage.success(`已选择素材「${resource.title}」`)
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.message || e?.message || '读取素材失败')
-      }
-    }
-
-    const saveCG = async () => {
-      const title = cgForm.value.title.trim()
-      if (!title) {
-        ElMessage.warning('请填写 CG 标题')
-        return
-      }
-      if (!cgForm.value.image_url && !cgForm.value.resource_id) {
-        ElMessage.warning('请上传 CG 图片或选择市场素材')
-        return
-      }
-      const payload = {
-        title,
-        description: cgForm.value.description.trim(),
-        image_url: cgForm.value.image_url,
-        resource_id: cgForm.value.resource_id,
-        unlock_ending_id: cgForm.value.unlock_ending_id,
-      }
+    // CG 弹窗自己处理上传与市场选图，这里只负责落库与刷新
+    const handleSaveCG = async ({ cgId, payload }: { cgId: number | null; payload: any }) => {
       cgSaving.value = true
       try {
-        if (editingCGId.value) {
-          await updateCG(Number(props.projectId), editingCGId.value, payload)
+        if (cgId) {
+          await updateCG(Number(props.projectId), cgId, payload)
           ElMessage.success('CG 已更新')
         } else {
           await createCG(Number(props.projectId), payload)
@@ -2487,16 +2170,13 @@ export default defineComponent({
     return {
       project, isAdd, selectedFile, characters, characterAvatars, scenes,
       currentCharacterAvatars, BASE_URL, sceneScriptContents, activeTab,
-      variables, variableDialogVisible, editingVariableId, variableSaving, variableForm,
+      variables, variableDialogVisible, editingVariableId, variableSaving, variableInitial,
       missingBehaviorVariables, behaviorSaving, enableBehaviorVariables, isBehaviorVariable,
-      fetchVariables, openCreateVariable, openEditVariable, saveVariable, removeVariable,
-      endings, endingDialogVisible, editingEndingId, endingSaving, storyNodes, endingForm,
-      fetchEndings, openCreateEnding, openEditEnding, addEndingCondition, removeEndingCondition,
-      saveEnding, removeEnding, nodeLabel, formatEndingConditions,
-      cgs, cgDialogVisible, editingCGId, cgSaving, cgUploading, cgFileInput, cgForm,
-      cgMarketVisible, cgMarketLoading, cgMarketOptions, cgMarketSelected,
-      fetchCGs, openCreateCG, openEditCG, pickCGFile, onCGFileChange,
-      openCGMarketPicker, applyCGMarket, saveCG, removeCG,
+      fetchVariables, openCreateVariable, openEditVariable, handleSaveVariable, removeVariable,
+      endings, endingDialogVisible, editingEndingId, endingSaving, endingInitial, nodeOptions,
+      fetchEndings, openCreateEnding, openEditEnding, handleSaveEnding, removeEnding, nodeLabel, formatEndingConditions,
+      cgs, cgDialogVisible, editingCGId, cgSaving, cgInitial,
+      fetchCGs, openCreateCG, openEditCG, handleSaveCG, removeCG,
       characterDrawerVisible, currentCharacter, characterNameTranslations,
       TRANSLATION_LANGUAGES, avatarDialogVisible, newAvatar,
       selectedAvatar, cutoutLoadingId, cutoutBatchRunning,
@@ -3744,52 +3424,12 @@ $cg-text-light: #999999;
   overflow: hidden;
 }
 
-.variable-persist-tip {
-  margin-left: 10px;
-  font-size: 12px;
-  color: #8a7f92;
-}
-
 .variables-empty {
   padding: 40px;
   text-align: center;
   color: #999;
   background: #fff8fa;
   border-radius: 12px;
-}
-
-.variable-range {
-  display: flex;
-  gap: 12px;
-}
-
-.variable-range .el-form-item {
-  flex: 1;
-}
-
-/* 结局条件 */
-.ending-conditions {
-  width: 100%;
-}
-
-.ending-condition-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.ending-condition-row .condition-var {
-  flex: 1 1 160px;
-  min-width: 130px;
-}
-
-.ending-condition-row .condition-op {
-  flex: 0 0 80px;
-}
-
-.ending-condition-row .condition-value {
-  flex: 0 0 120px;
 }
 
 /* CG 图鉴 */
@@ -3806,37 +3446,6 @@ $cg-text-light: #999999;
 .cg-thumb-empty {
   color: #bbb;
   font-size: 12px;
-}
-
-.cg-image-picker {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  width: 100%;
-}
-
-.cg-thumb-lg {
-  width: 150px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px dashed #f0d5e2;
-  background: #fffafc;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 150px;
-}
-
-.cg-thumb-lg.cg-thumb-empty {
-  font-size: 12px;
-  color: #bbb;
-}
-
-.cg-image-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 /* ===== 素材体检 ===== */
