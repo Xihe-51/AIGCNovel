@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { listDirectives } from '@/api/directive'
 
 const props = defineProps<{ projectId: string | number }>()
@@ -62,4 +62,5 @@ const load = async () => {
 }
 
 onMounted(load)
+watch(() => props.projectId, load)
 </script>

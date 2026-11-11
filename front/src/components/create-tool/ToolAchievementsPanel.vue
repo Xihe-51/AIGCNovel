@@ -65,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
 	listAchievements,
@@ -243,6 +243,12 @@ const achievementConditionLabel = (a: Achievement) => {
 }
 
 onMounted(() => {
+	loadVariables()
+	loadAchievements()
+})
+
+watch(() => props.projectId, () => {
+	resetAchForm()
 	loadVariables()
 	loadAchievements()
 })

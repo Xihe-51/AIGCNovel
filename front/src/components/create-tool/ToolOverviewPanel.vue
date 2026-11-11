@@ -78,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { getProjectOverview } from '@/api/gallery'
 import type { ProjectOverview } from '@/api/gallery'
 
@@ -101,4 +101,5 @@ const load = async () => {
 }
 
 onMounted(load)
+watch(() => props.projectId, load)
 </script>

@@ -15,7 +15,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { listVariables } from '@/api/variable'
 import type { ProjectVariable } from '@/api/variable'
 
@@ -38,4 +38,5 @@ const load = async () => {
 }
 
 onMounted(load)
+watch(() => props.projectId, load)
 </script>

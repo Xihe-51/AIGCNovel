@@ -111,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { getPlayAnalytics } from '@/api/analytics'
 import type { PlayAnalytics } from '@/api/analytics'
 
@@ -140,4 +140,5 @@ const load = async () => {
 const locate = (sceneId: number, contentId?: number | null) => emit('locate', sceneId, contentId ?? null)
 
 onMounted(load)
+watch(() => props.projectId, load)
 </script>

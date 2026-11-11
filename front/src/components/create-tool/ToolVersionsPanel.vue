@@ -95,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
 	createProjectVersion,
@@ -198,4 +198,9 @@ const restoreVersion = async (v: ProjectVersionMeta) => {
 }
 
 onMounted(loadVersions)
+watch(() => props.projectId, () => {
+	diffVisible.value = false
+	diffData.value = null
+	loadVersions()
+})
 </script>

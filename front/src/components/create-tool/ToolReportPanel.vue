@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getScriptStats } from '@/api/report'
 import type { ScriptStats } from '@/api/report'
@@ -128,4 +128,5 @@ const exportCsv = () => {
 }
 
 onMounted(load)
+watch(() => props.projectId, load)
 </script>

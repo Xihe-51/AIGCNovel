@@ -22,7 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getProject, updateProject } from '@/api/project'
 import { UI_THEMES } from '@/utils/uiThemes'
@@ -57,4 +57,5 @@ const chooseTheme = async (key: string) => {
 }
 
 onMounted(load)
+watch(() => props.projectId, load)
 </script>

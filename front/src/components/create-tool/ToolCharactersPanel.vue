@@ -134,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import {
@@ -302,4 +302,9 @@ const loadCharacters = async () => {
 }
 
 onMounted(loadCharacters)
+watch(() => props.projectId, () => {
+	openChar.value = null
+	uploadVisible.value = false
+	loadCharacters()
+})
 </script>

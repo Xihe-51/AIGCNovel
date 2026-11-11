@@ -74,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
 	listProjectTerms,
@@ -195,4 +195,11 @@ const onScanHit = (h: GlossaryScanHit) => {
 }
 
 onMounted(loadTerms)
+watch(() => props.projectId, () => {
+	resetTermForm()
+	scanVisible.value = false
+	scanItems.value = []
+	scanTotal.value = 0
+	loadTerms()
+})
 </script>
