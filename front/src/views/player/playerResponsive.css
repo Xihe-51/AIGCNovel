@@ -1,0 +1,119 @@
+
+/* 响应式调整 */
+@media (max-width: 1200px) {
+  .character-stand {
+    left: 20px;
+    height: 70%;
+  }
+  
+  .continue-indicator {
+    right: 130px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dialogue-display {
+    padding: 10px;
+  }
+
+  .dialogue-box {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .dialogue-text {
+    font-size: 16px;
+    min-height: 72px;
+    margin-bottom: 8px;
+  }
+  
+  .character-stand {
+    left: 10px;
+    height: 60%;
+  }
+  
+  .continue-indicator {
+    right: 100px;
+  }
+  
+  /* 触控目标不小于 40px */
+  .func-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+
+  .function-buttons {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .player-settings-btn {
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .player-back-btn {
+    top: 62px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .player-perform-btn {
+    top: 114px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .perform-panel {
+    top: 166px;
+    right: 10px;
+    width: min(300px, calc(100vw - 20px));
+    max-height: calc(100vh - 240px);
+  }
+
+  .player-status-btn {
+    top: 10px;
+    right: 62px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .player-gallery-btn {
+    top: 10px;
+    right: 114px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .player-changelog-btn {
+    top: 10px;
+    right: 168px;
+    height: 44px;
+  }
+
+  .player-chapter-btn {
+    top: 10px;
+    right: 232px;
+    height: 44px;
+  }
+
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    max-height: 52vh;
+  }
+
+  .choice-option {
+    padding: 14px;
+    font-size: 15px;
+  }
+  
+  .history-dialogue-content {
+    width: 94vw;
+    max-height: 82vh;
+  }
+}

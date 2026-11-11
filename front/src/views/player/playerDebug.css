@@ -1,0 +1,452 @@
+
+/* 状态入口 */
+.player-status-btn {
+  position: absolute;
+  top: 16px;
+  right: 68px;
+  z-index: 30;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.player-status-btn:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* CG 鉴赏入口 */
+.player-gallery-btn {
+  position: absolute;
+  top: 16px;
+  right: 120px;
+  z-index: 30;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.player-gallery-btn:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.player-changelog-btn {
+  position: absolute;
+  top: 16px;
+  right: 172px;
+  z-index: 30;
+  height: 42px;
+  min-width: 54px;
+  padding: 0 12px;
+  border-radius: 21px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.player-changelog-btn:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* 章节跳转 / 路线图鉴入口 */
+.player-chapter-btn {
+  position: absolute;
+  top: 16px;
+  right: 236px;
+  z-index: 30;
+  height: 42px;
+  min-width: 54px;
+  padding: 0 12px;
+  border-radius: 21px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.player-chapter-btn:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* 调试器入口与面板 */
+.player-debug-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 31;
+  padding: 0 14px;
+  height: 34px;
+  border-radius: 17px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.32);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.debug-panel {
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  z-index: 31;
+  width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: rgba(20, 20, 24, 0.88);
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+}
+
+.debug-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.debug-close {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.debug-pos {
+  color: #cbd5e1;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.debug-jump {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.debug-jump input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.debug-jump button {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.debug-var {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.debug-var-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-var-key {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.debug-var-input {
+  width: 62px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  padding: 3px 5px;
+  font-size: 12px;
+}
+
+.debug-empty {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* 调试器：条件断点 / 变量历史 / 状态快照 */
+.debug-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.debug-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.debug-mini-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #e2e8f0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.debug-mini-btn.is-on {
+  background: #22c55e;
+  color: #052e16;
+}
+
+.debug-mini-btn.danger {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fecaca;
+}
+
+.debug-break-row {
+  display: flex;
+  gap: 4px;
+}
+
+.debug-break-var,
+.debug-break-op,
+.debug-break-value {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 4px;
+  min-width: 0;
+}
+
+.debug-break-var { flex: 1; }
+.debug-break-op { width: 48px; }
+.debug-break-value { width: 56px; }
+
+.debug-break-hit {
+  margin-top: 6px;
+  color: #fbbf24;
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.debug-history {
+  max-height: 110px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-history-item {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.debug-history-time { color: #64748b; }
+.debug-history-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debug-history-reason { color: #93c5fd; }
+
+.debug-snapshots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-snapshot-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.debug-snapshot-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 调试器：覆盖率 */
+.debug-coverage {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.debug-coverage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.debug-coverage-reset {
+  border: none;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.debug-coverage-row {
+  display: flex;
+  justify-content: space-between;
+  color: #cbd5e1;
+  font-size: 11px;
+  margin: 4px 0 3px;
+}
+
+.debug-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.debug-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+.debug-bar-fill.nodes {
+  background: linear-gradient(90deg, #e8467c, #ff9db5);
+}
+
+.debug-bar-fill.edges {
+  background: linear-gradient(90deg, #5b8def, #93c5fd);
+}
+
+.debug-uncovered {
+  margin-top: 10px;
+}
+
+.debug-uncovered-title {
+  color: #cbd5e1;
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+
+.debug-uncovered-list {
+  max-height: 130px;
+  overflow-y: auto;
+}
+
+.debug-uncovered-item {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.debug-uncovered-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.debug-uncovered-id {
+  color: #f59e0b;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.debug-uncovered-scene {
+  color: #94a3b8;
+  font-size: 10px;
+  flex-shrink: 0;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-uncovered-text {
+  color: #e2e8f0;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 竖屏提示 */
+.rotate-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  backdrop-filter: blur(6px);
+}
+
+.rotate-hint button {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
