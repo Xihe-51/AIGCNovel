@@ -242,6 +242,7 @@ export function useSceneStagePreview(ctx: SceneStagePreviewContext) {
     previewFgSrc,
     previewAvatarSources,
     previewAvatarSrc,
+    previewSpeaker,
     defaultAvatarSources,
     settingsBgFailed,
     activeEffect,
