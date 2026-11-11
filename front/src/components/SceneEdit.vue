@@ -1014,7 +1014,7 @@ import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/b
 import { listVariables, listEffects, saveContentEffects } from '@/api/variable'
 import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
 import { createProjectVersion } from '@/api/version'
-import { saveContentTranslation, saveSceneTranslation, saveBranchTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
+import { saveBranchTranslation } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import { 
   ArrowLeft, 
@@ -1042,6 +1042,7 @@ import DirectiveDialog from '@/components/scene/DirectiveDialog.vue';
 import { MAX_AVATAR_LAYERS } from '@/composables/scene/useDirectiveEditor';
 import { useSceneStagePreview } from '@/composables/scene/useSceneStagePreview';
 import { useSceneStageActions } from '@/composables/scene/useSceneStageActions';
+import { useSceneTranslations } from '@/composables/scene/useSceneTranslations';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -2490,141 +2491,28 @@ const saveDialogue = async (index) => {
 		loading.value = false;
 	}
 };
-
-// ===== 逐句译文 =====
-const translationDialogVisible = ref(false)
-const translationSaving = ref(false)
-const translationTarget = ref(null)
-
-const translationCount = (dialogue) => {
-	return dialogue && dialogue.translations ? Object.keys(dialogue.translations).length : 0
-}
-
-const translatedLanguages = (dialogue) => {
-	const map = dialogue && dialogue.translations ? dialogue.translations : {}
-	return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
-}
-
-const openTranslationDialog = (dialogue) => {
-	if (!dialogue || !dialogue.content_id) {
-		ElMessage.warning('请先保存这条台词，再添加译文')
-		return
-	}
-	translationTarget.value = dialogue
-	translationDialogVisible.value = true
-}
-
-const saveTranslation = async ({ lang, text }) => {
-	if (!translationTarget.value?.content_id) return
-	translationSaving.value = true
-	try {
-		const saved = await saveContentTranslation(
-			Number(translationTarget.value.content_id),
-			lang,
-			text
-		)
-		const next = { ...(translationTarget.value.translations || {}) }
-		if (saved?.text) next[saved.language] = saved.text
-		else delete next[lang]
-		translationTarget.value.translations = next
-		translationDialogVisible.value = false
-		ElMessage.success(saved?.text ? '译文已保存' : '译文已清除')
-	} catch (error) {
-		console.error('保存译文失败:', error)
-		ElMessage.error('保存译文失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
-	} finally {
-		translationSaving.value = false
-	}
-}
-
-// ===== 场景标题/描述译文 =====
-const sceneTransVisible = ref(false)
-const sceneTransSaving = ref(false)
-
-const sceneTranslationCount = computed(() => {
-	return Object.keys(scene.value.translations || {}).length
-})
-
-const translatedSceneLanguages = computed(() => {
-	const map = scene.value.translations || {}
-	return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
-})
-
-const openSceneTranslationDialog = () => {
-	if (!scene.value.scene_id) {
-		ElMessage.warning('场景尚未加载完成')
-		return
-	}
-	sceneTransVisible.value = true
-}
-
-const saveSceneTranslations = async ({ lang, title, description }) => {
-	if (!scene.value.scene_id) return
-	sceneTransSaving.value = true
-	try {
-		const saved = await saveSceneTranslation(
-			Number(scene.value.scene_id),
-			lang,
-			title,
-			description
-		)
-		const next = { ...(scene.value.translations || {}) }
-		if (saved?.title || saved?.description) {
-			next[saved.language] = { title: saved.title || '', description: saved.description || '' }
-		} else {
-			delete next[lang]
-		}
-		scene.value.translations = next
-		sceneTransVisible.value = false
-		ElMessage.success(saved?.title || saved?.description ? '场景译文已保存' : '场景译文已清除')
-	} catch (error) {
-		console.error('保存场景译文失败:', error)
-		ElMessage.error('保存场景译文失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
-	} finally {
-		sceneTransSaving.value = false
-	}
-}
-
-// ===== 选项译文 =====
-const choiceTransVisible = ref(false)
-const choiceTransSaving = ref(false)
-const choiceTransTarget = ref(null)
-
-const choiceTranslationCount = (opt) => {
-	return opt && opt.translations ? Object.keys(opt.translations).length : 0
-}
-
-const openChoiceTranslationDialog = (opt) => {
-	if (!opt?.path_id) {
-		ElMessage.warning('请先保存这条选择节点的选项，再添加译文')
-		return
-	}
-	choiceTransTarget.value = opt
-	choiceTransVisible.value = true
-}
-
-const saveChoiceTranslation = async ({ lang, text }) => {
-	if (!choiceTransTarget.value?.path_id) return
-	choiceTransSaving.value = true
-	try {
-		const saved = await saveBranchTranslation(
-			Number(choiceTransTarget.value.path_id),
-			lang,
-			text
-		)
-		const next = { ...(choiceTransTarget.value.translations || {}) }
-		if (saved?.text) next[saved.language] = saved.text
-		else delete next[lang]
-		choiceTransTarget.value.translations = next
-		choiceTransVisible.value = false
-		ElMessage.success(saved?.text ? '选项译文已保存' : '选项译文已清除')
-	} catch (error) {
-		console.error('保存选项译文失败:', error)
-		ElMessage.error('保存选项译文失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
-	} finally {
-		choiceTransSaving.value = false
-	}
-}
+// ===== 译文：逐句 / 场景 / 选项（见 useSceneTranslations） =====
+const {
+	translationDialogVisible,
+	translationSaving,
+	translationTarget,
+	translationCount,
+	translatedLanguages,
+	openTranslationDialog,
+	saveTranslation,
+	sceneTransVisible,
+	sceneTransSaving,
+	sceneTranslationCount,
+	translatedSceneLanguages,
+	openSceneTranslationDialog,
+	saveSceneTranslations,
+	choiceTransVisible,
+	choiceTransSaving,
+	choiceTransTarget,
+	choiceTranslationCount,
+	openChoiceTranslationDialog,
+	saveChoiceTranslation,
+} = useSceneTranslations({ scene });
 
 // 跳到剧情图并定位当前台词（没有台词时定位场景首个节点）
 const openGraph = () => {
