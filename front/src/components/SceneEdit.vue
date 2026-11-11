@@ -1040,6 +1040,8 @@ import VoiceDirectorDialog from '@/components/scene/VoiceDirectorDialog.vue';
 import ScriptImportDialog from '@/components/scene/ScriptImportDialog.vue';
 import DirectiveDialog from '@/components/scene/DirectiveDialog.vue';
 import { MAX_AVATAR_LAYERS } from '@/composables/scene/useDirectiveEditor';
+import { useSceneStagePreview } from '@/composables/scene/useSceneStagePreview';
+import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
 	sceneId: {
@@ -2062,6 +2064,8 @@ const stopSettingsAudio = () => {
 };
 
 const currentDialogue = computed(() => dialogues.value[currentDialogueIndex.value]);
+// 富文本：把 ** / [color] 等标记渲染成 HTML，避免作者在预览里看到原始标记
+const richPreviewHtml = (text) => renderRichHtml(parseRichText(text || ''), Infinity);
 // 传给 StagePreview 的纯展示数据，避免子组件依赖角色/富文本逻辑
 const currentSpeakerName = computed(() => getCharacterName(currentDialogue.value?.character_id));
 const currentDialogueHtml = computed(() => richPreviewHtml(currentDialogue.value?.content_text || ''));
@@ -2160,232 +2164,32 @@ const avatarLayersOf = (avatarId) => {
 	return [];
 };
 
-/* ===== 预览区：按当前对话的演出指令渲染 ===== */
-const previewDirectives = ref([]);
-
-const defaultAvatarSources = (characterId) => {
-	if (!characterId) return [];
-	const char = characters.value.find(c => c.character_id === characterId);
-	if (!char) return [];
-	const list = char.avatars || [];
-	const def = list.find(a => a.is_default) || list[0];
-	if (def && def.avatar_id) {
-		const layers = avatarLayersOf(def.avatar_id);
-		if (layers.length) return layers;
-	}
-	return char.avatar_url ? [assetSrc(char.avatar_url)] : [];
-};
-
-// 预览立绘：对话绑定角色时显示对应立绘；旁白沿用本场景上一位说话的角色，
-// 直到出现新的角色（要清空舞台请用「演出」里的隐藏指令）。
-const previewSpeaker = computed(() => {
-	for (let i = Math.min(currentDialogueIndex.value, dialogues.value.length - 1); i >= 0; i--) {
-		const d = dialogues.value[i];
-		if (d && d.character_id) return d;
-	}
-	return null;
+/* ===== 预览区：按当前对话的演出指令渲染（模型见 useSceneStagePreview） ===== */
+const {
+	previewDirectives,
+	previewSlots,
+	hasPreviewSlots,
+	avatarLayers,
+	stageVisibility,
+	previewBgSrc,
+	bgAvailable,
+	fgAvailable,
+	previewFgSrc,
+	previewAvatarSources,
+	previewAvatarSrc,
+	settingsBgFailed,
+	activeEffect,
+	loadPreviewDirectives,
+} = useSceneStagePreview({
+	projectId,
+	characters,
+	scene,
+	dialogues,
+	currentDialogueIndex,
+	assetSrc,
+	avatarLayersOf,
+	defaultBackground,
 });
-
-const previewAvatarSources = computed(() => {
-	const d = previewSpeaker.value;
-	if (!d) return [];
-	const byAvatar = avatarLayersOf(d.avatar_id);
-	if (byAvatar.length) return byAvatar;
-	return defaultAvatarSources(d.character_id);
-});
-
-const previewAvatarSrc = computed(() => previewAvatarSources.value[0] || '');
-
-// 预览区也按富文本标记渲染，避免作者看到 ** / [color] 等原始标记
-const richPreviewHtml = (text) => renderRichHtml(parseRichText(text || ''), Infinity);
-
-// ===== 舞台图层模型：任意数量图层，layer_id 稳定标识，order 为显式层级 =====
-const LEGACY_POSITION_ORDER = { left: 0, center: 1, right: 2 };
-const layerIdOf = (p = {}) => p.layer_id || p.position || 'center';
-const layerNameOf = (p = {}) => p.layer_name || ({ left: '左侧', center: '中间', right: '右侧' }[p.position] || '立绘');
-const layerOrderOf = (p = {}) => {
-	if (p.order !== undefined && p.order !== null && Number.isFinite(Number(p.order))) return Number(p.order);
-	if (p.z !== undefined && p.z !== null && Number.isFinite(Number(p.z))) return Number(p.z);
-	return LEGACY_POSITION_ORDER[p.position || 'center'] ?? 0;
-};
-const stageDefaultX = (layerId) => {
-	if (layerId === 'left') return 20;
-	if (layerId === 'right') return 80;
-	return 50;
-};
-
-const previewSlots = computed(() => {
-	const slots = {};
-	for (const d of previewDirectives.value) {
-		if (d.directive_type !== 'avatar') continue;
-		const p = d.payload || {};
-		const layerId = layerIdOf(p);
-		if (p.action === 'hide') {
-			delete slots[layerId];
-			continue;
-		}
-		const assetImage = p.image_url ? [assetSrc(p.image_url)] : [];
-		const sources = assetImage.length
-			? assetImage
-			: (avatarLayersOf(p.avatar_id).length ? avatarLayersOf(p.avatar_id) : defaultAvatarSources(p.character_id));
-		const src = sources[0];
-		if (!src) continue;
-		// 旧指令用 position + sprite 坐标；统一折算成舞台坐标，任意图层都走同一套渲染
-		const legacy = p.coord !== 'stage';
-		const x = legacy ? stageDefaultX(layerId) : (Number(p.x) || 0);
-		const y = legacy ? 100 : (Number(p.y) || 0);
-		const scale = Number(p.scale) || 1;
-		const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
-		const rotate = Number(p.rotate) || 0;
-		const order = layerOrderOf(p);
-		const visible = p.visible !== false;
-		const boxStyle = {
-			left: `${x}%`,
-			top: `${y}%`,
-			bottom: 'auto',
-			right: 'auto',
-			transform: 'translate(-50%, -100%)',
-			zIndex: 10 + order
-		};
-		const style = {
-			transform: `scale(${scale}) rotate(${rotate}deg)`,
-			opacity
-		};
-		slots[layerId] = {
-			src,
-			sources,
-			style,
-			boxStyle,
-			coord: 'stage',
-			visible,
-			order,
-			layer_id: layerId,
-			layer_name: layerNameOf(p),
-			x,
-			y,
-			scale,
-			opacity,
-			rotate,
-			character_id: p.character_id,
-			avatar_id: p.avatar_id
-		};
-	}
-	return slots;
-});
-
-const hasPreviewSlots = computed(() => Object.keys(previewSlots.value).length > 0);
-
-// 图层列表：order 越高越靠前（列表展示时再倒序）
-const avatarLayers = computed(() => Object.values(previewSlots.value)
-	.map(slot => ({
-		layer_id: slot.layer_id,
-		label: slot.layer_name || slot.layer_id,
-		exists: true,
-		visible: slot.visible !== false,
-		order: slot.order
-	}))
-	.sort((a, b) => a.order - b.order));
-
-// 舞台层可见性（背景/前景/对话框）：由节点级 stage 指令控制，缺省全部可见
-const stageVisibility = computed(() => {
-	const base = { background: true, foreground: true, dialogue: true };
-	for (const d of previewDirectives.value) {
-		if (d.directive_type !== 'stage') continue;
-		const p = d.payload || {};
-		if (typeof p.background === 'boolean') base.background = p.background;
-		if (typeof p.foreground === 'boolean') base.foreground = p.foreground;
-		if (typeof p.dialogue === 'boolean') base.dialogue = p.dialogue;
-	}
-	return base;
-});
-
-const previewBgSrc = computed(() => {
-	if (!stageVisibility.value.background) return '';
-	let bg = '';
-	for (const d of previewDirectives.value) {
-		if (d.directive_type !== 'background') continue;
-		const p = d.payload || {};
-		if (p.layer === 'foreground') continue;
-		bg = p.url || '';
-	}
-	if (bg) return assetSrc(bg);
-	return scene.value.background_url ? assetSrc(scene.value.background_url) : defaultBackground;
-});
-
-// 背景/前景是否存在真实资源（与是否被隐藏无关，供图层列表判断"空/已设置"）
-const bgAvailable = computed(() => {
-	for (const d of previewDirectives.value) {
-		if (d.directive_type !== 'background') continue;
-		const p = d.payload || {};
-		if (p.layer === 'foreground') continue;
-		if (p.url) return true;
-	}
-	return !!scene.value.background_url;
-});
-
-const fgAvailable = computed(() => {
-	for (const d of previewDirectives.value) {
-		if (d.directive_type !== 'background') continue;
-		const p = d.payload || {};
-		if (p.layer === 'foreground' && p.url) return true;
-	}
-	return false;
-});
-
-const previewFgSrc = computed(() => {
-	if (!stageVisibility.value.foreground) return '';
-	let fg = '';
-	for (const d of previewDirectives.value) {
-		if (d.directive_type !== 'background') continue;
-		const p = d.payload || {};
-		if (p.layer !== 'foreground') continue;
-		fg = p.url || '';
-	}
-	return fg ? assetSrc(fg) : '';
-});
-
-// 场景设置里的背景图 404 降级；舞台预览的裂图由 SceneStagePreview 自己处理
-const settingsBgFailed = ref(false);
-watch(() => scene.value.background_url, () => { settingsBgFailed.value = false; });
-
-/* 画面效果：当前节点最后一条 effect 指令在预览里触发一次 */
-const activeEffect = ref(null);
-let effectTimer = null;
-
-const previewEffect = computed(() => {
-	const list = previewDirectives.value.filter(d => d.directive_type === 'effect');
-	if (!list.length) return null;
-	return list[list.length - 1].payload || null;
-});
-
-const triggerPreviewEffect = (p) => {
-	clearTimeout(effectTimer);
-	activeEffect.value = null;
-	if (!p) return;
-	const duration = Number(p.duration_ms) || (p.effect === 'weather' ? 3000 : 400);
-	// 先置空再赋值，保证连续两次相同效果也能重新播放 CSS 动画
-	nextTick(() => {
-		activeEffect.value = { ...p, duration_ms: duration, key: Date.now() };
-		effectTimer = setTimeout(() => { activeEffect.value = null; }, duration);
-	});
-};
-
-watch(previewEffect, (p) => { triggerPreviewEffect(p); }, { immediate: true, deep: true });
-
-onBeforeUnmount(() => { clearTimeout(effectTimer); });
-
-const loadPreviewDirectives = async (contentId) => {
-	if (!contentId) {
-		previewDirectives.value = [];
-		return;
-	}
-	try {
-		previewDirectives.value = await listNodeDirectives(Number(projectId.value), Number(contentId));
-	} catch (e) {
-		previewDirectives.value = [];
-	}
-};
-
 /* ===== 舞台撤销栈：覆盖当前台词全部演出指令（立绘/背景/音乐/音效/效果/停顿） ===== */
 // 每次写操作前对「当前台词的全部指令」做快照入栈；演出弹窗的增删改也走同一栈。
 // 栈顶一步持久化到 localStorage，刷新后若服务端指令未变，仍可撤销。
