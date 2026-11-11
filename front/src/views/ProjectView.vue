@@ -130,61 +130,7 @@
               </el-dialog>
 
               <!-- 素材体检 -->
-              <el-dialog
-                v-model="assetDialogVisible"
-                title="素材体检"
-                width="720px"
-                class="custom-dialog"
-                :close-on-click-modal="false"
-              >
-                <div v-if="assetLoading" class="asset-loading">
-                  <div class="spinner"></div>
-                  <span>正在核对素材文件…</span>
-                </div>
-                <div v-else-if="assetResult" class="asset-check">
-                  <div :class="['asset-summary', assetResult.healthy ? 'is-ok' : 'is-warn']">
-                    <el-icon><WarningFilled /></el-icon>
-                    <span v-if="assetResult.healthy">
-                      素材全部就位：共 {{ assetResult.total }} 条素材，文件都在。
-                    </span>
-                    <span v-else>
-                      发现 {{ assetResult.missing_count }} 条缺失素材
-                      （共 {{ assetResult.total }} 条，正常 {{ assetResult.ok_count }} 条）。
-                    </span>
-                  </div>
-
-                  <div v-if="assetResult.missing_count" class="asset-section">
-                    <div class="asset-section-title">缺失的文件</div>
-                    <div v-for="(m, i) in assetResult.missing" :key="'m' + i" class="asset-row">
-                      <span class="asset-kind">{{ m.kind_label }}</span>
-                      <span class="asset-where">{{ m.where }}</span>
-                      <span class="asset-url">{{ m.url }}</span>
-                    </div>
-                  </div>
-
-                  <div v-if="assetResult.market_references.length" class="asset-section">
-                    <div class="asset-section-title">
-                      引用的市场素材（{{ assetResult.market_references.length }} 条）
-                    </div>
-                    <div v-for="(r, i) in assetResult.market_references" :key="'r' + i" class="asset-row">
-                      <span class="asset-kind">{{ r.resource_type }}</span>
-                      <span class="asset-where">{{ r.title }}</span>
-                      <span :class="['asset-status', r.status]">
-                        {{ r.status === 'missing' ? '文件缺失' : (r.status === 'external' ? '外链' : '正常') }}
-                      </span>
-                      <span class="asset-count">被引用 {{ r.reference_count }} 次</span>
-                    </div>
-                  </div>
-
-                  <p class="asset-tip">
-                    缺失通常是静态文件被删/搬走，或从市场素材删除后遗留。重新上传即可修复。
-                  </p>
-                </div>
-                <template #footer>
-                  <button class="dialog-btn cancel" @click="assetDialogVisible = false">关闭</button>
-                  <button class="dialog-btn confirm" @click="openAssetCheck">重新检查</button>
-                </template>
-              </el-dialog>
+              <ProjectAssetDialog v-model:visible="assetDialogVisible" :project-id="projectId" />
             </div>
             
             <div v-else class="loading-state">
@@ -407,74 +353,11 @@
               </el-dialog>
 
               <!-- 立绘差分层管理 -->
-              <el-dialog v-model="layerDialogVisible" title="立绘差分层" width="600px" class="custom-dialog">
-                <div v-if="layerTargetAvatar" class="layer-panel">
-                  <div class="layer-base">
-                    <img :src="BASE_URL + (layerTargetAvatar.image_url || '')" alt="" />
-                    <div class="layer-base-meta">
-                      <p class="layer-base-title">
-                        {{ layerTargetAvatar.avatar_type }} · {{ layerTargetAvatar.costume || '默认服装' }}
-                      </p>
-                      <p class="layer-base-desc">
-                        基础图固定不动；差分图按「叠放顺序」压在上面，数字越大越靠前。透明底 PNG 效果最好。
-                      </p>
-                    </div>
-                  </div>
-
-                  <div v-if="layerTargetAvatar.layers && layerTargetAvatar.layers.length" class="layer-list">
-                    <div v-for="layer in layerTargetAvatar.layers" :key="layer.layer_id" class="layer-row">
-                      <img :src="BASE_URL + layer.image_url" alt="" class="layer-thumb" />
-                      <el-input
-                        v-model="layer.layer_name"
-                        placeholder="层名称"
-                        class="layer-name"
-                        @change="saveAvatarLayer(layer)"
-                      />
-                      <el-select v-model="layer.layer_type" class="layer-type" @change="saveAvatarLayer(layer)">
-                        <el-option v-for="t in avatarLayerTypes" :key="t.value" :label="t.label" :value="t.value" />
-                      </el-select>
-                      <el-input-number
-                        v-model="layer.order"
-                        :min="0"
-                        :max="99"
-                        size="small"
-                        controls-position="right"
-                        class="layer-order"
-                        @change="saveAvatarLayer(layer)"
-                      />
-                      <button class="avatar-btn delete" @click="removeAvatarLayer(layer)">删除</button>
-                    </div>
-                  </div>
-                  <p v-else class="layer-empty">还没有差分层。上传一张透明底表情/姿势图即可叠加。</p>
-
-                  <div class="layer-upload">
-                    <el-upload
-                      :show-file-list="false"
-                      :auto-upload="false"
-                      :on-change="onLayerFileChange"
-                      accept=".png,.webp,.jpg,.jpeg"
-                      drag
-                    >
-                      <div class="upload-area layer-upload-area">
-                        <el-icon><UploadFilled /></el-icon>
-                        <p>点击或拖拽上传差分图{{ layerFile ? `：${layerFile.name}` : '' }}</p>
-                      </div>
-                    </el-upload>
-                    <div class="layer-upload-form">
-                      <el-input v-model="newLayer.layer_name" placeholder="层名称，如「微笑」" />
-                      <el-select v-model="newLayer.layer_type">
-                        <el-option v-for="t in avatarLayerTypes" :key="t.value" :label="t.label" :value="t.value" />
-                      </el-select>
-                      <button class="dialog-btn confirm" :disabled="!layerFile || layerSaving" @click="addAvatarLayer">
-                        {{ layerSaving ? '上传中…' : '添加差分层' }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <template #footer>
-                  <button class="dialog-btn cancel" @click="layerDialogVisible = false">关闭</button>
-                </template>
-              </el-dialog>
+              <ProjectLayerDialog
+                v-model:visible="layerDialogVisible"
+                :avatar="layerTargetAvatar"
+                @changed="handleLayerChanged"
+              />
 
               <!-- 抠图进度对话框 -->
               <el-dialog
@@ -723,7 +606,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getProject, getDialogueCount } from '@/api/project'
-import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar, uploadCharacterAvatarLayer, updateCharacterAvatarLayer, deleteCharacterAvatarLayer } from '@/api/character'
+import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar } from '@/api/character'
 import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
 import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
 import { getScenes } from '@/api/scenes'
@@ -732,8 +615,6 @@ import { getStoryGraph } from '@/api/branch'
 import { listVariables, createVariable, updateVariable, deleteVariable } from '@/api/variable'
 import { listEndings, createEnding, updateEnding, deleteEnding } from '@/api/ending'
 import { listCGs, createCG, updateCG, deleteCG } from '@/api/cg'
-import { checkProjectAssets } from '@/api/asset'
-import type { AssetCheckResult } from '@/api/asset'
 import { BASE_URL } from '@/utils/request'
 import defaultAvatarImg from '@/assets/default.jpg'
 import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
@@ -742,6 +623,8 @@ import ProjectVariableDialog from '@/components/project/ProjectVariableDialog.vu
 import ProjectEndingDialog from '@/components/project/ProjectEndingDialog.vue'
 import ProjectCgDialog from '@/components/project/ProjectCgDialog.vue'
 import ProjectFlowPreview from '@/components/project/ProjectFlowPreview.vue'
+import ProjectAssetDialog from '@/components/project/ProjectAssetDialog.vue'
+import ProjectLayerDialog from '@/components/project/ProjectLayerDialog.vue'
 import { useProjectCutout } from '@/composables/project/useProjectCutout'
 
 // 接口定义保持不变
@@ -828,7 +711,8 @@ export default defineComponent({
     ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion,
     TechNavCircle, StoryGraphEditor,
   ProjectFlowPreview,
-    ProjectVariableDialog, ProjectEndingDialog, ProjectCgDialog
+    ProjectVariableDialog, ProjectEndingDialog, ProjectCgDialog,
+    ProjectAssetDialog, ProjectLayerDialog
   },
   props: {
     projectId: { type: Number, required: true }
@@ -911,24 +795,13 @@ export default defineComponent({
     const avatarDialogVisible = ref(false)
     const newAvatar = ref<Partial<CharacterAvatar>>({ avatar_type: '正常', is_default: false })
     const selectedAvatar = ref<CharacterAvatar | null>(null)
-    // 立绘分层差分：基础图 + 表情/姿势叠加层
+    // 立绘分层差分：基础图 + 表情/姿势叠加层（叠加层增删改由 ProjectLayerDialog 自管）
     const layerDialogVisible = ref(false)
     const layerTargetAvatar = ref<CharacterAvatar | null>(null)
-    const layerFile = ref<File | null>(null)
-    const layerSaving = ref(false)
-    const avatarLayerTypes = [
-      { value: 'expression', label: '表情' },
-      { value: 'pose', label: '姿势' },
-      { value: 'costume', label: '服装' },
-      { value: 'other', label: '其他' },
-    ]
-    const newLayer = ref<{ layer_name: string; layer_type: string }>({ layer_name: '', layer_type: 'expression' })
     const settingsDialogVisible = ref(false)
     const showFeaturePreview = ref(false)
     const showNodeEditor = ref(false)
     const assetDialogVisible = ref(false)
-    const assetLoading = ref(false)
-    const assetResult = ref<AssetCheckResult | null>(null)
     const sceneEditorVisible = ref(false)
     const currentScene = ref<Scene | null>(null)
     const sceneCharacters = ref<SceneCharacter[]>([])
@@ -966,19 +839,9 @@ export default defineComponent({
       showNodeEditor.value = true
     }
 
-    // 素材体检：扫描项目内全部素材字段，报告磁盘缺失与市场素材引用数
-    const openAssetCheck = async () => {
+    // 素材体检：扫描与结果渲染由 ProjectAssetDialog 自管，这里只负责显隐
+    const openAssetCheck = () => {
       assetDialogVisible.value = true
-      assetLoading.value = true
-      assetResult.value = null
-      try {
-        assetResult.value = await checkProjectAssets(props.projectId)
-      } catch (error) {
-        console.error('素材体检失败:', error)
-        ElMessage.error('素材体检失败，请稍后重试')
-      } finally {
-        assetLoading.value = false
-      }
     }
 
     const filteredCharacters = computed(() => {
@@ -1192,71 +1055,13 @@ export default defineComponent({
 
     const openLayerDialog = (avatar: CharacterAvatar) => {
       layerTargetAvatar.value = avatar
-      layerFile.value = null
-      newLayer.value = { layer_name: '', layer_type: 'expression' }
       layerDialogVisible.value = true
     }
 
-    const onLayerFileChange = (file: any) => {
-      layerFile.value = file?.raw || null
-    }
-
-    const refreshAfterLayerChange = async () => {
+    // 差分层增删后重新拉取立绘，并把弹窗目标指到刷新后的对象
+    const handleLayerChanged = async () => {
       await fetchCharacterAvatars()
       syncCurrentCharacterAvatars()
-    }
-
-    // 差分层按叠放顺序升序展示，和「数字越大越靠前」的语义保持一致
-    const sortTargetLayers = () => {
-      const avatar = layerTargetAvatar.value
-      if (!avatar?.layers) return
-      avatar.layers = [...avatar.layers].sort(
-        (a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)
-      )
-    }
-
-    const addAvatarLayer = async () => {
-      if (!layerTargetAvatar.value || !layerFile.value) return
-      layerSaving.value = true
-      try {
-        await uploadCharacterAvatarLayer(
-          layerTargetAvatar.value.avatar_id,
-          layerFile.value,
-          newLayer.value.layer_name.trim() || undefined,
-          newLayer.value.layer_type,
-        )
-        await refreshAfterLayerChange()
-        layerFile.value = null
-        newLayer.value = { layer_name: '', layer_type: 'expression' }
-        ElMessage.success('差分层已添加')
-      } catch (error) {
-        ElMessage.error('差分层上传失败，请重试')
-      } finally {
-        layerSaving.value = false
-      }
-    }
-
-    const saveAvatarLayer = async (layer: CharacterAvatarLayer) => {
-      try {
-        await updateCharacterAvatarLayer(layer.layer_id, {
-          layer_name: layer.layer_name || '',
-          layer_type: layer.layer_type,
-          order: Number(layer.order) || 0,
-        })
-        sortTargetLayers()
-        ElMessage.success('差分层已更新')
-      } catch (error) {
-        ElMessage.error('差分层更新失败')
-      }
-    }
-
-    const removeAvatarLayer = async (layer: CharacterAvatarLayer) => {
-      try {
-        await ElMessageBox.confirm('确定要删除这个差分层吗？', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
-        await deleteCharacterAvatarLayer(layer.layer_id)
-        await refreshAfterLayerChange()
-        ElMessage.success('差分层已删除')
-      } catch {}
     }
 
     // 抠图状态与流程由 useProjectCutout 自管
@@ -1604,7 +1409,7 @@ export default defineComponent({
       cutoutDialogVisible, cutoutTarget, cutoutPercent, cutoutStage, cutoutStatus, cutoutError,
       stopCutoutTimer, retryCutout, batchCutout,
       settingsDialogVisible, showFeaturePreview, showNodeEditor,
-      assetDialogVisible, assetLoading, assetResult, openAssetCheck,
+      assetDialogVisible, openAssetCheck,
       sceneEditorVisible, currentScene, sceneCharacters, currentSceneBackground,
       previewMode, currentPreviewScene, currentPreviewContent, currentPreviewCharacters,
       editingDescription, characterSearch, loadingCharacters, loadingScenes,
@@ -1613,8 +1418,8 @@ export default defineComponent({
       formatTime, handleChange, getGenreColor, getContentTagType, getCharacterColor,
       showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
       showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, cutoutAvatar, deleteAvatar,
-      layerDialogVisible, layerTargetAvatar, layerFile, layerSaving, avatarLayerTypes, newLayer,
-      openLayerDialog, onLayerFileChange, addAvatarLayer, saveAvatarLayer, removeAvatarLayer,
+      layerDialogVisible, layerTargetAvatar,
+      openLayerDialog, handleLayerChanged,
       showSettingsDialog, addSetting, removeSetting, updateSettings,
       fetchScenes, getNextScene,
       getAvatarUrl, onAvatarImgError, startVoice,
