@@ -709,14 +709,12 @@ import {
 } from '@/api/dialogue'
 import {
 	getScenes as getProjectScenes,
-	listSceneLocks,
 	updateScene,
 } from '@/api/scenes'
 import { listBranches, getStoryGraph } from '@/api/branch'
 import { listPublicReleases } from '@/api/release'
 import { listReads, markReads } from '@/api/read'
 import { listChapters } from '@/api/chapter'
-import { listVariables, listEffects, getProjectMeta, saveProjectMeta } from '@/api/variable'
 import { listEndings, unlockEnding } from '@/api/ending'
 import { listMusicGallery, unlockMusic } from '@/api/gallery'
 import { getGallery } from '@/api/cg'
@@ -729,6 +727,7 @@ import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { useSaveSlots } from '@/composables/player/useSaveSlots'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
+import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import {
 	usePlayerStage,
 	layerIdOf,
@@ -1029,42 +1028,32 @@ const showRotateHint = ref(false);
 const touchStart = { x: 0, y: 0, t: 0 };
 let suppressClick = false;
 
-// 项目变量（好感度/数值/开关）
-const projectVariables = ref([]);
-const variableEffects = ref([]);
-const variableValues = ref({});
-// 变量变化提示（好感度 +5 / 线索 +1 之类，短暂浮层）
-const variableNotices = ref([]);
-const variableNoticeTimers = new Set();
-let variableNoticeSeq = 0;
-// 跨周目变量：服务端保存的 persist 变量值（重新开始/下一周目/重进作品时沿用）
-const metaVariables = ref({});
-let metaSaveTimer = null;
-
-const clearVariableNotices = () => {
-	variableNoticeTimers.forEach((timer) => clearTimeout(timer));
-	variableNoticeTimers.clear();
-	variableNotices.value = [];
-};
-
-const pushVariableNotices = (items) => {
-	if (!items.length || !playerSettings.value.showVariableNotice) return;
-	for (const item of items) {
-		const id = ++variableNoticeSeq;
-		variableNotices.value.push({ id, label: item.label, delta: item.delta });
-		const timer = setTimeout(() => {
-			variableNotices.value = variableNotices.value.filter((n) => n.id !== id);
-			variableNoticeTimers.delete(timer);
-		}, 2600);
-		variableNoticeTimers.add(timer);
-	}
-	// 单节点变量太多时只保留最近几条，避免浮层堆满画面
-	if (variableNotices.value.length > 8) {
-		variableNotices.value = variableNotices.value.slice(-8);
-	}
-};
-// 场景播放条件（剧情锁）：scene_id → 条件组
-const sceneLocks = ref({});
+// 变量系统（定义/取值/跨周目持久化/行为变量/变化浮层）由 usePlayerVariables 自管
+const {
+	projectVariables,
+	variableEffects,
+	variableValues,
+	variableNotices,
+	sceneLocks,
+	metaVariables,
+	clampVariable,
+	initialValueOf,
+	initVariableValues,
+	snapshotPersistVariables,
+	syncProjectMeta,
+	loadProjectMeta,
+	loadVariableSystem,
+	clearVariableNotices,
+	pushVariableNotices,
+	behaviorDefOf,
+	setBehaviorVariable,
+	markHesitationStart,
+	commitHesitation,
+	bumpBehaviorReview,
+} = usePlayerVariables({
+	projectId: () => Number(props.projectId),
+	showNotices: () => playerSettings.value.showVariableNotice,
+});
 const statusDialogVisible = ref(false);
 const lastEffectKey = ref('');
 
@@ -1840,122 +1829,8 @@ const dismissRotateHint = () => {
 };
 
 // ==================== 项目变量 ====================
-// 变量初始值：persist 变量优先沿用服务端保存的跨周目值
-const initialValueOf = (v) => {
-	if (v.persist && metaVariables.value[v.name] != null) {
-		return clampVariable(v, metaVariables.value[v.name]);
-	}
-	return v.initial_value;
-};
-
-const initVariableValues = () => {
-	const next = { ...variableValues.value };
-	for (const v of projectVariables.value) {
-		if (!(v.name in next)) next[v.name] = initialValueOf(v);
-	}
-	variableValues.value = next;
-};
-
-// 只收集 persist 变量的当前值，交给后端按用户/项目保存
-const snapshotPersistVariables = () => {
-	const out = {};
-	for (const v of projectVariables.value) {
-		if (!v.persist) continue;
-		out[v.name] = Number(variableValues.value[v.name] ?? v.initial_value);
-	}
-	return out;
-};
-
-// 本地同步 + 防抖写回服务端（变量频繁变化时只在停止变化后发一次）
-const syncProjectMeta = (immediate = false) => {
-	const snapshot = snapshotPersistVariables();
-	if (!Object.keys(snapshot).length) return;
-	metaVariables.value = { ...metaVariables.value, ...snapshot };
-	if (metaSaveTimer) {
-		clearTimeout(metaSaveTimer);
-		metaSaveTimer = null;
-	}
-	const push = () => {
-		saveProjectMeta(Number(props.projectId), snapshot).catch((e) => {
-			console.warn('保存跨周目变量失败:', e);
-		});
-	};
-	if (immediate) push();
-	else metaSaveTimer = setTimeout(() => {
-		metaSaveTimer = null;
-		push();
-	}, 500);
-};
-
-const loadProjectMeta = async () => {
-	try {
-		const meta = await getProjectMeta(Number(props.projectId));
-		metaVariables.value = meta.variables || {};
-	} catch (e) {
-		metaVariables.value = {};
-	}
-};
-
-const loadVariableSystem = async () => {
-	try {
-		projectVariables.value = await listVariables(Number(props.projectId));
-		variableEffects.value = await listEffects(Number(props.projectId));
-		sceneLocks.value = await listSceneLocks(Number(props.projectId)) || {};
-		await loadProjectMeta();
-		initVariableValues();
-	} catch (e) {
-		console.warn('读取项目变量失败:', e);
-		projectVariables.value = [];
-		variableEffects.value = [];
-		sceneLocks.value = {};
-	}
-};
-
-const clampVariable = (v, value) => {
-	let n = Number(value) || 0;
-	if (v.min_value !== null && v.min_value !== undefined) n = Math.max(Number(v.min_value), n);
-	if (v.max_value !== null && v.max_value !== undefined) n = Math.min(Number(v.max_value), n);
-	return n;
-};
-
-// ==================== 活叙事：行为变量 ====================
-// 仅当作者显式启用了 behavior_hesitation / behavior_review 时才记录，不默认采集。
-const BEHAVIOR_HESITATION = 'behavior_hesitation';
-const BEHAVIOR_REVIEW = 'behavior_review';
-let hesitationStartedAt = 0;
-let hesitationContentId = null;
-
-const behaviorDefOf = (name) => projectVariables.value.find(v => v.name === name);
-
-const setBehaviorVariable = (name, value) => {
-	const def = behaviorDefOf(name);
-	if (!def) return;
-	const next = clampVariable(def, Math.max(0, Math.round(Number(value) || 0)));
-	if (Number(variableValues.value[name] ?? def.initial_value) === next) return;
-	variableValues.value = { ...variableValues.value, [name]: next };
-};
-
-// 同一选择节点只记一次开始时间，避免设置/打字重入把犹豫时间清零
-const markHesitationStart = (contentId) => {
-	if (!contentId || hesitationContentId === contentId) return;
-	hesitationContentId = contentId;
-	hesitationStartedAt = Date.now();
-};
-
-const commitHesitation = () => {
-	if (!hesitationStartedAt) return;
-	const seconds = Math.min(60, Math.floor((Date.now() - hesitationStartedAt) / 1000));
-	hesitationStartedAt = 0;
-	hesitationContentId = null;
-	setBehaviorVariable(BEHAVIOR_HESITATION, seconds);
-};
-
-const bumpBehaviorReview = () => {
-	const def = behaviorDefOf(BEHAVIOR_REVIEW);
-	if (!def) return;
-	const current = Number(variableValues.value[BEHAVIOR_REVIEW] ?? def.initial_value);
-	setBehaviorVariable(BEHAVIOR_REVIEW, current + 1);
-};
+// 变量定义/取值/持久化/行为变量已在 usePlayerVariables 内，条件求值在 usePlayerConditions 内，
+// 这里只保留"按当前台词应用变量效果"的编排逻辑。
 
 // 条件求值（变量比较 / 条件组 / 剧情锁 / 台词级条件）由 usePlayerConditions 自管
 const {
