@@ -1049,6 +1049,7 @@ import { useSceneHistory } from '@/composables/scene/useSceneHistory';
 import { useSceneSelection } from '@/composables/scene/useSceneSelection';
 import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
 import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAutosave';
+import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1779,6 +1780,33 @@ const {
 	refreshDirectiveList,
 	clearRedo: () => { redoStack.value = []; },
 });
+/* ===== 素材拖拽：舞台直出 / 场景设置槽位（见 useSceneAssetDrop） ===== */
+const {
+	onStageAssetDrop,
+	onAvatarReplaceAsset,
+	onBackgroundDrop,
+	onMusicDrop,
+} = useSceneAssetDrop({
+	projectId,
+	currentDialogue,
+	avatarLayers,
+	scene,
+	stageUndoStack,
+	dragOverBg,
+	dragOverMusic,
+	settingsBgFailed,
+	musicPlaying,
+	musicProgress,
+	musicDuration,
+	snapshotStageDirectives,
+	markStageUndoApplied,
+	nextLayerOrder,
+	findAvatarDirective,
+	loadPreviewDirectives,
+	refreshDirectiveList,
+	pushHistory,
+	markDirty,
+});
 
 // 统一撤销：台词栈与舞台栈按操作时间比较，撤销更近的一步
 const canUndoAny = computed(() => undoStack.value.length > 0 || stageUndoStack.value.length > 0);
@@ -1791,103 +1819,6 @@ const undoLast = () => {
 	if (sAt >= dAt) undoAvatar();
 	else undo();
 };
-// ===== 素材直出：拖到舞台空白处新建立绘层 / 拖到已有图层替换图片 =====
-
-const stageAssetPayload = (ev) => {
-	try {
-		const raw = ev.dataTransfer?.getData('application/x-aigc-asset') || ''
-		if (raw) {
-			const data = JSON.parse(raw)
-			const url = data?.url || data?.image_url || ''
-			if (url) return { url, label: data?.label || data?.title || '' }
-		}
-		const text = ev.dataTransfer?.getData('text/plain') || ''
-		if (text && isImageUrl(text)) return { url: text, label: '' }
-	} catch (_) {
-		/* 非素材拖拽数据 */
-	}
-	return null;
-};
-
-const onStageAssetDrop = async ({ url, label, x, y }) => {
-	const dialogue = currentDialogue.value;
-	if (!dialogue?.content_id) {
-		ElMessage.warning('请先保存当前台词，再把素材拖到舞台');
-		return;
-	}
-	if (avatarLayers.value.length >= MAX_AVATAR_LAYERS) {
-		ElMessage.warning(`最多 ${MAX_AVATAR_LAYERS} 个立绘图层`);
-		return;
-	}
-	const pid = Number(projectId.value);
-	const contentId = Number(dialogue.content_id);
-	const layerId = `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-	const layerName = String(label || '素材立绘').slice(0, 30) || '素材立绘';
-	snapshotStageDirectives();
-	try {
-		await createDirective(pid, {
-			content_id: contentId,
-			directive_type: 'avatar',
-			payload: {
-				layer_id: layerId,
-				layer_name: layerName,
-				order: nextLayerOrder(),
-				image_url: url,
-				action: 'show',
-				coord: 'stage',
-				x: Math.max(0, Math.min(100, Number(x) || 50)),
-				y: Math.max(0, Math.min(100, Number(y) || 100)),
-				scale: 1,
-				opacity: 1,
-				rotate: 0
-			}
-		});
-		await loadPreviewDirectives(contentId);
-		await refreshDirectiveList();
-		markStageUndoApplied();
-		ElMessage.success(`已用素材创建立绘层「${layerName}」`);
-	} catch (e) {
-		stageUndoStack.value.pop();
-		console.error('素材立绘层创建失败:', e);
-		ElMessage.error('素材立绘层创建失败，请重试');
-	}
-};
-
-const onAvatarReplaceAsset = async (layerId, asset) => {
-	const dialogue = currentDialogue.value;
-	if (!dialogue?.content_id) {
-		ElMessage.warning('请先保存当前台词，再替换图层素材');
-		return;
-	}
-	const existing = findAvatarDirective(layerId);
-	if (!existing) {
-		ElMessage.warning('该图层还没有立绘指令，无法替换素材');
-		return;
-	}
-	const pid = Number(projectId.value);
-	const contentId = Number(dialogue.content_id);
-	snapshotStageDirectives();
-	try {
-		await updateDirective(pid, existing.directive_id, {
-			payload: {
-				...(existing.payload || {}),
-				layer_id: layerId,
-				image_url: asset.url,
-				layer_name: (existing.payload && existing.payload.layer_name) || asset.label || layerId,
-				action: 'show'
-			}
-		});
-		await loadPreviewDirectives(contentId);
-		await refreshDirectiveList();
-		markStageUndoApplied();
-		ElMessage.success('图层素材已替换');
-	} catch (e) {
-		stageUndoStack.value.pop();
-		console.error('替换图层素材失败:', e);
-		ElMessage.error('替换图层素材失败，请重试');
-	}
-};
-
 // 资源热重载：不改剧本，只给预览 URL 换时间戳并重新拉取指令
 const hotReloadAssets = () => {
 	assetNonce.value = Date.now();
@@ -1919,51 +1850,6 @@ const handleCharacterChange = (index) => {
 	markDirty();
 	dialogues.value[index].avatar_id = '';
 };
-
-// ===== 素材库拖拽：图片 → 背景，音频 → 背景音乐 =====
-const readAssetPayload = (e) => {
-	try {
-		const raw = e.dataTransfer?.getData('application/x-aigc-asset') || ''
-		return raw ? JSON.parse(raw) : null
-	} catch (_) {
-		return null
-	}
-}
-
-const isImageUrl = (url) => /\.(png|jpe?g|webp|gif|bmp)(\?|$)/i.test(String(url || ''))
-const isAudioUrl = (url) => /\.(mp3|wav|ogg)(\?|$)/i.test(String(url || ''))
-
-const onBackgroundDrop = (e) => {
-	dragOverBg.value = false
-	const payload = readAssetPayload(e)
-	const url = payload?.url || e.dataTransfer?.getData('text/plain') || ''
-	if (!url || (!isImageUrl(url) && payload?.asset_kind !== 'image')) {
-		ElMessage.warning('请拖入图片素材')
-		return
-	}
-	pushHistory()
-	markDirty()
-	scene.value.background_url = url
-	settingsBgFailed.value = false
-	ElMessage.success('已填入背景图，稍后自动保存')
-}
-
-const onMusicDrop = (e) => {
-	dragOverMusic.value = false
-	const payload = readAssetPayload(e)
-	const url = payload?.url || e.dataTransfer?.getData('text/plain') || ''
-	if (!url || (!isAudioUrl(url) && payload?.asset_kind !== 'audio')) {
-		ElMessage.warning('请拖入音频素材')
-		return
-	}
-	pushHistory()
-	markDirty()
-	scene.value.music_url = url
-	musicPlaying.value = false
-	musicProgress.value = 0
-	musicDuration.value = 0
-	ElMessage.success('已填入背景音乐，稍后自动保存')
-}
 
 // 场景设置保存逻辑见 useSceneSettingsAutosave
 const addNewDialogue = () => {
