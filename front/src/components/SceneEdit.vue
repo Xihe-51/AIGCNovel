@@ -1047,6 +1047,7 @@ import { useSceneVoiceBatch, EMOTION_OPTIONS } from '@/composables/scene/useScen
 import { useSceneVoiceDirector } from '@/composables/scene/useSceneVoiceDirector';
 import { useSceneHistory } from '@/composables/scene/useSceneHistory';
 import { useSceneSelection } from '@/composables/scene/useSceneSelection';
+import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1221,51 +1222,18 @@ const {
 });
 
 // ===== 剧本批量导入 =====
-const scriptImportVisible = ref(false);
-
-const openScriptImport = () => {
-	scriptImportVisible.value = true;
-};
-
-const handleScriptImport = async ({ mode, entries }) => {
-	if (!entries.length) {
-		ElMessage.warning('没有可导入的内容');
-		return;
-	}
-	if (mode === 'replace' && dialogues.value.length) {
-		try {
-			await ElMessageBox.confirm('会清空当前场景的全部对话（仅本地，保存后生效），确定替换？', '替换全部对话', {
-				type: 'warning', confirmButtonText: '替换', cancelButtonText: '取消'
-			});
-		} catch (e) {
-			return;
-		}
-	}
-	pushHistory();
-	if (mode === 'replace') dialogues.value = [];
-	const base = dialogues.value.length;
-	const unknown = new Set();
-	entries.forEach((item, i) => {
-		const char = item.name ? characters.value.find(c => c.name === item.name) : null;
-		if (item.name && !char) unknown.add(item.name);
-		dialogues.value.push({
-			project_id: scene.value.project_id,
-			scene_id: scene.value.scene_id,
-			content_type: char ? '对话' : '描述',
-			content_text: char ? item.text : (item.name ? `【${item.name}】${item.text}` : item.text),
-			character_id: char ? char.character_id : '',
-			avatar_id: '',
-			order_num: base + i + 1
-		});
-	});
-	markDirty();
-	clearSelection();
-	scriptImportVisible.value = false;
-	ElMessage.success(`已导入 ${entries.length} 条，点「保存全部」落库`);
-	if (unknown.size) {
-		ElMessage.warning(`未找到角色：${[...unknown].join('、')}，这些行已按旁白保留`);
-	}
-};
+const {
+	scriptImportVisible,
+	openScriptImport,
+	handleScriptImport,
+} = useSceneScriptImport({
+	dialogues,
+	scene,
+	getCharacters: () => characters.value,
+	pushHistory,
+	markDirty,
+	clearSelection,
+});
 // 项目内全部剧情节点（跨场景），用于分支跳转目标选择
 const projectNodes = ref([]);
 // 非「选择」节点的自动跳转边（source_content_id → branch）
