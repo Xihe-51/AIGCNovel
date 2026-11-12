@@ -1008,7 +1008,6 @@ import {
 	BASE_URL
 } from '@/utils/request'
 import { generateText, continueStory } from '@/api/ai'  
-import { checkProjectAssets } from '@/api/asset'
 import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/branch'
 import { listVariables, listEffects } from '@/api/variable'
 import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
@@ -1051,6 +1050,8 @@ import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
 import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAutosave';
 import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { useSceneBranches } from '@/composables/scene/useSceneBranches';
+import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
+import { useSceneDebugPlayback } from '@/composables/scene/useSceneDebugPlayback';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1920,19 +1921,8 @@ const openGraph = () => {
 	emit('open-graph', Number(props.sceneId), node?.content_id ?? null)
 };
 
-// 从指定台词开始调试播放：播放器带 ?debug=1&start=<content_id>
-const playFromDialogue = (dialogue) => {
-	if (!dialogue || !dialogue.content_id) {
-		ElMessage.warning('请先保存这条台词，再从这里试玩');
-		return;
-	}
-	const pid = projectId.value || scene.value.project_id;
-	if (!pid) {
-		ElMessage.warning('项目信息加载中，请稍后再试');
-		return;
-	}
-	window.open(`/view/${pid}?debug=1&start=${dialogue.content_id}`, '_blank');
-};
+// 从指定台词开始调试播放：播放器带 ?debug=1&start=<content_id>（见 useSceneDebugPlayback）
+const { playFromDialogue } = useSceneDebugPlayback({ projectId, scene });
 
 const saveAllDialogues = async () => {
 	if (!dialogues.value.length) return;
@@ -2122,52 +2112,15 @@ const handleVoiceUpload = async (params, index) => {
     }
 };
 
-// ===== 素材库复用：从项目已有素材中选择背景/音乐 =====
-const assetPickerVisible = ref(false);
-const assetPickerKind = ref('image');
-const assetPickerLoading = ref(false);
-const assetPickerItems = ref([]);
-
-const openAssetPicker = async (kind) => {
-	assetPickerKind.value = kind;
-	assetPickerVisible.value = true;
-	assetPickerLoading.value = true;
-	assetPickerItems.value = [];
-	try {
-		const pid = Number(projectId.value || scene.value.project_id);
-		const res = await checkProjectAssets(pid);
-		const imageExt = /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i;
-		const audioExt = /\.(mp3|wav|ogg|m4a|aac|flac)(\?|$)/i;
-		const pattern = kind === 'image' ? imageExt : audioExt;
-		const map = new Map();
-		for (const it of (res.items || [])) {
-			if (it.status !== 'ok' || !pattern.test(it.url || '')) continue;
-			const prev = map.get(it.url);
-			if (!prev || (it.usage_count || 0) > (prev.usage_count || 0)) {
-				map.set(it.url, it);
-			}
-		}
-		assetPickerItems.value = Array.from(map.values())
-			.sort((a, b) => (b.usage_count || 0) - (a.usage_count || 0));
-	} catch (e) {
-		ElMessage.error('读取素材库失败：' + (e?.message || '未知错误'));
-	} finally {
-		assetPickerLoading.value = false;
-	}
-};
-
-const useAssetFromLibrary = (asset) => {
-	if (!asset) return;
-	if (assetPickerKind.value === 'image') {
-		scene.value.background_url = asset.url;
-		settingsBgFailed.value = false;
-	} else {
-		stopSettingsAudio();
-		scene.value.music_url = asset.url;
-	}
-	assetPickerVisible.value = false;
-	ElMessage.success('已填入素材，稍后自动保存');
-};
+// ===== 素材库复用：从项目已有素材中选择背景/音乐（见 useSceneAssetPicker） =====
+const {
+	assetPickerVisible,
+	assetPickerKind,
+	assetPickerLoading,
+	assetPickerItems,
+	openAssetPicker,
+	useAssetFromLibrary,
+} = useSceneAssetPicker({ projectId, scene, settingsBgFailed, stopSettingsAudio });
 
 const openAIDialog = (index) => {
   currentAIIndex.value = index;
