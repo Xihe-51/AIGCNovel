@@ -1042,6 +1042,7 @@ import { useSceneSelection } from '@/composables/scene/useSceneSelection';
 import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
 import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAutosave';
 import { useSceneUploads } from '@/composables/scene/useSceneUploads';
+import { useSceneStageSync } from '@/composables/scene/useSceneStageSync';
 import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { useSceneBranches } from '@/composables/scene/useSceneBranches';
 import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
@@ -1570,42 +1571,17 @@ const {
 	markDirty,
 });
 
-// 统一撤销：台词栈与舞台栈按操作时间比较，撤销更近的一步
-const canUndoAny = computed(() => undoStack.value.length > 0 || stageUndoStack.value.length > 0);
-const undoLast = () => {
-	const dTop = undoStack.value[undoStack.value.length - 1];
-	const sTop = stageUndoStack.value[stageUndoStack.value.length - 1];
-	if (!dTop && !sTop) return;
-	const dAt = dTop ? (dTop.at || 0) : -1;
-	const sAt = sTop ? (sTop.at || 0) : -1;
-	if (sAt >= dAt) undoAvatar();
-	else undo();
-};
-// 资源热重载：不改剧本，只给预览 URL 换时间戳并重新拉取指令
-const hotReloadAssets = () => {
-	assetNonce.value = Date.now();
-	const id = currentDialogue.value?.content_id;
-	if (id) loadPreviewDirectives(id);
-	ElMessage.success('已重新加载预览素材');
-};
-
-// 演出弹窗增删了指令后，如果改的正是预览中的那条对话，立刻刷新预览
-const syncPreviewIfCurrent = (contentId) => {
-	const cur = currentDialogue.value ? currentDialogue.value.content_id : null
-	if (cur && String(cur) === String(contentId)) loadPreviewDirectives(contentId);
-};
-
-watch(
-	() => (currentDialogue.value ? currentDialogue.value.content_id : null),
-	(id, prev) => {
-		// 切换台词时清空舞台撤销栈，避免把上一条台词的快照撤销到当前台词
-		if (prev !== undefined && String(prev) !== String(id)) stageUndoStack.value = [];
-		loadPreviewDirectives(id).then(() => {
-			if (id) restorePersistedStageUndo(id);
-		});
-	},
-	{ immediate: true }
-);
+/* ===== 舞台与预览同步：统一撤销 / 素材热重载 / 预览跟随（见 useSceneStageSync） ===== */
+const { canUndoAny, undoLast, hotReloadAssets, syncPreviewIfCurrent } = useSceneStageSync({
+	currentDialogue,
+	undoStack,
+	stageUndoStack,
+	undoDialogue: undo,
+	undoStage: undoAvatar,
+	reloadPreviewDirectives: loadPreviewDirectives,
+	restorePersistedStageUndo,
+	bumpAssetNonce: () => { assetNonce.value = Date.now(); },
+});
 
 const handleCharacterChange = (index) => {
 	pushHistory();
