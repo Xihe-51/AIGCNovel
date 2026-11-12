@@ -1055,6 +1055,7 @@ import { useSceneDirectives } from '@/composables/scene/useSceneDirectives';
 import { useSceneLock } from '@/composables/scene/useSceneLock';
 import { useSceneFsmStates } from '@/composables/scene/useSceneFsmStates';
 import { useSceneAiAssistant } from '@/composables/scene/useSceneAiAssistant';
+import { useSceneAudio } from '@/composables/scene/useSceneAudio';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1288,43 +1289,24 @@ const defaultBackground = '';
 
 // 场景设置里的背景音乐迷你播放器
 const settingsAudio = ref(null);
-const musicPlaying = ref(false);
-const musicProgress = ref(0);
-const musicDuration = ref(0);
+const backgroundMusic = ref(null);
 
-const fmtTime = (s) => {
-	if (!s || Number.isNaN(s)) return '0:00';
-	const m = Math.floor(s / 60);
-	const sec = Math.floor(s % 60);
-	return `${m}:${sec < 10 ? '0' : ''}${sec}`;
-};
-
-const toggleMusic = () => {
-	const el = settingsAudio.value;
-	if (!el) return;
-	if (el.paused) {
-		// 场景设置里的试听和舞台预览 BGM 同一时间只保留一个
-		stopBackgroundMusic();
-		el.play().then(() => { musicPlaying.value = true; }).catch(() => {});
-	} else {
-		el.pause();
-		musicPlaying.value = false;
-	}
-};
-
-const onMusicTime = () => {
-	if (settingsAudio.value) musicProgress.value = settingsAudio.value.currentTime;
-};
-
-const onMusicMeta = () => {
-	if (settingsAudio.value) musicDuration.value = settingsAudio.value.duration || 0;
-};
-
-const seekMusic = (e) => {
-	const v = Number(e.target.value);
-	if (settingsAudio.value) settingsAudio.value.currentTime = v;
-	musicProgress.value = v;
-};
+/* ===== 音频：场景设置试听 + 舞台 BGM（见 useSceneAudio） ===== */
+const {
+	musicPlaying,
+	musicProgress,
+	musicDuration,
+	bgmMuted,
+	formatClock: fmtTime,
+	toggleMusic,
+	onMusicTime,
+	onMusicMeta,
+	seekMusic,
+	playBackgroundMusic,
+	toggleBgm,
+	stopBackgroundMusic,
+	stopSettingsAudio,
+} = useSceneAudio({ scene, settingsAudio, backgroundMusic });
 
 /* ===== 演出指令（节点级）：弹窗自己读写指令，父级管撤销栈与预览刷新（见 useSceneDirectives） ===== */
 const directiveDialogRef = ref(null);
@@ -1342,10 +1324,6 @@ const {
 	recordStageUndo: (contentId, before, after) => recordStageUndo(contentId, before, after),
 	syncPreviewIfCurrent: (contentId) => syncPreviewIfCurrent(contentId),
 });
-
-const backgroundMusic = ref(null);
-// 默认静音：只有手动点「BGM 开」才播放，避免打开场景就自动响
-const bgmMuted = ref(true);
 
 /* ===== AI 续写/问答：弹窗状态 + /ai/continue_story 请求编排（见 useSceneAiAssistant） ===== */
 const {
@@ -1504,45 +1482,6 @@ const fetchSceneData = async () => {
 		loading.value = false;
 	}
 }
-
-const playBackgroundMusic = () => {
-	if (!bgmMuted.value && backgroundMusic.value && scene.value.music_url) {
-		backgroundMusic.value.play().catch(e => {
-			console.log('背景音乐自动播放失败:', e);
-		});
-	}
-};
-
-const toggleBgm = () => {
-	bgmMuted.value = !bgmMuted.value;
-	if (bgmMuted.value) stopBackgroundMusic();
-	else playBackgroundMusic();
-};
-
-// 切换场景/离开创作页时停止背景音乐，避免旧场景的 BGM 留在后台继续响
-const stopBackgroundMusic = () => {
-	const audio = backgroundMusic.value;
-	if (!audio) return;
-	try {
-		audio.pause();
-		audio.currentTime = 0;
-	} catch (e) {
-		// 忽略浏览器限制导致的暂停失败
-	}
-};
-
-const stopSettingsAudio = () => {
-	const el = settingsAudio.value;
-	if (!el) return;
-	try {
-		el.pause();
-		el.currentTime = 0;
-	} catch (e) {
-		// 忽略浏览器限制导致的暂停失败
-	}
-	musicPlaying.value = false;
-	musicProgress.value = 0;
-};
 
 const currentDialogue = computed(() => dialogues.value[currentDialogueIndex.value]);
 // 富文本：把 ** / [color] 等标记渲染成 HTML，避免作者在预览里看到原始标记
