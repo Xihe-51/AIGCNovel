@@ -1054,6 +1054,7 @@ import { useSceneDebugPlayback } from '@/composables/scene/useSceneDebugPlayback
 import { useSceneDirectives } from '@/composables/scene/useSceneDirectives';
 import { useSceneLock } from '@/composables/scene/useSceneLock';
 import { useSceneFsmStates } from '@/composables/scene/useSceneFsmStates';
+import { useSceneAiAssistant } from '@/composables/scene/useSceneAiAssistant';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1346,14 +1347,24 @@ const backgroundMusic = ref(null);
 // 默认静音：只有手动点「BGM 开」才播放，避免打开场景就自动响
 const bgmMuted = ref(true);
 
-const aiDialogVisible = ref(false);
-const aiQuestion = ref('');
-const aiAnswer = ref('');
-const aiLoading = ref(false);
-const currentAIIndex = ref(null);
-// 第 2 批：后端续写返回的进度文案与 RAG 命中的角色人设
-const aiStage = ref('');
-const aiRefs = ref([]);
+/* ===== AI 续写/问答：弹窗状态 + /ai/continue_story 请求编排（见 useSceneAiAssistant） ===== */
+const {
+	aiDialogVisible,
+	aiQuestion,
+	aiAnswer,
+	aiLoading,
+	currentAIIndex,
+	aiStage,
+	aiRefs,
+	openAIDialog,
+	sendToAI,
+	applyAIAnswer,
+} = useSceneAiAssistant({
+	projectId,
+	scene,
+	dialogues,
+	getCharacterName: (characterId) => getCharacterName(characterId),
+});
 
 /* ===== 台词审校状态（FSM）：只存本地 localStorage（见 useSceneFsmStates） ===== */
 const {
@@ -2033,13 +2044,6 @@ const {
 	useAssetFromLibrary,
 } = useSceneAssetPicker({ projectId, scene, settingsBgFailed, stopSettingsAudio });
 
-const openAIDialog = (index) => {
-  currentAIIndex.value = index;
-  aiQuestion.value = '';
-  aiAnswer.value = '';
-  aiDialogVisible.value = true;
-};
-
 const getCharacterName = (characterId) => {
   if (!characterId) return '旁白';
   const charList = characters.value || [];
@@ -2076,72 +2080,6 @@ const {
 	markDirty,
 	getCharacterName,
 });
-
-// 说明（第 2 批改造）：
-// 原先这里有一个前端自制的 generateHistorySummary()，用「近邻 5 条 + 固定规则截断」
-// 拼上下文，再手工拼成一大段 prompt 发给 /ai/generate/text。
-// 现已改为调用后端 /ai/continue_story：
-//   - 上下文压缩交给 LangChain ConversationSummaryBufferMemory（近期原文 + 远期 LLM 摘要）
-//   - 角色人设由 RAG 向量检索自动注入，保证人物一致性
-//   - 前端只负责把「已写剧情 + 本次要求」传过去
-
-const sendToAI = async () => {
-  if (!aiQuestion.value.trim()) { ElMessage.warning('请输入问题'); return; }
-  if (!projectId.value) { ElMessage.warning('项目信息加载中，请稍后再试'); return; }
-
-  aiLoading.value = true;
-  aiAnswer.value = '';
-  aiRefs.value = [];
-  aiStage.value = '正在整理上下文…';
-
-  try {
-    // 把当前条目之前已写好的剧情交给后端（由后端决定压缩策略）
-    const cut = currentAIIndex.value !== null ? currentAIIndex.value : dialogues.value.length;
-    const history = dialogues.value.slice(0, cut)
-      .filter(d => (d.content_text || '').trim())
-      .map(d => ({
-        content_type: d.content_type,
-        character_name: getCharacterName(d.character_id),
-        content_text: d.content_text,
-      }));
-
-    const result = await continueStory({
-      project_id: projectId.value,
-      scene_id: scene.value.scene_id,
-      user_input: aiQuestion.value,
-      history,
-      use_rag: true,
-      length: 500,
-      temperature: 0.8,
-      forbidden_words: '',
-    }, {
-      onProgress: (s) => { if (s?.progress?.stage) aiStage.value = s.progress.stage },
-    });
-
-    aiAnswer.value = result?.generated_text || '';
-    aiRefs.value = result?.persona_hits || [];
-
-    if (!aiAnswer.value) {
-      ElMessage.error('AI生成失败：返回内容为空');
-    } else if (aiRefs.value.length) {
-      ElMessage.success('已生成（参考角色：' + aiRefs.value.map(r => r.name).join('、') + '）');
-    }
-  } catch (err) {
-    console.error('AI请求失败:', err);
-    ElMessage.error('AI服务请求失败：' + (err.message || '未知错误'));
-  } finally {
-    aiLoading.value = false;
-    aiStage.value = '';
-  }
-};
-
-const applyAIAnswer = () => {
-  if (currentAIIndex.value !== null && aiAnswer.value) {
-    dialogues.value[currentAIIndex.value].content_text = aiAnswer.value;
-    ElMessage.success('已应用到当前对话');
-    aiDialogVisible.value = false;
-  }
-};
 
 // 场景设置（含剧情锁）改动 → 标记 dirty 并防抖自动保存
 watch(
