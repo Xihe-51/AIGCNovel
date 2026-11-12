@@ -1021,7 +1021,6 @@ import {
   MagicStick,
   Promotion  
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import SceneStagePreview from '@/components/SceneStagePreview.vue';
 import DialogueTranslationDialog from '@/components/scene/DialogueTranslationDialog.vue';
 import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vue';
@@ -1043,6 +1042,7 @@ import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
 import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAutosave';
 import { useSceneUploads } from '@/composables/scene/useSceneUploads';
 import { useSceneStageSync } from '@/composables/scene/useSceneStageSync';
+import { useSceneDialogueList } from '@/composables/scene/useSceneDialogueList';
 import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { useSceneBranches } from '@/composables/scene/useSceneBranches';
 import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
@@ -1583,49 +1583,37 @@ const { canUndoAny, undoLast, hotReloadAssets, syncPreviewIfCurrent } = useScene
 	bumpAssetNonce: () => { assetNonce.value = Date.now(); },
 });
 
-const handleCharacterChange = (index) => {
-	pushHistory();
-	markDirty();
-	dialogues.value[index].avatar_id = '';
-};
+/* ===== 台词列表：增删改排序与落库（见 useSceneDialogueList） ===== */
+const {
+	handleCharacterChange,
+	addNewDialogue,
+	saveDialogue,
+	saveAllDialogues,
+	deleteDialogue,
+	moveDialogueUp,
+	moveDialogueDown,
+	reorderDialogues,
+} = useSceneDialogueList({
+	dialogues,
+	scene,
+	projectId,
+	getSceneId: () => props.sceneId,
+	loading,
+	dirty,
+	undoStack,
+	redoStack,
+	projectNodes,
+	effectsMap,
+	pushHistory,
+	markDirty,
+	clearDraft,
+	clearSelection,
+	saveDialogues,
+	deleteDialogueApi: apiDeleteDialogue,
+	reorderDialoguesApi,
+	createProjectVersion,
+});
 
-// 场景设置保存逻辑见 useSceneSettingsAutosave
-const addNewDialogue = () => {
-	pushHistory();
-	markDirty();
-	clearSelection();
-	const newDialogue = {
-		project_id: scene.value.project_id,
-		scene_id: scene.value.scene_id,
-		content_type: '对话',
-		content_text: '',
-		order_num: dialogues.value.length + 1,
-		character_id: '',
-		avatar_id: ''
-	};
-	dialogues.value.push(newDialogue);
-};
-
-const saveDialogue = async (index) => {
-	try {
-		loading.value = true;
-		const dialogue = dialogues.value[index];
-		dialogue.order_num = index + 1;
-		const saved = await saveDialogues(dialogue);
-		// 保留已加载的分支选项与数值变化，否则保存后它们会从界面消失
-		dialogues.value[index] = { ...saved, _choices: dialogue._choices, _effects: dialogue._effects };
-		// 新保存的节点要能立刻作为其它节点的跳转目标
-		if (saved?.content_id && !projectNodes.value.some(n => n.content_id === saved.content_id)) {
-			projectNodes.value.push({ ...saved, scene_title: scene.value.title });
-		}
-		ElMessage.success('对话保存成功');
-	} catch (err) {
-		console.error('保存对话失败:', err);
-		ElMessage.error('保存对话失败: ' + (err.message || '未知错误'));
-	} finally {
-		loading.value = false;
-	}
-};
 // ===== 译文：逐句 / 场景 / 选项（见 useSceneTranslations） =====
 const {
 	translationDialogVisible,
@@ -1659,131 +1647,6 @@ const openGraph = () => {
 
 // 从指定台词开始调试播放：播放器带 ?debug=1&start=<content_id>（见 useSceneDebugPlayback）
 const { playFromDialogue } = useSceneDebugPlayback({ projectId, scene });
-
-const saveAllDialogues = async () => {
-	if (!dialogues.value.length) return;
-	loading.value = true;
-	try {
-		for (let i = 0; i < dialogues.value.length; i++) {
-			const dialogue = dialogues.value[i];
-			dialogue.order_num = i + 1;
-			const saved = await saveDialogues(dialogue);
-			dialogues.value[i] = {
-				...saved,
-				_choices: dialogue._choices,
-				_effects: dialogue._effects
-			};
-			if (saved?.content_id && !projectNodes.value.some(n => n.content_id === saved.content_id)) {
-				projectNodes.value.push({ ...saved, scene_title: scene.value.title });
-			}
-		}
-		const ids = dialogues.value.filter(d => d.content_id).map(d => d.content_id);
-		if (ids.length) await reorderDialoguesApi(Number(props.sceneId), ids);
-		clearDraft();
-		ElMessage.success('已保存全部对话');
-		createProjectVersion(Number(projectId.value), '保存全部对话').catch(() => {});
-	} catch (err) {
-		console.error('保存全部对话失败:', err);
-		ElMessage.error('保存失败: ' + (err.message || '未知错误'));
-	} finally {
-		loading.value = false;
-	}
-};
-
-const deleteDialogue = async (index) => {
-	const dialogue = dialogues.value[index];
-	if (!dialogue) return;
-
-	// 已落库的台词：服务端删除会级联清理分支/数值/演出/结局/已读，
-	// 前端撤销无法把它们一起恢复，所以必须先确认，并清空本地撤销栈。
-	if (dialogue.content_id) {
-		try {
-			await ElMessageBox.confirm(
-				'删除这条台词会同时删除它的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？',
-				'删除台词',
-				{
-					type: 'warning',
-					confirmButtonText: '删除',
-					cancelButtonText: '取消',
-					confirmButtonClass: 'el-button--danger'
-				}
-			);
-		} catch (e) {
-			return;
-		}
-		const hadUnsaved = dirty.value;
-		try {
-			await apiDeleteDialogue(dialogue.content_id);
-			projectNodes.value = projectNodes.value.filter(n => n.content_id !== dialogue.content_id);
-			const rest = { ...effectsMap.value };
-			delete rest[dialogue.content_id];
-			effectsMap.value = rest;
-			dialogues.value.splice(index, 1);
-			dialogues.value.forEach((d, i) => d.order_num = i + 1);
-			clearSelection();
-			// 旧快照里还带着已删除的节点，继续撤销会造出服务端不存在的“幽灵节点”
-			undoStack.value = [];
-			redoStack.value = [];
-			if (hadUnsaved) markDirty();
-			else clearDraft();
-			ElMessage.success('台词已删除（不可撤销，可用项目版本回滚恢复）');
-		} catch (err) {
-			console.error('删除对话失败:', err);
-			ElMessage.error('删除对话失败: ' + (err.message || '未知错误'));
-		}
-		return;
-	}
-
-	// 尚未保存的新台词：只改本地，保留撤销能力
-	pushHistory();
-	markDirty();
-	dialogues.value.splice(index, 1);
-	dialogues.value.forEach((d, i) => d.order_num = i + 1);
-	clearSelection();
-};
-
-const moveDialogueUp = (index) => {
-	if (index > 0) {
-		pushHistory();
-		markDirty();
-		const temp = dialogues.value[index];
-		dialogues.value[index] = dialogues.value[index - 1];
-		dialogues.value[index - 1] = temp;
-		dialogues.value.forEach((d, i) => d.order_num = i + 1);
-		clearSelection();
-	}
-};
-
-const moveDialogueDown = (index) => {
-	if (index < dialogues.value.length - 1) {
-		pushHistory();
-		markDirty();
-		const temp = dialogues.value[index];
-		dialogues.value[index] = dialogues.value[index + 1];
-		dialogues.value[index + 1] = temp;
-		dialogues.value.forEach((d, i) => d.order_num = i + 1);
-		clearSelection();
-	}
-};
-
-const reorderDialogues = async () => {
-  try {
-    loading.value = true;
-    const orderedContentIds = dialogues.value.map(d => d.content_id);
-    const response = await reorderDialoguesApi(Number(props.sceneId), orderedContentIds);
-    if (response.success) {
-      dialogues.value = response.data;
-      ElMessage.success('对话已重新排序并保存');
-    } else {
-      ElMessage.error('重新排序失败: ' + (response.message || '未知错误'));
-    }
-  } catch (err) {
-    console.error('重新排序失败:', err);
-    ElMessage.error('重新排序失败: ' + (err.message || '网络错误'));
-  } finally {
-    loading.value = false;
-  }
-};
 
 /* ===== 素材上传：背景图 / 背景音乐 / 语音（见 useSceneUploads） ===== */
 const { handleBackgroundUpload, handleMusicUpload, handleVoiceUpload } = useSceneUploads({
