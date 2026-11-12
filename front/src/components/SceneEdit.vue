@@ -1010,7 +1010,6 @@ import {
 import { generateText, continueStory } from '@/api/ai'  
 import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/branch'
 import { listVariables, listEffects } from '@/api/variable'
-import { listNodeDirectives, createDirective, updateDirective, deleteDirective } from '@/api/directive'
 import { createProjectVersion } from '@/api/version'
 import { saveBranchTranslation } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
@@ -1052,6 +1051,7 @@ import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { useSceneBranches } from '@/composables/scene/useSceneBranches';
 import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
 import { useSceneDebugPlayback } from '@/composables/scene/useSceneDebugPlayback';
+import { useSceneDirectives } from '@/composables/scene/useSceneDirectives';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1317,35 +1317,22 @@ const seekMusic = (e) => {
 	musicProgress.value = v;
 };
 
-/* ===== 演出指令（节点级）===== */
-const directiveDialogVisible = ref(false);
-const directiveContentId = ref(null);
-const directiveTarget = ref('');
+/* ===== 演出指令（节点级）：弹窗自己读写指令，父级管撤销栈与预览刷新（见 useSceneDirectives） ===== */
 const directiveDialogRef = ref(null);
-
-// 弹窗自己读写指令，父级只做两件事：入舞台撤销栈、刷新当前预览
-const refreshDirectiveList = async () => {
-	await directiveDialogRef.value?.reload?.();
-};
-
-const handleDirectivesChanged = ({ contentId, before, after }) => {
-	recordStageUndo(contentId, before, after);
-	syncPreviewIfCurrent(contentId);
-};
-
-const openDirectiveDialog = (index) => {
-	const d = dialogues.value[index];
-	if (!d || !d.content_id) {
-		ElMessage.warning('先保存这条对话，再配置演出');
-		return;
-	}
-	// 让右侧预览跟随当前正在编辑的这条对话，避免显示上一条的角色
-	currentDialogueIndex.value = index;
-	directiveContentId.value = d.content_id;
-	const kind = d.content_type === '描述' ? '旁白' : (d.content_type || '对话');
-	directiveTarget.value = `${kind}：${(d.content_text || '').slice(0, 18) || '（空）'}`;
-	directiveDialogVisible.value = true;
-};
+const {
+	directiveDialogVisible,
+	directiveContentId,
+	directiveTarget,
+	refreshDirectiveList,
+	handleDirectivesChanged,
+	openDirectiveDialog,
+} = useSceneDirectives({
+	dialogues,
+	currentDialogueIndex,
+	directiveDialogRef,
+	recordStageUndo: (contentId, before, after) => recordStageUndo(contentId, before, after),
+	syncPreviewIfCurrent: (contentId) => syncPreviewIfCurrent(contentId),
+});
 
 const backgroundMusic = ref(null);
 // 默认静音：只有手动点「BGM 开」才播放，避免打开场景就自动响
