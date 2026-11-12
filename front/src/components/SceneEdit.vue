@@ -1045,6 +1045,7 @@ import { useSceneTranslations } from '@/composables/scene/useSceneTranslations';
 import { useSceneNodeEditors } from '@/composables/scene/useSceneNodeEditors';
 import { useSceneVoiceBatch, EMOTION_OPTIONS } from '@/composables/scene/useSceneVoiceBatch';
 import { useSceneVoiceDirector } from '@/composables/scene/useSceneVoiceDirector';
+import { useSceneHistory } from '@/composables/scene/useSceneHistory';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1085,129 +1086,36 @@ const isDialogueFocused = (contentId) => {
 let focusPulseTimer = null;
 
 // ===== 撤销 / 重做 / 未保存草稿 =====
-const undoStack = ref([]);
-const redoStack = ref([]);
-const dirty = ref(false);
-const MAX_HISTORY = 50;
-let draftTimer = null;
-let historyTimer = null;
-let pendingBaseSnapshot = null;
-const draftKey = computed(() => `scene-draft:${props.sceneId}`);
-
-const cloneDialogues = () => JSON.parse(JSON.stringify(dialogues.value || []));
-
-const pushHistory = (snapshot) => {
-	const snap = snapshot || cloneDialogues();
-	const str = JSON.stringify(snap);
-	const top = undoStack.value[undoStack.value.length - 1];
-	if (top && JSON.stringify(top.snapshot) === str) return;
-	undoStack.value.push({ at: Date.now(), snapshot: snap });
-	if (undoStack.value.length > MAX_HISTORY) undoStack.value.shift();
-	redoStack.value = [];
-};
-
-const applySnapshot = (snap) => {
-	dialogues.value = JSON.parse(JSON.stringify(snap));
-	clearSelection();
-	if (currentDialogueIndex.value >= dialogues.value.length) {
-		currentDialogueIndex.value = Math.max(0, dialogues.value.length - 1);
-	}
-	markDirty();
-	nextTick(() => {
+const {
+	undoStack,
+	redoStack,
+	dirty,
+	canUndo,
+	canRedo,
+	cloneDialogues,
+	pushHistory,
+	applySnapshot,
+	undo,
+	redo,
+	saveDraftNow,
+	markDirty,
+	clearDraft,
+	beginTextEdit,
+	queueTextHistory,
+	flushTextHistory,
+	maybeRestoreDraft,
+} = useSceneHistory({
+	sceneId: () => props.sceneId,
+	getDialogues: () => dialogues.value,
+	setDialogues: (list) => { dialogues.value = list; },
+	getCurrentIndex: () => currentDialogueIndex.value,
+	setCurrentIndex: (i) => { currentDialogueIndex.value = i; },
+	clearSelection: () => clearSelection(),
+	reloadDirectives: () => {
 		const cur = currentDialogue.value;
 		loadPreviewDirectives(cur ? cur.content_id : null);
-	});
-};
-
-const undo = () => {
-	if (!undoStack.value.length) return;
-	redoStack.value.push({ at: Date.now(), snapshot: cloneDialogues() });
-	applySnapshot(undoStack.value.pop().snapshot);
-};
-
-const redo = () => {
-	if (!redoStack.value.length) return;
-	undoStack.value.push({ at: Date.now(), snapshot: cloneDialogues() });
-	applySnapshot(redoStack.value.pop().snapshot);
-};
-
-const canRedo = computed(() => redoStack.value.length > 0);
-
-const saveDraftNow = () => {
-	if (!dirty.value) return;
-	try {
-		localStorage.setItem(draftKey.value, JSON.stringify({
-			at: Date.now(),
-			dialogues: dialogues.value
-		}));
-	} catch (e) {
-		console.warn('草稿保存失败:', e);
-	}
-};
-
-const markDirty = () => {
-	dirty.value = true;
-	clearTimeout(draftTimer);
-	draftTimer = setTimeout(saveDraftNow, 1000);
-};
-
-const clearDraft = () => {
-	dirty.value = false;
-	clearTimeout(draftTimer);
-	try { localStorage.removeItem(draftKey.value); } catch (e) {}
-};
-
-// 文本输入：聚焦时记下基线，停顿 800ms 后落一次历史
-const beginTextEdit = () => {
-	if (!pendingBaseSnapshot) pendingBaseSnapshot = cloneDialogues();
-};
-
-const queueTextHistory = () => {
-	markDirty();
-	if (historyTimer) clearTimeout(historyTimer);
-	historyTimer = setTimeout(() => {
-		if (pendingBaseSnapshot) {
-			pushHistory(pendingBaseSnapshot);
-			pendingBaseSnapshot = cloneDialogues();
-		}
-	}, 800);
-};
-
-const flushTextHistory = () => {
-	if (historyTimer) {
-		clearTimeout(historyTimer);
-		historyTimer = null;
-	}
-	if (pendingBaseSnapshot) {
-		pushHistory(pendingBaseSnapshot);
-		pendingBaseSnapshot = null;
-	}
-};
-
-const maybeRestoreDraft = async () => {
-	let raw = null;
-	try { raw = localStorage.getItem(draftKey.value); } catch (e) {}
-	if (!raw) return;
-	try {
-		const draft = JSON.parse(raw);
-		if (!draft || !Array.isArray(draft.dialogues)) return;
-		if (JSON.stringify(draft.dialogues) === JSON.stringify(dialogues.value)) {
-			localStorage.removeItem(draftKey.value);
-			return;
-		}
-		await ElMessageBox.confirm(
-			`发现 ${new Date(draft.at).toLocaleString()} 的未保存草稿，是否恢复？`,
-			'恢复草稿',
-			{ confirmButtonText: '恢复', cancelButtonText: '丢弃', type: 'info' }
-		);
-		dialogues.value = draft.dialogues;
-		dirty.value = true;
-	} catch (e) {
-		if (e === 'cancel' || e === 'close') {
-			try { localStorage.removeItem(draftKey.value) } catch (err) {}
-		}
-	}
-};
+	},
+});
 
 const onWindowKeydown = (e) => {
 	const tag = (e.target && e.target.tagName) || '';
