@@ -996,20 +996,15 @@ import {
 	watch
 } from 'vue'
 import {
-	getSceneById,
-	getDialoguesBySceneId,
 	saveDialogues,
 	deleteDialogue as apiDeleteDialogue,
-	getCharactersByProjectId,
-	getCharacterAvatars as getCharacterAvatarsApi,
 	reorderDialoguesApi
 } from '@/api/dialogue'
 import {
 	BASE_URL
 } from '@/utils/request'
 import { generateText, continueStory } from '@/api/ai'  
-import { listBranches, createBranch, deleteBranch, getStoryGraph } from '@/api/branch'
-import { listVariables, listEffects } from '@/api/variable'
+import { listBranches, createBranch, deleteBranch } from '@/api/branch'
 import { createProjectVersion } from '@/api/version'
 import { saveBranchTranslation } from '@/api/translation'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
@@ -1056,6 +1051,7 @@ import { useSceneLock } from '@/composables/scene/useSceneLock';
 import { useSceneFsmStates } from '@/composables/scene/useSceneFsmStates';
 import { useSceneAiAssistant } from '@/composables/scene/useSceneAiAssistant';
 import { useSceneAudio } from '@/composables/scene/useSceneAudio';
+import { useSceneLoader } from '@/composables/scene/useSceneLoader';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1360,41 +1356,6 @@ const togglePanel = () => {
 	isPanelOpen.value = !isPanelOpen.value;
 };
 
-/** 加载项目全部剧情节点（供分支跳转目标选择，支持跨场景） */
-const loadProjectNodes = async () => {
-	if (!projectId.value) return;
-	try {
-		const graph = await getStoryGraph(Number(projectId.value), false);
-		projectNodes.value = graph?.nodes || [];
-	} catch (e) {
-		console.warn('加载项目剧情节点失败，分支目标仅限当前场景:', e);
-		projectNodes.value = [];
-	}
-};
-
-/** 加载项目变量与全部节点的数值变化 */
-const loadVariablesAndEffects = async () => {
-	if (!projectId.value) return;
-	try {
-		variables.value = await listVariables(Number(projectId.value));
-		const all = await listEffects(Number(projectId.value));
-		const map = {};
-		for (const e of all) {
-			if (!map[e.content_id]) map[e.content_id] = [];
-			map[e.content_id].push({
-				variable_id: e.variable_id,
-				label: e.label,
-				delta: e.delta,
-			});
-		}
-		effectsMap.value = map;
-	} catch (e) {
-		console.warn('加载变量/数值变化失败:', e);
-		variables.value = [];
-		effectsMap.value = {};
-	}
-};
-
 /* ===== 节点级编辑：显示条件 / 数值变化（见 useSceneNodeEditors） ===== */
 const {
 	nodeConditionVisible,
@@ -1420,68 +1381,6 @@ const {
 	markDirty,
 	pushHistory,
 });
-
-const fetchSceneData = async () => {
-	try {
-		loading.value = true;
-		sceneReady.value = false;
-		const sceneIdNum = Number(props.sceneId);
-		if (isNaN(sceneIdNum)) throw new Error('无效的场景ID');
-
-		const sceneData = await getSceneById(sceneIdNum);
-		scene.value = sceneData;
-
-		// 先确定 projectId：ensureChoices 依赖它，否则已有分支选项会加载成空数组
-		// （表现为「库里有分支，编辑器里一个选项都不显示」）
-		projectId.value = sceneData.project_id || '';
-		await loadProjectNodes();
-		await loadVariablesAndEffects();
-		await loadSceneLock();
-		// 场景设置与剧情锁加载完成后才建立基线，避免加载过程被误判成用户改动
-		resetSnapshot();
-		sceneReady.value = true;
-		await loadJumpMap();
-
-		const dialoguesData = await getDialoguesBySceneId(sceneIdNum);
-		dialogues.value = dialoguesData.sort((a, b) => a.order_num - b.order_num);
-		loadFsmStates();
-
-		// 为「选择」类型的内容预加载已有分支选项（此时 projectId 已就绪）
-		await Promise.all(
-			dialogues.value
-				.filter(d => d.content_type === '选择')
-				.map(d => ensureChoices(d))
-		);
-
-		// 重置历史，并检查是否有上次未保存的本地草稿
-		undoStack.value = [];
-		redoStack.value = [];
-		dirty.value = false;
-		await maybeRestoreDraft();
-		
-		if (sceneData.project_id) {
-			const chars = await getCharactersByProjectId(sceneData.project_id);
-			const charactersWithAvatars = await Promise.all(
-				chars.map(async (char) => {
-					const avatars = await getCharacterAvatarsApi(char.character_id);
-					return { ...char, avatars: avatars || [] };
-				})
-			);
-			characters.value = charactersWithAvatars;
-		}
-
-		nextTick(() => {
-			if (props.focusContentId) focusDialogueByContentId(props.focusContentId);
-		});
-	} catch (err) {
-		sceneReady.value = false;
-		console.error('获取场景数据失败:', err);
-		error.value = err.message || '获取数据失败，请稍后重试';
-		ElMessage.error(error.value);
-	} finally {
-		loading.value = false;
-	}
-}
 
 const currentDialogue = computed(() => dialogues.value[currentDialogueIndex.value]);
 // 富文本：把 ** / [color] 等标记渲染成 HTML，避免作者在预览里看到原始标记
@@ -2018,6 +1917,33 @@ const {
 	pushHistory,
 	markDirty,
 	getCharacterName,
+});
+
+/* ===== 场景数据装载：场景 / 节点 / 变量 / 角色 / 台词一次拉齐（见 useSceneLoader） ===== */
+const { fetchSceneData } = useSceneLoader({
+	sceneId: () => props.sceneId,
+	focusContentId: () => props.focusContentId,
+	scene,
+	projectId,
+	dialogues,
+	projectNodes,
+	variables,
+	effectsMap,
+	characters,
+	loading,
+	error,
+	sceneReady,
+	loadSceneLock,
+	resetSnapshot,
+	loadJumpMap,
+	loadFsmStates,
+	ensureChoices,
+	resetHistory: () => {
+		clearHistory();
+		dirty.value = false;
+	},
+	maybeRestoreDraft,
+	focusDialogueByContentId: (id) => focusDialogueByContentId(id),
 });
 
 // 场景设置（含剧情锁）改动 → 标记 dirty 并防抖自动保存
