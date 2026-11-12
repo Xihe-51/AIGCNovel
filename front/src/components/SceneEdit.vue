@@ -1029,7 +1029,7 @@ import {
   Promotion  
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { updateScene, uploadSceneFile, listSceneLocks, setSceneLock } from '@/api/scenes';
+import { uploadSceneFile, listSceneLocks } from '@/api/scenes';
 import SceneStagePreview from '@/components/SceneStagePreview.vue';
 import DialogueTranslationDialog from '@/components/scene/DialogueTranslationDialog.vue';
 import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vue';
@@ -1048,6 +1048,7 @@ import { useSceneVoiceDirector } from '@/composables/scene/useSceneVoiceDirector
 import { useSceneHistory } from '@/composables/scene/useSceneHistory';
 import { useSceneSelection } from '@/composables/scene/useSceneSelection';
 import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
+import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAutosave';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1253,12 +1254,23 @@ const stageEditing = ref(false);
 const stageGridSnap = ref(0);
 // 场景设置（标题/描述/背景/音乐/剧情锁）的独立保存状态：
 // 台词有 dirty，场景设置也必须有自己的 dirty，否则切场景会静默丢改动。
-const sceneDirty = ref(false);
-const sceneSaving = ref(false);
 const sceneReady = ref(false);
-let sceneSnapshot = '';
-let sceneSaveTimer = null;
-let sceneSaveQueued = false;
+const {
+	sceneDirty,
+	sceneSaving,
+	resetSnapshot,
+	refreshSceneDirty,
+	cancelScheduledSave,
+	persistSceneSettings,
+	saveSceneSettings,
+} = useSceneSettingsAutosave({
+	sceneId: () => props.sceneId,
+	scene,
+	projectId: () => projectId.value,
+	getSceneReady: () => sceneReady.value,
+	buildLock: () => buildSceneLockPayload(),
+	onSaved: () => emit('scene-updated'),
+});
 const currentDialogueIndex = ref(0);
 const defaultBackground = '';
 
@@ -1523,8 +1535,7 @@ const fetchSceneData = async () => {
 		await loadVariablesAndEffects();
 		await loadSceneLock();
 		// 场景设置与剧情锁加载完成后才建立基线，避免加载过程被误判成用户改动
-		sceneSnapshot = currentSceneSnapshot();
-		sceneDirty.value = false;
+		resetSnapshot();
 		sceneReady.value = true;
 		await loadJumpMap();
 
@@ -1954,67 +1965,7 @@ const onMusicDrop = (e) => {
 	ElMessage.success('已填入背景音乐，稍后自动保存')
 }
 
-// 场景设置的快照只包含会被保存的字段，避免 order_num/created_at 之类误触发 dirty
-const sceneSnapshotOf = (sceneData = scene.value, lock = buildSceneLockPayload()) => JSON.stringify({
-	title: sceneData?.title || '',
-	description: sceneData?.description || '',
-	background_url: sceneData?.background_url || '',
-	music_url: sceneData?.music_url || '',
-	lock: lock || null
-});
-const currentSceneSnapshot = () => sceneSnapshotOf();
-
-const scheduleSceneSave = () => {
-	clearTimeout(sceneSaveTimer);
-	sceneSaveTimer = setTimeout(() => {
-		if (sceneDirty.value) persistSceneSettings({ silent: true, version: false });
-	}, 1200);
-};
-
-const persistSceneSettings = async ({ silent = false, version = true } = {}) => {
-	if (!props.sceneId || !sceneReady.value) return;
-	if (sceneSaving.value) {
-		// 自动保存期间又有新改动：等这次请求结束再补一次，避免覆盖
-		if (silent) sceneSaveQueued = true;
-		else ElMessage.info('场景设置正在保存，请稍候');
-		return;
-	}
-	const payload = JSON.parse(JSON.stringify(scene.value || {}));
-	const lock = buildSceneLockPayload();
-	const payloadSnapshot = sceneSnapshotOf(payload, lock);
-	sceneSaving.value = true;
-	try {
-		await updateScene(Number(props.sceneId), payload);
-		if (projectId.value) {
-			await setSceneLock(Number(projectId.value), Number(props.sceneId), lock);
-		}
-		sceneSnapshot = payloadSnapshot;
-		// 请求期间用户可能又改了字段：只有当前值和刚保存的一致才算干净
-		sceneDirty.value = currentSceneSnapshot() !== payloadSnapshot;
-		if (!silent) ElMessage.success('场景设置保存成功');
-		if (version && projectId.value) {
-			createProjectVersion(Number(projectId.value), '保存场景设置').catch(() => {});
-		}
-		emit('scene-updated');
-		if (sceneDirty.value) scheduleSceneSave();
-	} catch (err) {
-		console.error('保存场景设置失败:', err);
-		if (silent) ElMessage.warning('场景设置自动保存失败，请手动保存');
-		else ElMessage.error('保存场景设置失败: ' + (err.message || '未知错误'));
-	} finally {
-		sceneSaving.value = false;
-		if (sceneSaveQueued) {
-			sceneSaveQueued = false;
-			if (sceneDirty.value) persistSceneSettings({ silent: true, version: false });
-		}
-	}
-};
-
-const saveSceneSettings = () => {
-	clearTimeout(sceneSaveTimer);
-	persistSceneSettings({ silent: false, version: true });
-};
-
+// 场景设置保存逻辑见 useSceneSettingsAutosave
 const addNewDialogue = () => {
 	pushHistory();
 	markDirty();
@@ -2697,13 +2648,7 @@ const applyAIAnswer = () => {
 watch(
 	[scene, sceneLockMode, sceneLockItems],
 	() => {
-		if (!sceneReady.value) return;
-		if (currentSceneSnapshot() === sceneSnapshot) {
-			sceneDirty.value = false;
-			return;
-		}
-		sceneDirty.value = true;
-		scheduleSceneSave();
+		refreshSceneDirty();
 	},
 	{ deep: true }
 );
@@ -2720,7 +2665,7 @@ onBeforeUnmount(() => {
 	window.removeEventListener('keydown', onWindowKeydown);
 	window.removeEventListener('beforeunload', onBeforeUnload);
 	clearTimeout(focusPulseTimer);
-	clearTimeout(sceneSaveTimer);
+	cancelScheduledSave();
 	flushTextHistory();
 	saveDraftNow();
 	// 切场景时兜底保存场景设置，避免标题/背景/音乐改动被静默丢掉
