@@ -1027,7 +1027,7 @@ import {
   Promotion  
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadSceneFile, listSceneLocks } from '@/api/scenes';
+import { uploadSceneFile } from '@/api/scenes';
 import SceneStagePreview from '@/components/SceneStagePreview.vue';
 import DialogueTranslationDialog from '@/components/scene/DialogueTranslationDialog.vue';
 import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vue';
@@ -1052,6 +1052,7 @@ import { useSceneBranches } from '@/composables/scene/useSceneBranches';
 import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
 import { useSceneDebugPlayback } from '@/composables/scene/useSceneDebugPlayback';
 import { useSceneDirectives } from '@/composables/scene/useSceneDirectives';
+import { useSceneLock } from '@/composables/scene/useSceneLock';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1078,9 +1079,15 @@ const projectId = ref('');
 const dragOverBg = ref(false);
 const dragOverMusic = ref(false);
 const dialogues = ref([]);
-// 场景播放条件（剧情锁）
-const sceneLockMode = ref('and');
-const sceneLockItems = ref([]);
+// 场景播放条件（剧情锁）：见 useSceneLock
+const {
+	sceneLockMode,
+	sceneLockItems,
+	addSceneLockCondition,
+	removeSceneLockCondition,
+	loadSceneLock,
+	buildSceneLockPayload,
+} = useSceneLock({ projectId, sceneId: () => props.sceneId });
 // 搜索定位时高亮的节点（响应式，避免被后续渲染冲掉）
 const focusedContentId = ref(null);
 // 搜索/剧情图定位的高亮：短时高亮优先，其次保留外层传入的定位目标
@@ -1432,54 +1439,6 @@ const loadVariablesAndEffects = async () => {
 		variables.value = [];
 		effectsMap.value = {};
 	}
-};
-
-/* ===== 场景播放条件（剧情锁）===== */
-const addSceneLockCondition = () => {
-	sceneLockItems.value.push({ variable: '', op: '>=', value: 0 });
-};
-
-const removeSceneLockCondition = (index) => {
-	sceneLockItems.value.splice(index, 1);
-};
-
-const loadSceneLock = async () => {
-	sceneLockMode.value = 'and';
-	sceneLockItems.value = [];
-	if (!projectId.value) return;
-	try {
-		const map = await listSceneLocks(Number(projectId.value));
-		const raw = map[String(props.sceneId)];
-		if (!raw) return;
-		if (Array.isArray(raw.items)) {
-			sceneLockMode.value = raw.mode === 'or' ? 'or' : 'and';
-			sceneLockItems.value = raw.items.map(c => ({
-				variable: c.variable || '',
-				op: c.op || '>=',
-				value: Number(c.value) || 0,
-			}));
-		} else if (raw.variable) {
-			sceneLockItems.value = [{
-				variable: raw.variable,
-				op: raw.op || '>=',
-				value: Number(raw.value) || 0,
-			}];
-		}
-	} catch (e) {
-		console.warn('读取场景播放条件失败:', e);
-	}
-};
-
-const buildSceneLockPayload = () => {
-	const items = sceneLockItems.value
-		.filter(c => c.variable)
-		.map(c => ({
-			variable: c.variable,
-			op: c.op || '>=',
-			value: Math.trunc(Number(c.value) || 0),
-		}));
-	if (!items.length) return null;
-	return { mode: sceneLockMode.value === 'or' ? 'or' : 'and', items };
 };
 
 /* ===== 节点级编辑：显示条件 / 数值变化（见 useSceneNodeEditors） ===== */
