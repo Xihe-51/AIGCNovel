@@ -1022,7 +1022,6 @@ import {
   Promotion  
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadSceneFile } from '@/api/scenes';
 import SceneStagePreview from '@/components/SceneStagePreview.vue';
 import DialogueTranslationDialog from '@/components/scene/DialogueTranslationDialog.vue';
 import SceneTranslationDialog from '@/components/scene/SceneTranslationDialog.vue';
@@ -1042,6 +1041,7 @@ import { useSceneHistory } from '@/composables/scene/useSceneHistory';
 import { useSceneSelection } from '@/composables/scene/useSceneSelection';
 import { useSceneScriptImport } from '@/composables/scene/useSceneScriptImport';
 import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAutosave';
+import { useSceneUploads } from '@/composables/scene/useSceneUploads';
 import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { useSceneBranches } from '@/composables/scene/useSceneBranches';
 import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
@@ -1809,68 +1809,12 @@ const reorderDialogues = async () => {
   }
 };
 
-const handleBackgroundUpload = async (params) => {
-	try {
-		const formData = new FormData();
-		formData.append('file', params.file);
-		formData.append('project_id', projectId.value);
-		formData.append('file_type', 'image'); 
-		const response = await uploadSceneFile(formData);
-		if (response.success) {
-			scene.value.background_url = response.data.url;
-			ElMessage.success('背景图上传成功');
-			params.onSuccess(response); 
-		} else {
-			throw new Error(response.message || '背景图上传失败');
-		}
-	} catch (err) {
-		console.error('背景图上传失败:', err);
-		ElMessage.error('背景图上传失败: ' + (err.message || '未知错误'));
-		params.onError(err);
-	}
-};
-
-const handleMusicUpload = async (params) => {
-	try {
-		const formData = new FormData();
-		formData.append('file', params.file);
-		formData.append('project_id', projectId.value);
-		formData.append('file_type', 'audio'); 
-		const response = await uploadSceneFile(formData);
-		if (response.success) {
-			scene.value.music_url = response.data.url;
-			ElMessage.success('背景音乐上传成功');
-			params.onSuccess(response); 
-		} else {
-			throw new Error(response.message || '背景音乐上传失败');
-		}
-	} catch (err) {
-		console.error('背景音乐上传失败:', err);
-		ElMessage.error('背景音乐上传失败: ' + (err.message || '未知错误'));
-		params.onError(err); 
-	}
-};
-
-const handleVoiceUpload = async (params, index) => {
-    try {
-        const formData = new FormData();
-        formData.append('file', params.file);
-        formData.append('project_id', projectId.value);
-        formData.append('file_type', 'voice');
-        const response = await uploadSceneFile(formData);
-        if (response.success) {
-            dialogues.value[index].voice_url = response.data.url;
-            ElMessage.success('语音上传成功');
-            params.onSuccess(response); 
-        } else {
-            throw new Error(response.message || '语音上传失败');
-        }
-    } catch (err) {
-        console.error('语音上传失败:', err);
-        ElMessage.error('语音上传失败: ' + (err.message || '未知错误'));
-        params.onError(err); 
-    }
-};
+/* ===== 素材上传：背景图 / 背景音乐 / 语音（见 useSceneUploads） ===== */
+const { handleBackgroundUpload, handleMusicUpload, handleVoiceUpload } = useSceneUploads({
+	projectId,
+	scene,
+	dialogues,
+});
 
 // ===== 素材库复用：从项目已有素材中选择背景/音乐（见 useSceneAssetPicker） =====
 const {
