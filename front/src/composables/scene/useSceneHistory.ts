@@ -64,6 +64,12 @@ export function useSceneHistory(ctx: SceneHistoryContext) {
     applySnapshot(undoStack.value.pop().snapshot)
   }
 
+  /** 服务端已发生不可逆变更时清空历史，避免本地撤销产生"幽灵节点" */
+  const clearHistory = () => {
+    undoStack.value = []
+    redoStack.value = []
+  }
+
   const redo = () => {
     if (!redoStack.value.length) return
     undoStack.value.push({ at: Date.now(), snapshot: cloneDialogues() })
@@ -164,6 +170,7 @@ export function useSceneHistory(ctx: SceneHistoryContext) {
     pushHistory,
     applySnapshot,
     undo,
+    clearHistory,
     redo,
     saveDraftNow,
     markDirty,

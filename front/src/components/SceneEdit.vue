@@ -1046,6 +1046,7 @@ import { useSceneNodeEditors } from '@/composables/scene/useSceneNodeEditors';
 import { useSceneVoiceBatch, EMOTION_OPTIONS } from '@/composables/scene/useSceneVoiceBatch';
 import { useSceneVoiceDirector } from '@/composables/scene/useSceneVoiceDirector';
 import { useSceneHistory } from '@/composables/scene/useSceneHistory';
+import { useSceneSelection } from '@/composables/scene/useSceneSelection';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1096,6 +1097,7 @@ const {
 	pushHistory,
 	applySnapshot,
 	undo,
+	clearHistory,
 	redo,
 	saveDraftNow,
 	markDirty,
@@ -1152,75 +1154,24 @@ const onBeforeUnload = (e) => {
 };
 
 // ===== 多选与批量操作 =====
-const selectedIndexes = ref([]);
-const isSelected = (i) => selectedIndexes.value.includes(i);
-const toggleSelect = (i) => {
-	const pos = selectedIndexes.value.indexOf(i);
-	if (pos >= 0) selectedIndexes.value.splice(pos, 1);
-	else selectedIndexes.value.push(i);
-};
-const clearSelection = () => { selectedIndexes.value = []; };
-
-const batchDelete = async () => {
-	const indexes = [...selectedIndexes.value].sort((a, b) => b - a);
-	if (!indexes.length) return;
-	try {
-		await ElMessageBox.confirm(
-			`删除选中的 ${indexes.length} 条台词会同时删除它们的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？`,
-			'批量删除',
-			{
-				type: 'warning',
-				confirmButtonText: '删除',
-				cancelButtonText: '取消',
-				confirmButtonClass: 'el-button--danger'
-			}
-		);
-	} catch (e) {
-		return;
-	}
-	const hadUnsaved = dirty.value;
-	for (const i of indexes) {
-		const d = dialogues.value[i];
-		if (!d) continue;
-		if (d.content_id) {
-			try { await apiDeleteDialogue(d.content_id); } catch (e) {
-				console.error('批量删除失败:', e);
-				ElMessage.error('删除失败，已中止');
-				break;
-			}
-			projectNodes.value = projectNodes.value.filter(n => n.content_id !== d.content_id);
-		}
-		dialogues.value.splice(i, 1);
-	}
-	clearSelection();
-	dialogues.value.forEach((d, i) => d.order_num = i + 1);
-	// 服务端已删除的节点不能靠本地撤销恢复，清空快照避免“幽灵节点”
-	undoStack.value = [];
-	redoStack.value = [];
-	if (hadUnsaved) markDirty();
-	else clearDraft();
-	ElMessage.success('已删除选中对话（不可撤销）');
-};
-
-const batchDuplicate = () => {
-	const indexes = [...selectedIndexes.value].sort((a, b) => a - b);
-	if (!indexes.length) return;
-	pushHistory();
-	const clones = indexes.map(i => {
-		const d = dialogues.value[i];
-		const copy = JSON.parse(JSON.stringify(d));
-		delete copy.content_id;
-		copy.voice_url = '';
-		copy.order_num = 0;
-		return copy;
-	});
-	const insertAt = indexes[indexes.length - 1] + 1;
-	dialogues.value.splice(insertAt, 0, ...clones);
-	dialogues.value.forEach((d, i) => d.order_num = i + 1);
-	clearSelection();
-	markDirty();
-	ElMessage.success(`已复制 ${clones.length} 条，记得保存`);
-};
+const {
+	selectedIndexes,
+	isSelected,
+	toggleSelect,
+	clearSelection,
+	batchDelete,
+	batchDuplicate,
+} = useSceneSelection({
+	dialogues,
+	getDirty: () => dirty.value,
+	pushHistory,
+	clearHistory,
+	markDirty,
+	clearDraft,
+	dropProjectNode: (contentId) => {
+		projectNodes.value = projectNodes.value.filter(n => n.content_id !== contentId);
+	},
+});
 
 // ===== 批量配音：选中台词逐条 TTS，生成后回填 voice_url =====
 // 配音导演：台词情绪标签（与后端 EMOTION_OPTIONS 一致）
