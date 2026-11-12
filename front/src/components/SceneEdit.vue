@@ -1053,6 +1053,7 @@ import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
 import { useSceneDebugPlayback } from '@/composables/scene/useSceneDebugPlayback';
 import { useSceneDirectives } from '@/composables/scene/useSceneDirectives';
 import { useSceneLock } from '@/composables/scene/useSceneLock';
+import { useSceneFsmStates } from '@/composables/scene/useSceneFsmStates';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1354,52 +1355,16 @@ const currentAIIndex = ref(null);
 const aiStage = ref('');
 const aiRefs = ref([]);
 
-const fsmStates = [
-  { value: 'draft', label: '草稿', desc: '手动创建，待编辑', color: '#b8b8b8' },
-  { value: 'ai_generated', label: 'AI生成', desc: 'AI产出，待审核', color: '#ffa726' },
-  { value: 'reviewed', label: '已审核', desc: '审核通过，可发布', color: '#66bb6a' },
-  { value: 'published', label: '已发布', desc: '锁定，不可编辑', color: '#42a5f5' }
-]
-
-const fsmStateLabels = {
-  'draft': '草稿',
-  'ai_generated': 'AI生成',
-  'reviewed': '已审核',
-  'published': '已发布'
-}
-
-const dialogueFsmStates = ref({})
-
-const fsmStorageKey = () => `aigc:fsm:${props.sceneId}`
-
-const loadFsmStates = () => {
-  try {
-    const raw = localStorage.getItem(fsmStorageKey())
-    dialogueFsmStates.value = raw ? JSON.parse(raw) : {}
-  } catch (e) {
-    dialogueFsmStates.value = {}
-  }
-}
-
-const persistFsmStates = () => {
-  try {
-    localStorage.setItem(fsmStorageKey(), JSON.stringify(dialogueFsmStates.value))
-  } catch (e) {
-    console.warn('保存审校状态失败:', e)
-  }
-}
-
-const getFsmState = (dialogue) => {
-  const key = dialogue.content_id || `new_${dialogue.order_num}`
-  return dialogueFsmStates.value[key] || 'draft'
-}
-
-const setFsmState = (dialogue, state) => {
-  const key = dialogue.content_id || `new_${dialogue.order_num}`
-  dialogueFsmStates.value[key] = state
-  persistFsmStates()
-  ElMessage.success(`状态已切换为：${fsmStateLabels[state]}`)
-}
+/* ===== 台词审校状态（FSM）：只存本地 localStorage（见 useSceneFsmStates） ===== */
+const {
+	fsmStates,
+	fsmStateLabels,
+	dialogueFsmStates,
+	loadFsmStates,
+	persistFsmStates,
+	getFsmState,
+	setFsmState,
+} = useSceneFsmStates({ sceneId: () => props.sceneId });
 
 // ==================== 原有方法 ====================
 const togglePanel = () => {
