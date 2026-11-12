@@ -1002,8 +1002,7 @@ import {
 	deleteDialogue as apiDeleteDialogue,
 	getCharactersByProjectId,
 	getCharacterAvatars as getCharacterAvatarsApi,
-	reorderDialoguesApi,
-	autoTagEmotions
+	reorderDialoguesApi
 } from '@/api/dialogue'
 import {
 	BASE_URL
@@ -1045,6 +1044,7 @@ import { useSceneStageActions } from '@/composables/scene/useSceneStageActions';
 import { useSceneTranslations } from '@/composables/scene/useSceneTranslations';
 import { useSceneNodeEditors } from '@/composables/scene/useSceneNodeEditors';
 import { useSceneVoiceBatch, EMOTION_OPTIONS } from '@/composables/scene/useSceneVoiceBatch';
+import { useSceneVoiceDirector } from '@/composables/scene/useSceneVoiceDirector';
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage';
 
 const props = defineProps({
@@ -1337,128 +1337,29 @@ const {
 });
 
 // ===== 配音导演：场景情绪分布 + 规则自动标注 =====
-const voiceDirectorVisible = ref(false);
-const emotionTagScope = ref('all');      // all=本场景全部台词，selected=仅选中
-const emotionTagOnlyUnlabeled = ref(true);
-const emotionTagRunning = ref(false);
-const emotionTagRows = ref([]);          // { index, text, emotion, reason, confidence, checked }
-
-const sceneVoicableCount = computed(() =>
-	dialogues.value.filter(d => d && d.content_type !== '选择').length
-);
-
-const sceneEmotionStats = computed(() => {
-	const stats = {};
-	[...emotionOptions, '未标注'].forEach(e => { stats[e] = 0; });
-	let total = 0;
-	for (const d of dialogues.value) {
-		if (!d || d.content_type === '选择') continue;
-		const emotion = emotionOptions.includes(d.emotion) ? d.emotion : '未标注';
-		stats[emotion] += 1;
-		total += 1;
-	}
-	return { stats, total };
+const {
+	voiceDirectorVisible,
+	emotionTagScope,
+	emotionTagOnlyUnlabeled,
+	emotionTagRunning,
+	emotionTagRows,
+	sceneVoicableCount,
+	sceneEmotionStats,
+	emotionStatRows,
+	emotionTagCheckedCount,
+	openVoiceDirector,
+	emotionTagTargets,
+	runEmotionAutoTag,
+	applyEmotionTags,
+} = useSceneVoiceDirector({
+	projectId,
+	scene,
+	dialogues,
+	selectedIndexes,
+	snapshot: cloneDialogues,
+	pushHistory,
+	markDirty,
 });
-
-const emotionStatRows = computed(() =>
-	[...emotionOptions, '未标注'].map(emotion => ({
-		emotion,
-		count: sceneEmotionStats.value.stats[emotion],
-		percent: sceneEmotionStats.value.total
-			? Math.round(sceneEmotionStats.value.stats[emotion] * 100 / sceneEmotionStats.value.total)
-			: 0
-	}))
-);
-const emotionTagCheckedCount = computed(() => emotionTagRows.value.filter(r => r.checked).length);
-
-const openVoiceDirector = () => {
-	emotionTagRows.value = [];
-	emotionTagScope.value = selectedIndexes.value.length ? 'selected' : 'all';
-	emotionTagOnlyUnlabeled.value = true;
-	voiceDirectorVisible.value = true;
-};
-
-// 本次要送去做规则识别的台词（按范围与「仅补全未标注」筛选）
-const emotionTagTargets = computed(() => {
-	const selected = new Set(selectedIndexes.value);
-	return dialogues.value
-		.map((dialogue, index) => ({ dialogue, index }))
-		.filter(({ dialogue, index }) =>
-			dialogue &&
-			dialogue.content_type !== '选择' &&
-			String(dialogue.content_text || '').trim() &&
-			(emotionTagScope.value === 'all' || selected.has(index)) &&
-			(!emotionTagOnlyUnlabeled.value || !emotionOptions.includes(dialogue.emotion))
-		);
-});
-
-const runEmotionAutoTag = async () => {
-	if (emotionTagRunning.value) return;
-	const pid = Number(projectId.value || scene.value.project_id);
-	const targets = emotionTagTargets.value;
-	if (!pid) {
-		ElMessage.warning('项目信息加载中，请稍后再试');
-		return;
-	}
-	if (!targets.length) {
-		ElMessage.info(emotionTagOnlyUnlabeled.value ? '当前范围内没有未标注情绪的台词' : '当前范围内没有可标注的台词');
-		return;
-	}
-	emotionTagRunning.value = true;
-	try {
-		const suggestions = await autoTagEmotions(
-			pid,
-			targets.map(({ dialogue, index }) => ({
-				index,
-				content_id: dialogue.content_id || null,
-				text: String(dialogue.content_text || '')
-			}))
-		);
-		const byIndex = new Map(suggestions.map(s => [s.index, s]));
-		emotionTagRows.value = targets.map(({ dialogue, index }) => {
-			const s = byIndex.get(index) || {};
-			return {
-				index,
-				text: String(dialogue.content_text || '').trim(),
-				emotion: emotionOptions.includes(s.emotion) ? s.emotion : '平静',
-				reason: s.reason || '规则推断',
-				confidence: s.confidence || 'low',
-				checked: true
-			};
-		});
-	} catch (e) {
-		console.error('情绪识别失败:', e);
-		ElMessage.error('情绪识别失败：' + (e?.response?.data?.message || e?.message || '未知错误'));
-	} finally {
-		emotionTagRunning.value = false;
-	}
-};
-
-// 把确认后的建议写回台词（只改本地，统一走「保存全部」落库）
-const applyEmotionTags = () => {
-	const rows = emotionTagRows.value.filter(r => r.checked && r.emotion);
-	if (!rows.length) {
-		ElMessage.info('请先勾选要应用的标注');
-		return;
-	}
-	let changed = 0;
-	const before = cloneDialogues();
-	for (const row of rows) {
-		const dialogue = dialogues.value[row.index];
-		if (!dialogue) continue;
-		if (dialogue.emotion !== row.emotion) {
-			dialogue.emotion = row.emotion;
-			changed += 1;
-		}
-	}
-	if (!changed) {
-		ElMessage.info('所选情绪与现有标注一致，无需修改');
-		return;
-	}
-	pushHistory(before);
-	markDirty();
-	ElMessage.success(`已应用 ${changed} 条情绪标注，记得保存`);
-};
 
 // ===== 剧本批量导入 =====
 const scriptImportVisible = ref(false);
