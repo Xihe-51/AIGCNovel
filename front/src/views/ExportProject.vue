@@ -711,7 +711,7 @@ import {
 	getScenes as getProjectScenes,
 	updateScene,
 } from '@/api/scenes'
-import { listBranches, getStoryGraph } from '@/api/branch'
+import { listBranches } from '@/api/branch'
 import { listPublicReleases } from '@/api/release'
 import { listChapters } from '@/api/chapter'
 import { listEndings, unlockEnding } from '@/api/ending'
@@ -725,6 +725,7 @@ import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { useSaveSlots } from '@/composables/player/useSaveSlots'
 import { usePlayerReads } from '@/composables/player/usePlayerReads'
+import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
@@ -826,64 +827,23 @@ const variableHistory = ref([])
 const debugBreakpoint = ref({ enabled: false, variable: '', op: '>=', value: 0 })
 const debugBreakpointHit = ref('')
 const debugSnapshots = ref([])
-// 分支覆盖率：本轮试玩走过的节点/分支（仅调试模式记录）
-const storyGraph = ref(null)
-const visitedContents = ref(new Set())
-const visitedEdges = ref(new Set())
-const edgeKey = (e) => `${Number(e.source_content_id)}->${Number(e.target_content_id)}`
-
-const coverageStats = computed(() => {
-	const nodes = storyGraph.value?.nodes || []
-	const edges = storyGraph.value?.edges || []
-	const nodeVisited = nodes.filter(n => visitedContents.value.has(Number(n.content_id))).length
-	const edgeVisited = edges.filter(e => visitedEdges.value.has(edgeKey(e))).length
-	return {
-		nodeTotal: nodes.length,
-		nodeVisited,
-		nodePct: nodes.length ? Math.round(nodeVisited * 100 / nodes.length) : 0,
-		edgeTotal: edges.length,
-		edgeVisited,
-		edgePct: edges.length ? Math.round(edgeVisited * 100 / edges.length) : 0,
-	}
-})
-
-const uncoveredNodes = computed(() =>
-	(storyGraph.value?.nodes || []).filter(n => !visitedContents.value.has(Number(n.content_id)))
-)
-
-const uncoveredEdges = computed(() =>
-	(storyGraph.value?.edges || []).filter(e => !visitedEdges.value.has(edgeKey(e)))
-)
-
-const markVisitedContent = (id) => {
-	if (!debugMode.value || !id) return
-	const num = Number(id)
-	if (visitedContents.value.has(num)) return
-	const next = new Set(visitedContents.value)
-	next.add(num)
-	visitedContents.value = next
-}
-
-const markVisitedEdge = (sourceId, targetId) => {
-	if (!debugMode.value) return
-	const key = `${Number(sourceId)}->${Number(targetId)}`
-	if (visitedEdges.value.has(key)) return
-	const next = new Set(visitedEdges.value)
-	next.add(key)
-	visitedEdges.value = next
-}
-
-const resetCoverage = () => {
-	visitedContents.value = new Set()
-	visitedEdges.value = new Set()
-	maskCoverageCurrent()
-}
-
-// 重置后把当前停留的节点也记为已走，避免一打开就显示未走
-const maskCoverageCurrent = () => {
-	const id = currentDialogue.value?.content_id
-	if (id) markVisitedContent(id)
-}
+// 分支覆盖率：本轮试玩走过的节点/分支（仅调试模式记录）由 usePlayerCoverage 自管
+const {
+	storyGraph,
+	visitedContents,
+	visitedEdges,
+	coverageStats,
+	uncoveredNodes,
+	uncoveredEdges,
+	markVisitedContent,
+	markVisitedEdge,
+	resetCoverage,
+	restoreVisited,
+	loadStoryGraph,
+} = usePlayerCoverage({
+	debugMode: () => debugMode.value,
+	getCurrentDialogue: () => currentDialogue.value,
+});
 
 // ===== 条件调试器：变量历史 / 条件断点 / 状态快照 =====
 const pushVariableHistory = (label, from, to, reason) => {
@@ -955,7 +915,7 @@ const restoreDebugSnapshot = (snap) => {
 	currentSceneIndex.value = snap.sceneIndex
 	currentDialogueIndex.value = snap.dialogueIndex
 	variableValues.value = { ...(snap.variables || {}) }
-	visitedContents.value = new Set(snap.visited || [])
+	restoreVisited(snap.visited)
 	debugPanelVisible.value = true
 	nextTick(() => startTyping())
 	ElMessage.success('已恢复快照')
@@ -1501,12 +1461,7 @@ const fetchProjectData = async () => {
 
 		// 调试模式：读取完整拓扑，用于面板里的覆盖率统计
 		if (debugMode.value) {
-			try {
-				storyGraph.value = await getStoryGraph(projectIdNum, false);
-			} catch (e) {
-				console.warn('读取剧情图失败，覆盖率不可用:', e);
-				storyGraph.value = null;
-			}
+			await loadStoryGraph(projectIdNum)
 		}
 
 		// 已读记录：跳过已读功能依赖它
