@@ -728,6 +728,7 @@ import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
 import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
+import { usePlayerGamepad } from '@/composables/player/usePlayerGamepad'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
@@ -2759,29 +2760,13 @@ const handleKeydown = (e) => {
 };
 
 // ==================== 手柄操作（标准按键映射） ====================
-// A(0) 继续对话 / B(1) 回想 / X(2) 自动播放
-const gamepadPrev = { 0: false, 1: false, 2: false };
-let gamepadTimer = null;
-
-const pollGamepad = () => {
-	if (!navigator.getGamepads) return;
-	// 只在页面可见时响应手柄，避免后台标签误推进剧情
-	if (document.visibilityState !== 'visible') return;
-	const pads = Array.from(navigator.getGamepads()).filter(p => p && p.connected);
-	if (!pads.length) return;
-	const pad = pads[0];
-	const panelsOpen = isPanelOpen();
-
-	Object.keys(gamepadPrev).forEach((idx) => {
-		const pressed = !!(pad.buttons[Number(idx)] && pad.buttons[Number(idx)].pressed);
-		if (pressed && !gamepadPrev[idx] && !panelsOpen) {
-			if (idx === '0') nextDialogue();
-			else if (idx === '1') toggleHistoryDialogue();
-			else if (idx === '2') toggleAutoPlay();
-		}
-		gamepadPrev[idx] = pressed;
-	});
-};
+// A(0) 继续对话 / B(1) 回想 / X(2) 自动播放；轮询与边沿判定由 usePlayerGamepad 自管
+const { startGamepad, stopGamepad } = usePlayerGamepad({
+	isPanelOpen: () => isPanelOpen(),
+	nextDialogue: () => nextDialogue(),
+	toggleHistoryDialogue: () => toggleHistoryDialogue(),
+	toggleAutoPlay: () => toggleAutoPlay(),
+});
 
 // 监听场景变化，更新背景音乐
 watch(currentScene, (newScene, oldScene) => {
@@ -2806,7 +2791,7 @@ onMounted(() => {
 	document.addEventListener('keydown', handleKeydown);
 
 	// 手柄轮询（无手柄时不做任何操作）
-	gamepadTimer = setInterval(pollGamepad, 200);
+	startGamepad();
 
 	// 移动端方向提示
 	bindOrientation();
@@ -2833,10 +2818,7 @@ onUnmounted(() => {
 	clearEffect();
 	clearStageTransitions();
 	stopBackgroundMusic();
-	if (gamepadTimer) {
-		clearInterval(gamepadTimer);
-		gamepadTimer = null;
-	}
+	stopGamepad();
 	document.removeEventListener('keydown', handleKeydown);
 	document.removeEventListener('click', playBackgroundMusic);
 	document.removeEventListener('keydown', playBackgroundMusic);
