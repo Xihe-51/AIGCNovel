@@ -727,6 +727,7 @@ import { useSaveSlots } from '@/composables/player/useSaveSlots'
 import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
+import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
@@ -926,10 +927,22 @@ let autoSaveTimer = null;
 
 // 已读记录（跳过已读 / 二周目）由 usePlayerReads 自管
 
-// 移动端触控
-const showRotateHint = ref(false);
-const touchStart = { x: 0, y: 0, t: 0 };
-let suppressClick = false;
+// 移动端触控（旋转提示/滑动切回想/滑动吞点击）由 usePlayerTouch 自管
+const {
+	showRotateHint,
+	onTouchStart,
+	onTouchEnd,
+	onDialogueClick,
+	dismissRotateHint,
+	bindOrientation,
+	unbindOrientation,
+} = usePlayerTouch({
+	getShowHistory: () => showHistoryDialogue.value,
+	setShowHistory: (value) => { showHistoryDialogue.value = value },
+	getShowDialogueBox: () => showDialogueBox.value,
+	setShowDialogueBox: (value) => { showDialogueBox.value = value },
+	nextDialogue: () => nextDialogue(),
+});
 
 // 变量系统（定义/取值/跨周目持久化/行为变量/变化浮层）由 usePlayerVariables 自管
 const {
@@ -1635,59 +1648,6 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 		},
 	});
 }
-
-// ==================== 移动端触控 ====================
-const onTouchStart = (e) => {
-	const t = e.touches && e.touches[0];
-	if (!t) return;
-	touchStart.x = t.clientX;
-	touchStart.y = t.clientY;
-	touchStart.t = Date.now();
-};
-
-const onTouchEnd = (e) => {
-	const t = e.changedTouches && e.changedTouches[0];
-	if (!t) return;
-	const dx = t.clientX - touchStart.x;
-	const dy = t.clientY - touchStart.y;
-
-	// 只处理明显的纵向滑动，避免和横向误触冲突
-	if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) {
-		suppressClick = true;
-		setTimeout(() => { suppressClick = false; }, 350);
-		if (dy < 0) {
-			// 上滑：打开完整回想
-			showHistoryDialogue.value = true;
-		} else if (showHistoryDialogue.value) {
-			// 下滑：先关回想
-			showHistoryDialogue.value = false;
-		} else {
-			// 下滑：隐藏 UI，沉浸阅读
-			showDialogueBox.value = false;
-		}
-	}
-};
-
-// 触控滑动后，浏览器还会补一个 click，这里吃掉它
-const onDialogueClick = () => {
-	if (suppressClick) {
-		suppressClick = false;
-		return;
-	}
-	nextDialogue();
-};
-
-const updateOrientation = () => {
-	const portrait = window.matchMedia('(orientation: portrait)').matches && window.innerWidth < 900;
-	showRotateHint.value = portrait && sessionStorage.getItem('aigc:rotateHintDismissed') !== '1';
-};
-
-const dismissRotateHint = () => {
-	showRotateHint.value = false;
-	try {
-		sessionStorage.setItem('aigc:rotateHintDismissed', '1');
-	} catch (e) { /* ignore */ }
-};
 
 // ==================== 项目变量 ====================
 // 变量定义/取值/持久化/行为变量已在 usePlayerVariables 内，条件求值在 usePlayerConditions 内，
@@ -2849,9 +2809,7 @@ onMounted(() => {
 	gamepadTimer = setInterval(pollGamepad, 200);
 
 	// 移动端方向提示
-	updateOrientation();
-	window.addEventListener('resize', updateOrientation);
-	window.addEventListener('orientationchange', updateOrientation);
+	bindOrientation();
 });
 
 // 组件卸载时清理定时器、音频与全局事件，避免内存泄漏与操作已销毁组件
@@ -2883,8 +2841,7 @@ onUnmounted(() => {
 	document.removeEventListener('click', playBackgroundMusic);
 	document.removeEventListener('keydown', playBackgroundMusic);
 	document.removeEventListener('touchstart', playBackgroundMusic);
-	window.removeEventListener('resize', updateOrientation);
-	window.removeEventListener('orientationchange', updateOrientation);
+	unbindOrientation();
 });
 
 const backToHome = () => {
