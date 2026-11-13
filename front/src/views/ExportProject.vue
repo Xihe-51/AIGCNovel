@@ -713,7 +713,6 @@ import {
 } from '@/api/scenes'
 import { listBranches, getStoryGraph } from '@/api/branch'
 import { listPublicReleases } from '@/api/release'
-import { listReads, markReads } from '@/api/read'
 import { listChapters } from '@/api/chapter'
 import { listEndings, unlockEnding } from '@/api/ending'
 import { listMusicGallery, unlockMusic } from '@/api/gallery'
@@ -725,6 +724,7 @@ import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { useSaveSlots } from '@/composables/player/useSaveSlots'
+import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
@@ -1016,12 +1016,7 @@ const sceneHasDialogues = (sceneId) => (allDialogues.value[sceneId] || []).lengt
 // 存档
 let autoSaveTimer = null;
 
-// 已读记录（跳过已读 / 二周目）
-const readSet = ref(new Set());
-const pendingReads = new Set();
-let readFlushTimer = null;
-let skipGuard = 0;
-const readStorageKey = () => `aigc:reads:${props.projectId}`;
+// 已读记录（跳过已读 / 二周目）由 usePlayerReads 自管
 
 // 移动端触控
 const showRotateHint = ref(false);
@@ -1098,7 +1093,7 @@ const chapterRoute = computed(() => {
 			const list = allDialogues.value[scenes.value[idx].scene_id] || [];
 			total += list.length;
 			for (const node of list) {
-				if (readSet.value.has(Number(node.content_id))) read += 1;
+				if (hasRead(node.content_id)) read += 1;
 			}
 		}
 		return {
@@ -1119,7 +1114,7 @@ const routeStats = computed(() => {
 	for (const list of Object.values(allDialogues.value)) {
 		for (const node of list || []) {
 			total += 1;
-			if (readSet.value.has(Number(node.content_id))) read += 1;
+			if (hasRead(node.content_id)) read += 1;
 		}
 	}
 	return {
@@ -1406,7 +1401,7 @@ const rollbackOneLine = () => {
 	lastEffectKey.value = snap.lastEffectKey;
 	triggeredEndings.value = new Set(snap.endings);
 	historyDialogues.value = historyDialogues.value.slice(0, snap.historyLength);
-	skipRestoredLine = true;
+	markSkipRestoredLine();
 
 	nextTick(() => {
 		startTyping();
@@ -1692,60 +1687,23 @@ const finishTyping = () => {
 };
 
 // ==================== 已读记录 ====================
-const loadReads = async () => {
-	let local = [];
-	try {
-		local = JSON.parse(localStorage.getItem(readStorageKey()) || '[]');
-	} catch (e) {
-		local = [];
-	}
-	let cloud = [];
-	try {
-		cloud = await listReads(Number(props.projectId));
-	} catch (e) {
-		console.warn('读取云端已读记录失败，使用本地记录:', e);
-	}
-	readSet.value = new Set([...(cloud || []), ...(local || [])]);
-};
-
-const flushReads = async () => {
-	const ids = [...pendingReads];
-	pendingReads.clear();
-	if (!ids.length) return;
-	try {
-		await markReads(Number(props.projectId), ids);
-	} catch (e) {
-		// 云端失败写本地，下次再合并
-		try {
-			const cur = new Set(JSON.parse(localStorage.getItem(readStorageKey()) || '[]'));
-			ids.forEach(i => cur.add(i));
-			localStorage.setItem(readStorageKey(), JSON.stringify([...cur]));
-		} catch (_) { /* ignore */ }
-	}
-};
-
-const markCurrentRead = () => {
-	const id = currentDialogue.value?.content_id;
-	if (!id || readSet.value.has(id)) return;
-	readSet.value.add(id);
-	pendingReads.add(id);
-	if (readFlushTimer) clearTimeout(readFlushTimer);
-	readFlushTimer = setTimeout(() => {
-		readFlushTimer = null;
-		flushReads();
-	}, 1500);
-};
-
-// 回退后停在上一句时不立刻触发「跳过已读」
-let skipRestoredLine = false
-
-const shouldSkipCurrent = (forceShow = false) => {
-	if (forceShow) return false;
-	if (!playerSettings.value.skipRead) return false;
-	const d = currentDialogue.value;
-	if (!d?.content_id || currentChoices.value.length) return false;
-	return readSet.value.has(d.content_id);
-};
+const {
+	readSet,
+	loadReads,
+	hasRead,
+	markCurrentRead,
+	shouldSkipCurrent,
+	allowSkip,
+	resetSkipGuard,
+	markSkipRestoredLine,
+	consumeSkipRestoredLine,
+	disposeReads,
+} = usePlayerReads({
+	projectId: () => Number(props.projectId),
+	getCurrentDialogue: () => currentDialogue.value,
+	hasChoices: () => currentChoices.value.length > 0,
+	skipReadEnabled: () => !!playerSettings.value.skipRead,
+});
 
 // 调试探针（仅开发环境，便于无头浏览器排查）
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -2055,8 +2013,7 @@ const startTyping = () => {
 	if (!currentDialogue.value) return;
 	applyEffectsForCurrent();
 	// 回退/演出编辑后强制展示当前句：即使命中结局分支也要先消费标记，避免标记泄漏到下一句
-	const forceShowRestored = skipRestoredLine;
-	skipRestoredLine = false;
+	const forceShowRestored = consumeSkipRestoredLine();
 	// 到达结局节点且条件成立：弹结局页，不再继续打字
 	if (checkEndingForCurrent()) return;
 	clearTyping();
@@ -2067,14 +2024,12 @@ const startTyping = () => {
 
 	// 跳过已读：连续跳过已读节点，直到未读或遇到选择
 	if (!forceShowRestored && shouldSkipCurrent()) {
-		skipGuard += 1;
-		if (skipGuard <= 500) {
+		if (allowSkip()) {
 			nextDialogue();
 			return;
 		}
-		skipGuard = 0;
 	} else {
-		skipGuard = 0;
+		resetSkipGuard();
 	}
 
 	markCurrentRead();
@@ -2773,7 +2728,7 @@ const savePerformEdit = async () => {
 
 		performStatus.value = '已保存 · ' + new Date().toLocaleTimeString()
 		// 编辑器里改完台词后立刻按新文本重新演出；不触发「跳过已读」
-		skipRestoredLine = true
+		markSkipRestoredLine()
 		startTyping()
 		ElMessage.success('已保存并热更新当前画面')
 	} catch (e) {
@@ -3005,11 +2960,7 @@ onUnmounted(() => {
 		metaSaveTimer = null;
 		syncProjectMeta(true);
 	}
-	if (readFlushTimer) {
-		clearTimeout(readFlushTimer);
-		readFlushTimer = null;
-		flushReads();
-	}
+	disposeReads();
 	if (autoSaveTimer) {
 		clearTimeout(autoSaveTimer);
 		autoSaveTimer = null;
