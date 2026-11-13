@@ -723,7 +723,7 @@ import { playerText } from '@/utils/playerI18n'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
-import { useSaveSlots } from '@/composables/player/useSaveSlots'
+import { usePlayerProgress } from '@/composables/player/usePlayerProgress'
 import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
@@ -2414,87 +2414,48 @@ const toggleAutoPlay = () => {
 	}
 };
 
-// 保存当前进度到本地存储（云端不可用时的兜底）
-const saveProgress = (silent = false) => {
-	try {
-		const progressData = {
-			projectId: props.projectId,
-			currentSceneIndex: currentSceneIndex.value,
-			currentDialogueIndex: currentDialogueIndex.value,
-			historyDialogues: historyDialogues.value, // 保存历史对话
-			playthrough: playthrough.value,
-			// 变量与数值变化进度，避免本地兜底存档丢变量
-			variables: variableValues.value,
-			lastEffectKey: lastEffectKey.value,
-			triggeredEndings: [...triggeredEndings.value],
-			saveTime: new Date().toISOString()
-		};
-		
-		localStorage.setItem(`gameProgress_${props.projectId}`, JSON.stringify(progressData));
-		if (!silent) ElMessage.success(t('save.saved'));
-	} catch (error) {
-		console.error('保存进度失败:', error);
-		if (!silent) ElMessage.error(t('save.saveFailed'));
-	}
-};
-
-// ==================== 云端存档 ====================
-const currentSaveSummary = () => {
-	const title = localizedSceneTitle(currentScene.value) || t('save.unnamedScene');
-	const text = localizedText(currentDialogue.value).replace(/\s+/g, ' ').slice(0, 24);
-	return text ? `${title} · ${text}` : title;
-};
-
-const buildSaveState = () => ({
-	sceneIndex: currentSceneIndex.value,
-	dialogueIndex: currentDialogueIndex.value,
-	historyDialogues: historyDialogues.value,
-	variables: variableValues.value,
-	lastEffectKey: lastEffectKey.value,
-	triggeredEndings: [...triggeredEndings.value],
-	playthrough: playthrough.value,
-	// 存档缩略图：优先当前场景背景，没有背景时用作品封面
-	scene_id: currentScene.value.scene_id || null,
-	scene_title: currentScene.value.title || '',
-	thumbnail_url: currentScene.value.background_url || projectCoverUrl.value || '',
-	savedAt: new Date().toISOString(),
-});
-
+// ==================== 进度存档（本地兜底 + 云端槽位 + 退出） ====================
+// 存档采集、槽位编排与退出流程由 usePlayerProgress 托管
 const {
 	saves,
 	saveDialogVisible,
 	isRestoring,
+	loadProgress,
+	exitGame,
 	openSaveDialog,
 	saveToSlot,
 	loadFromSlot,
 	deleteSlot,
-} = useSaveSlots({
+} = usePlayerProgress({
 	projectId: () => Number(props.projectId),
-	capture: () => ({ state: buildSaveState(), summary: currentSaveSummary() }),
-	apply: async (state) => {
-		currentSceneIndex.value = Number(state.sceneIndex) || 0;
-		currentDialogueIndex.value = Number(state.dialogueIndex) || 0;
-		historyDialogues.value = state.historyDialogues || [];
-		variableValues.value = state.variables || {};
-		lastEffectKey.value = state.lastEffectKey || '';
-		triggeredEndings.value = new Set(state.triggeredEndings || []);
-		if (state.playthrough) {
-			playthrough.value = Number(state.playthrough) || playthrough.value;
-			try {
-				localStorage.setItem(playthroughKey(), String(playthrough.value));
-			} catch (_) { /* ignore */ }
-		}
-		initVariableValues();
-		clearLineSnapshots();
-		// 读档后把跨周目变量同步为存档里的值
-		syncProjectMeta(true);
-		await nextTick();
-		startTyping();
-		applyVolumes();
-	},
-	onCloudSaveFailed: () => saveProgress(true),
-	onCloudLoadFailed: () => loadProgress(),
-	t,
+	getSceneIndex: () => currentSceneIndex.value,
+	setSceneIndex: (value) => { currentSceneIndex.value = value },
+	getDialogueIndex: () => currentDialogueIndex.value,
+	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
+	getHistory: () => historyDialogues.value,
+	setHistory: (value) => { historyDialogues.value = value },
+	getVariables: () => variableValues.value,
+	setVariables: (value) => { variableValues.value = value },
+	getLastEffectKey: () => lastEffectKey.value,
+	setLastEffectKey: (value) => { lastEffectKey.value = value },
+	getEndings: () => triggeredEndings.value,
+	setEndings: (value) => { triggeredEndings.value = value },
+	getPlaythrough: () => playthrough.value,
+	setPlaythrough: (value) => { playthrough.value = value },
+	playthroughKey: () => playthroughKey(),
+	getScene: () => currentScene.value,
+	getDialogue: () => currentDialogue.value,
+	getCoverUrl: () => projectCoverUrl.value,
+	sceneTitleOf: (scene) => localizedSceneTitle(scene),
+	textOf: (dialogue) => localizedText(dialogue),
+	initVariableValues: () => initVariableValues(),
+	clearLineSnapshots: () => clearLineSnapshots(),
+	syncProjectMeta: (immediate) => syncProjectMeta(immediate),
+	startTyping: () => startTyping(),
+	applyVolumes: () => applyVolumes(),
+	stopBackgroundMusic: () => stopBackgroundMusic(),
+	exitToHome: () => { proxy?.$router?.push('/home') },
+	t: (key, params) => t(key, params),
 });
 
 // ==================== 演出模式（作者预览热更新） ====================
@@ -2530,64 +2491,6 @@ const {
 	updateScene: (sceneId, patch) => updateScene(sceneId, patch),
 	projectId: () => Number(props.projectId),
 });
-
-// 从本地存储加载进度
-const loadProgress = () => {
-	try {
-		const progressData = localStorage.getItem(`gameProgress_${props.projectId}`);
-		if (progressData) {
-			const { 
-				currentSceneIndex: sceneIdx, 
-				currentDialogueIndex: dialogueIdx,
-				historyDialogues: savedHistory,
-				playthrough: savedPlaythrough,
-				variables: savedVariables,
-				lastEffectKey: savedEffectKey,
-				triggeredEndings: savedEndings
-			} = JSON.parse(progressData);
-			currentSceneIndex.value = sceneIdx;
-			currentDialogueIndex.value = dialogueIdx;
-			historyDialogues.value = savedHistory || [];
-			if (savedPlaythrough) playthrough.value = Number(savedPlaythrough) || playthrough.value;
-			// 恢复变量与已触发的数值变化，避免读本地进度后数值归零/重复加分
-			if (savedVariables && typeof savedVariables === 'object') {
-					variableValues.value = { ...savedVariables };
-				}
-				clearLineSnapshots();
-				syncProjectMeta(true);
-			lastEffectKey.value = savedEffectKey || '';
-			if (Array.isArray(savedEndings)) {
-				triggeredEndings.value = new Set(savedEndings);
-			}
-			ElMessage.success(t('toast.progressLoaded'));
-		}
-	} catch (error) {
-		console.error('加载进度失败:', error);
-		// 加载失败不提示，使用默认进度
-	}
-};
-
-// 退出游戏
-const exitGame = () => {
-	ElMessageBox.confirm(
-		t('toast.exitConfirm'),
-		t('toast.exitTitle'),
-		{
-			confirmButtonText: t('toast.exitBtn'),
-			cancelButtonText: t('common.cancel'),
-			type: 'warning',
-		}
-	)
-	.then(() => {
-		// 用户确认退出
-		stopBackgroundMusic();
-		proxy.$router.push('/home');
-	})
-	.catch(() => {
-		// 用户取消退出
-		ElMessage.info(t('toast.exitCancelled'));
-	});
-};
 
 // 处理鼠标滚轮事件
 const handleWheel = (e) => {
