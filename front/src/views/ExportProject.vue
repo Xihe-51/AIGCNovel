@@ -726,6 +726,7 @@ import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { useSaveSlots } from '@/composables/player/useSaveSlots'
 import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
+import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
@@ -822,11 +823,7 @@ const performMusic = ref('')
 const performStatus = ref('')
 
 const debugJumpId = ref('')
-// 条件调试器：变量变化历史 / 条件断点 / 状态快照
-const variableHistory = ref([])
-const debugBreakpoint = ref({ enabled: false, variable: '', op: '>=', value: 0 })
-const debugBreakpointHit = ref('')
-const debugSnapshots = ref([])
+// 条件调试器：变量变化历史 / 条件断点 / 状态快照 由 usePlayerDebugger 自管
 // 分支覆盖率：本轮试玩走过的节点/分支（仅调试模式记录）由 usePlayerCoverage 自管
 const {
 	storyGraph,
@@ -846,85 +843,36 @@ const {
 });
 
 // ===== 条件调试器：变量历史 / 条件断点 / 状态快照 =====
-const pushVariableHistory = (label, from, to, reason) => {
-	if (!debugMode.value) return
-	variableHistory.value = [{
-		id: Date.now() + Math.random(),
-		at: new Date().toLocaleTimeString(),
-		label,
-		from,
-		to,
-		reason,
-	}, ...variableHistory.value].slice(0, 40)
-}
-
-const checkDebugBreakpoint = () => {
-	const bp = debugBreakpoint.value
-	if (!debugMode.value || !bp.enabled || !bp.variable) return;
-	const v = projectVariables.value.find(x => x.name === bp.variable)
-	if (!v) return;
-	const current = Number(variableValues.value[v.name] ?? v.initial_value)
-	const hit = evalSingleCondition({ variable: bp.variable, op: bp.op, value: bp.value })
-	if (!hit) return;
-	const text = `#${currentDialogue.value?.content_id || '-'} ${v.label} ${bp.op} ${bp.value}（当前 ${current}）`
-	debugBreakpointHit.value = text
-	// 命中后自动关闭，避免每句都弹
-	debugBreakpoint.value = { ...bp, enabled: false }
-	autoPlay.value = false
-	ElMessage.warning('条件断点命中：' + text)
-}
-
-const debugSnapshotKey = () => `aigc:debugSnapshots:${props.projectId}`
-
-const loadDebugSnapshots = () => {
-	if (!debugMode.value) return;
-	try {
-		const raw = localStorage.getItem(debugSnapshotKey())
-		const list = raw ? JSON.parse(raw) : []
-		debugSnapshots.value = Array.isArray(list) ? list.slice(0, 5) : []
-	} catch (e) {
-		debugSnapshots.value = []
-	}
-}
-
-const persistDebugSnapshots = () => {
-	try {
-		localStorage.setItem(debugSnapshotKey(), JSON.stringify(debugSnapshots.value))
-	} catch (e) { /* ignore */ }
-}
-
-const saveDebugSnapshot = () => {
-	if (!debugMode.value) return;
-	const snap = {
-		id: Date.now(),
-		time: new Date().toLocaleTimeString(),
-		node: currentDialogue.value?.content_id || null,
-		sceneIndex: currentSceneIndex.value,
-		dialogueIndex: currentDialogueIndex.value,
-		variables: { ...variableValues.value },
-		visited: [...visitedContents.value],
-	}
-	debugSnapshots.value = [snap, ...debugSnapshots.value].slice(0, 5)
-	persistDebugSnapshots()
-	ElMessage.success('已保存状态快照')
-}
-
-const restoreDebugSnapshot = (snap) => {
-	// 调试快照是任意时间点，恢复后旧的「上一句」快照不再可信
-	clearLineSnapshots()
-	currentSceneIndex.value = snap.sceneIndex
-	currentDialogueIndex.value = snap.dialogueIndex
-	variableValues.value = { ...(snap.variables || {}) }
-	restoreVisited(snap.visited)
-	debugPanelVisible.value = true
-	nextTick(() => startTyping())
-	ElMessage.success('已恢复快照')
-}
-
-const deleteDebugSnapshot = (id) => {
-	debugSnapshots.value = debugSnapshots.value.filter(s => s.id !== id)
-	persistDebugSnapshots()
-}
+const {
+	variableHistory,
+	debugBreakpoint,
+	debugBreakpointHit,
+	debugSnapshots,
+	pushVariableHistory,
+	checkDebugBreakpoint,
+	loadDebugSnapshots,
+	saveDebugSnapshot,
+	restoreDebugSnapshot,
+	deleteDebugSnapshot,
+} = usePlayerDebugger({
+	projectId: () => Number(props.projectId),
+	debugMode: () => debugMode.value,
+	getCurrentDialogue: () => currentDialogue.value,
+	getProjectVariables: () => projectVariables.value,
+	getVariableValues: () => variableValues.value,
+	getSceneIndex: () => currentSceneIndex.value,
+	getDialogueIndex: () => currentDialogueIndex.value,
+	getVisited: () => [...visitedContents.value],
+	evalSingleCondition: (condition) => evalSingleCondition(condition),
+	restoreVisited,
+	clearLineSnapshots: () => clearLineSnapshots(),
+	startTyping: () => startTyping(),
+	setAutoPlay: (value) => { autoPlay.value = value },
+	setPanelVisible: (value) => { debugPanelVisible.value = value },
+	setSceneIndex: (value) => { currentSceneIndex.value = value },
+	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
+	setVariableValues: (value) => { variableValues.value = value },
+});
 
 // ===== 试玩埋点（调试模式不记录，避免作者自己测试污染数据）=====
 const {
