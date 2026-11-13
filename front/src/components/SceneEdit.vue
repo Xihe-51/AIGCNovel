@@ -1007,7 +1007,6 @@ import { generateText, continueStory } from '@/api/ai'
 import { listBranches, createBranch, deleteBranch } from '@/api/branch'
 import { createProjectVersion } from '@/api/version'
 import { saveBranchTranslation } from '@/api/translation'
-import { parseRichText, renderRichHtml } from '@/utils/richText'
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -1043,6 +1042,7 @@ import { useSceneSettingsAutosave } from '@/composables/scene/useSceneSettingsAu
 import { useSceneUploads } from '@/composables/scene/useSceneUploads';
 import { useSceneStageSync } from '@/composables/scene/useSceneStageSync';
 import { useSceneDialogueList } from '@/composables/scene/useSceneDialogueList';
+import { useSceneDialoguePreview } from '@/composables/scene/useSceneDialoguePreview';
 import { useSceneAssetDrop } from '@/composables/scene/useSceneAssetDrop';
 import { useSceneBranches } from '@/composables/scene/useSceneBranches';
 import { useSceneAssetPicker } from '@/composables/scene/useSceneAssetPicker';
@@ -1096,7 +1096,6 @@ const isDialogueFocused = (contentId) => {
 	if (activeFocusId.value === null || activeFocusId.value === undefined) return false;
 	return String(contentId) === String(activeFocusId.value);
 };
-let focusPulseTimer = null;
 
 // ===== 撤销 / 重做 / 未保存草稿 =====
 const {
@@ -1383,12 +1382,30 @@ const {
 	pushHistory,
 });
 
-const currentDialogue = computed(() => dialogues.value[currentDialogueIndex.value]);
-// 富文本：把 ** / [color] 等标记渲染成 HTML，避免作者在预览里看到原始标记
-const richPreviewHtml = (text) => renderRichHtml(parseRichText(text || ''), Infinity);
-// 传给 StagePreview 的纯展示数据，避免子组件依赖角色/富文本逻辑
-const currentSpeakerName = computed(() => getCharacterName(currentDialogue.value?.character_id));
-const currentDialogueHtml = computed(() => richPreviewHtml(currentDialogue.value?.content_text || ''));
+/* ===== 预览联动：当前台词 / 搜索定位 / 立绘与素材地址（见 useSceneDialoguePreview） ===== */
+const {
+	currentDialogue,
+	richPreviewHtml,
+	currentSpeakerName,
+	currentDialogueHtml,
+	selectDialogue,
+	focusDialogueByContentId,
+	nextDialogue,
+	restartDialogues,
+	getCharacterAvatars,
+	avatarOptionLabel,
+	assetNonce,
+	assetSrc,
+	avatarLayersOf,
+	cancelFocusPulse,
+} = useSceneDialoguePreview({
+	dialogues,
+	characters,
+	currentDialogueIndex,
+	focusedContentId,
+	focusContentId: () => props.focusContentId,
+	getCharacterName: (characterId) => getCharacterName(characterId),
+});
 
 // 切到剧情图等视图时暂停 BGM，回到脚本再继续
 watch(() => props.paused, (paused) => {
@@ -1399,90 +1416,6 @@ watch(() => props.paused, (paused) => {
 		nextTick(() => { playBackgroundMusic(); });
 	}
 });
-
-// 点编辑区的对话卡时，右侧预览同步切到这一条
-const selectDialogue = (index) => {
-	if (currentDialogueIndex.value !== index) currentDialogueIndex.value = index;
-};
-
-// 全项目搜索命中后：选中并滚动到对应对话
-const focusDialogueByContentId = async (contentId) => {
-	if (!contentId) return;
-	const index = dialogues.value.findIndex(d => String(d.content_id) === String(contentId));
-	if (index < 0) return;
-	currentDialogueIndex.value = index;
-	focusedContentId.value = Number(contentId);
-	clearTimeout(focusPulseTimer);
-	focusPulseTimer = setTimeout(() => { focusedContentId.value = null; }, 2000);
-	await nextTick();
-	const el = document.querySelector(`.dialogue-editor-item[data-content-id="${contentId}"]`);
-	if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-};
-
-watch(
-	() => props.focusContentId,
-	(id) => {
-		if (id && dialogues.value.length) focusDialogueByContentId(id);
-	},
-	{ immediate: true }
-);
-
-const nextDialogue = () => {
-	if (currentDialogueIndex.value <= dialogues.value.length - 1) {
-		currentDialogueIndex.value++;
-		// 等新台词渲染后再取 audio，否则 play 的是上一条语音
-		nextTick(() => {
-			const audioElement = document.querySelector('.dialogue-box audio');
-			if (audioElement) audioElement.play().catch(e => console.log('自动播放失败:', e));
-		});
-	}
-};
-
-const restartDialogues = () => { currentDialogueIndex.value = 0; };
-
-const getCharacterAvatars = (characterId) => {
-	if (!characterId) return [];
-	const char = characters.value.find(c => c.character_id === characterId);
-	return char ? char.avatars : [];
-};
-
-// 表情差分选项：表情 + 服装，避免同表情多套服装时选项重名
-const avatarOptionLabel = (avatar) => {
-	const name = [avatar.avatar_type, avatar.costume].filter(Boolean).join(' · ');
-	return avatar.is_default ? `${name}（默认）` : name;
-};
-
-// 资源热重载：预览图统一走 assetSrc，给项目内静态资源加时间戳绕过浏览器缓存
-const assetNonce = ref(0)
-const assetSrc = (url) => {
-	if (!url) return ''
-	const raw = String(url)
-	// data:/blob: 是内联内容，追加查询参数会直接破坏地址
-	if (/^(data:|blob:)/i.test(raw)) return raw
-	// 外链可能带签名或自身查询参数，不做热重载改写
-	if (/^https?:/i.test(raw)) return raw
-	const base = raw.startsWith('/assets/') || raw.startsWith('/src/')
-		? raw
-		: (raw.startsWith('/') ? BASE_URL + raw : `${BASE_URL}/${raw}`)
-	const sep = base.includes('?') ? '&' : '?'
-	return `${base}${sep}v=${assetNonce.value}`
-}
-
-// 立绘差分层：返回 [基础图, ...叠加层]；按 order 从小到大
-const avatarLayersOf = (avatarId) => {
-	if (!avatarId) return [];
-	for (const char of characters.value) {
-		const avatar = (char.avatars || []).find(a => a.avatar_id === avatarId);
-		if (!avatar || !avatar.image_url) continue;
-		const layers = (avatar.layers || [])
-			.filter(l => l && l.image_url)
-			.slice()
-			.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
-			.map(l => assetSrc(l.image_url));
-		return [assetSrc(avatar.image_url), ...layers];
-	}
-	return [];
-};
 
 /* ===== 预览区：按当前对话的演出指令渲染（模型见 useSceneStagePreview） ===== */
 const {
@@ -1749,7 +1682,7 @@ onBeforeUnmount(() => {
 	stopSettingsAudio();
 	window.removeEventListener('keydown', onWindowKeydown);
 	window.removeEventListener('beforeunload', onBeforeUnload);
-	clearTimeout(focusPulseTimer);
+	cancelFocusPulse();
 	cancelScheduledSave();
 	flushTextHistory();
 	saveDraftNow();
