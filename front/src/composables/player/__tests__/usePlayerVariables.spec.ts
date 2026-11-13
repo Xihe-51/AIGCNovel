@@ -129,6 +129,23 @@ describe('usePlayerVariables / 跨周目持久化', () => {
     }
   })
 
+  it('卸载时立刻落盘尚未写回的 persist 变量', () => {
+    vi.useFakeTimers()
+    try {
+      const { result, wrapper } = createVariables()
+      result.projectVariables.value = [{ name: 'keep', persist: true, initial_value: 0 }]
+      result.variableValues.value = { keep: 9 }
+      result.syncProjectMeta()
+      expect(saveProjectMeta).not.toHaveBeenCalled()
+      wrapper.unmount()
+      expect(saveProjectMeta).toHaveBeenCalledWith(7, { keep: 9 })
+      vi.advanceTimersByTime(500)
+      expect(saveProjectMeta).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('loadProjectMeta 读取失败时清空跨周目值', async () => {
     getProjectMeta.mockRejectedValue(new Error('boom'))
     const { result } = createVariables()

@@ -729,6 +729,7 @@ import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
 import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
 import { usePlayerGamepad } from '@/composables/player/usePlayerGamepad'
+import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
@@ -816,13 +817,7 @@ const canPerform = computed(() =>
 	&& route.query.edit === '1'
 	&& isOwner.value
 )
-const performMode = ref(false)
-const performSaving = ref(false)
-const performText = ref('')
-const performAvatarId = ref('')
-const performBackground = ref('')
-const performMusic = ref('')
-const performStatus = ref('')
+// 演出模式表单与保存编排在 usePlayerPerform 内（见下方演出模式段落）
 
 const debugJumpId = ref('')
 // 条件调试器：变量变化历史 / 条件断点 / 状态快照 由 usePlayerDebugger 自管
@@ -2503,113 +2498,38 @@ const {
 });
 
 // ==================== 演出模式（作者预览热更新） ====================
-const syncPerformForm = () => {
-	const dlg = currentDialogue.value
-	if (!dlg) return
-	performText.value = dlg.content_text || ''
-	performAvatarId.value = dlg.avatar_id ? String(dlg.avatar_id) : ''
-	performBackground.value = currentScene.value?.background_url || ''
-	performMusic.value = currentScene.value?.music_url || ''
-	performStatus.value = ''
-}
-
-const togglePerformMode = () => {
-	if (!canPerform.value) return
-	performMode.value = !performMode.value
-	if (performMode.value) syncPerformForm()
-}
-
-// 场景 BGM 改动后立即重载：若当前节点有 music 演出指令，以指令为准不覆盖
-const reloadSceneMusic = () => {
-	const audio = backgroundMusic.value
-	if (!audio) return
-	if (!currentScene.value?.music_url) {
-		audio.pause()
-		audio.currentTime = 0
-		return
-	}
-	if (!isPlaying.value) return
-	nextTick(() => {
-		audio.volume = 0
-		audio.play().then(() => fadeBgmTo(bgmTargetVolume(), 600)).catch(() => {})
-	})
-}
-
-const savePerformEdit = async () => {
-	const dlg = currentDialogue.value
-	const scene = currentScene.value
-	if (!dlg || !scene || performSaving.value) return
-	const text = performText.value.trim()
-	if (!text) {
-		ElMessage.warning('台词不能为空')
-		return
-	}
-
-	performSaving.value = true
-	try {
-		const updated = await saveDialogues({
-			...dlg,
-			project_id: Number(props.projectId),
-			scene_id: Number(scene.scene_id),
-			content_text: text,
-			avatar_id: dlg.content_type === '对话'
-				? (Number(performAvatarId.value) || null)
-				: (dlg.avatar_id || null),
-		})
-
-		// 热更新当前场景的台词列表，不刷新页面
-		const list = allDialogues.value[scene.scene_id] || []
-		const idx = list.findIndex(d => Number(d.content_id) === Number(dlg.content_id))
-		if (idx >= 0) {
-			const next = [...list]
-			next[idx] = { ...next[idx], ...(updated || {}), content_text: text }
-			allDialogues.value = { ...allDialogues.value, [scene.scene_id]: next }
-		}
-		historyDialogues.value = historyDialogues.value.map(h =>
-			Number(h.content_id) === Number(dlg.content_id) ? { ...h, content_text: text } : h
-		)
-
-		// 场景背景 / BGM 按需写入
-		const scenePatch = {}
-		const bg = performBackground.value.trim()
-		const music = performMusic.value.trim()
-		if (bg !== (scene.background_url || '')) scenePatch.background_url = bg
-		if (music !== (scene.music_url || '')) scenePatch.music_url = music
-		if (Object.keys(scenePatch).length) {
-			const savedScene = await updateScene(Number(scene.scene_id), scenePatch)
-			const si = scenes.value.findIndex(s => Number(s.scene_id) === Number(scene.scene_id))
-			if (si >= 0) {
-				const next = [...scenes.value]
-				next[si] = { ...next[si], ...scenePatch, ...(savedScene || {}) }
-				scenes.value = next
-			}
-			if ('music_url' in scenePatch) {
-				const hasMusicDirective = (directivesByContent.value[dlg.content_id] || [])
-					.some(d => d.directive_type === 'music')
-				if (!hasMusicDirective) reloadSceneMusic()
-			}
-		}
-
-		performStatus.value = '已保存 · ' + new Date().toLocaleTimeString()
-		// 编辑器里改完台词后立刻按新文本重新演出；不触发「跳过已读」
-		markSkipRestoredLine()
-		startTyping()
-		ElMessage.success('已保存并热更新当前画面')
-	} catch (e) {
-		console.error('演出模式保存失败:', e)
-		ElMessage.error('保存失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
-	} finally {
-		performSaving.value = false
-	}
-}
-
-// 面板打开时跟随场景/节点切换同步表单
-watch(
-	() => [currentDialogue.value?.content_id, currentScene.value?.scene_id],
-	() => {
-		if (performMode.value && canPerform.value) syncPerformForm()
-	}
-)
+// 表单快照 / 脏字段比对 / 保存编排由 usePlayerPerform 自管
+const {
+	performMode,
+	performSaving,
+	performText,
+	performAvatarId,
+	performBackground,
+	performMusic,
+	performStatus,
+	togglePerformMode,
+	savePerformEdit,
+} = usePlayerPerform({
+	canPerform: () => canPerform.value,
+	getDialogue: () => currentDialogue.value,
+	getScene: () => currentScene.value,
+	getDialogues: () => allDialogues.value,
+	setDialogues: (value) => { allDialogues.value = value },
+	getHistory: () => historyDialogues.value,
+	setHistory: (value) => { historyDialogues.value = value },
+	getDirectives: () => directivesByContent.value,
+	getScenes: () => scenes.value,
+	setScenes: (value) => { scenes.value = value },
+	getBackgroundMusic: () => backgroundMusic.value,
+	isPlaying: () => isPlaying.value,
+	fadeBgmTo: (volume, duration) => fadeBgmTo(volume, duration),
+	bgmTargetVolume: () => bgmTargetVolume(),
+	markSkipRestoredLine: () => markSkipRestoredLine(),
+	startTyping: () => startTyping(),
+	saveDialogues: (payload) => saveDialogues(payload),
+	updateScene: (sceneId, patch) => updateScene(sceneId, patch),
+	projectId: () => Number(props.projectId),
+});
 
 // 从本地存储加载进度
 const loadProgress = () => {
@@ -2801,11 +2721,6 @@ onMounted(() => {
 onUnmounted(() => {
 	clearTyping();
 	clearVariableNotices();
-	if (metaSaveTimer) {
-		clearTimeout(metaSaveTimer);
-		metaSaveTimer = null;
-		syncProjectMeta(true);
-	}
 	disposeReads();
 	if (autoSaveTimer) {
 		clearTimeout(autoSaveTimer);

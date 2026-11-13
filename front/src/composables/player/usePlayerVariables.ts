@@ -171,7 +171,11 @@ export function usePlayerVariables(ctx: PlayerVariablesContext) {
   }
 
   onUnmounted(() => {
-    if (metaSaveTimer) clearTimeout(metaSaveTimer)
+    if (metaSaveTimer) {
+      clearTimeout(metaSaveTimer)
+      metaSaveTimer = null
+      syncProjectMeta(true)
+    }
     clearVariableNotices()
   })
 
