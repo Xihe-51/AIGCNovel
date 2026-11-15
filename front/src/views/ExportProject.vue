@@ -39,57 +39,22 @@
 		</button>
 
 		<!-- 演出模式：仅作者预览（?edit=1）可见，公开发布后玩家端不会出现 -->
-		<div v-if="canPerform && performMode && !loading && !error" class="perform-panel">
-			<div class="perform-head">
-				<span>演出模式</span>
-				<button class="perform-close" @click="performMode = false">×</button>
-			</div>
-			<div class="perform-pos">
-				场景 {{ currentSceneIndex + 1 }}/{{ scenes.length }} · 节点 #{{ currentDialogue?.content_id || '-' }}
-			</div>
-			<div class="perform-tip">改动直接写入作品，保存后当前画面热更新；玩家端不显示此面板。</div>
-
-			<label class="perform-label">台词</label>
-			<textarea
-				v-model="performText"
-				class="perform-textarea"
-				rows="3"
-				placeholder="当前节点台词"
-			></textarea>
-
-			<template v-if="currentDialogue?.content_type === '对话'">
-				<label class="perform-label">差分立绘</label>
-				<select v-model="performAvatarId" class="perform-select">
-					<option value="">跟随角色默认立绘</option>
-					<optgroup v-for="c in characters" :key="c.character_id" :label="c.name">
-						<option
-							v-for="a in (c.avatars || [])"
-							:key="a.avatar_id"
-							:value="String(a.avatar_id)"
-						>{{ a.avatar_type || '立绘' }} #{{ a.avatar_id }}</option>
-					</optgroup>
-				</select>
-			</template>
-
-			<label class="perform-label">场景背景 URL</label>
-			<input
-				v-model="performBackground"
-				class="perform-input"
-				placeholder="/uploads/... 或 https://..."
-			/>
-
-			<label class="perform-label">场景 BGM URL</label>
-			<input
-				v-model="performMusic"
-				class="perform-input"
-				placeholder="留空表示本场景无背景音乐"
-			/>
-
-			<button class="perform-save" type="button" :disabled="performSaving" @click="savePerformEdit">
-				{{ performSaving ? '保存中…' : '保存并热更新' }}
-			</button>
-			<div class="perform-status">{{ performStatus }}</div>
-		</div>
+		<PlayerPerformPanel
+			v-if="canPerform && performMode && !loading && !error"
+			v-model:content-text="performText"
+			v-model:avatar-id="performAvatarId"
+			v-model:background="performBackground"
+			v-model:music="performMusic"
+			:scene-index="currentSceneIndex"
+			:scene-count="scenes.length"
+			:node-id="currentDialogue?.content_id || '-'"
+			:characters="characters"
+			:content-type="currentDialogue?.content_type || ''"
+			:saving="performSaving"
+			:status="performStatus"
+			@save="savePerformEdit"
+			@close="performMode = false"
+		/>
 
 		<!-- 调试器（仅 ?debug=1 时显示） -->
 		<button v-if="debugMode && !loading && !error" class="player-debug-btn" @click="debugPanelVisible = !debugPanelVisible" title="调试器">
@@ -644,6 +609,7 @@ import PlayerStatusDialog from '@/components/player/PlayerStatusDialog.vue'
 import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
 import PlayerFunctionButtons from '@/components/player/PlayerFunctionButtons.vue'
+import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
@@ -1703,7 +1669,6 @@ const backToHome = () => {
 </script>
 
 <style scoped src="./player/playerShell.css"></style>
-<style scoped src="./player/playerPerform.css"></style>
 <style scoped src="./player/playerDebug.css"></style>
 <style scoped src="./player/playerStage.css"></style>
 <style scoped src="./player/playerDialogue.css"></style>
