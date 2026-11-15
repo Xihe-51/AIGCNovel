@@ -719,12 +719,12 @@ import { listMusicGallery, unlockMusic } from '@/api/gallery'
 import { getGallery } from '@/api/cg'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
-import { playerText } from '@/utils/playerI18n'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { usePlayerProgress } from '@/composables/player/usePlayerProgress'
 import { usePlayerRewind } from '@/composables/player/usePlayerRewind'
+import { usePlayerLocale } from '@/composables/player/usePlayerLocale'
 import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
@@ -1144,72 +1144,25 @@ const displayedText = ref('');
 const dialogueVoice = ref(null);
 const isTyping = ref(false);
 
-// 播放器界面文案：随阅读语言切换，缺失时回退简体中文
-const t = (key, params) => playerText(playerSettings.value.language, key, params);
-
-// 当前语言下的角色名：优先译名，缺失时回退原名
-const localizedCharacterName = (character) => {
-	if (!character) return '';
-	const lang = playerSettings.value.language;
-	const translated = lang && lang !== 'zh-CN'
-		? character.name_translations?.[lang]
-		: '';
-	return (translated && String(translated).trim()) ? translated : (character.name || '');
-};
-
-// 状态弹窗用：character_id → 当前语言角色名
-const characterNames = computed(() => {
-	const map = {};
-	for (const c of characters.value) map[c.character_id] = localizedCharacterName(c);
-	return map;
+// ==================== 界面文案与多语言 ====================
+// 文案挑选与译文回退由 usePlayerLocale 托管
+const {
+	t,
+	localizedCharacterName,
+	characterNames,
+	localizedText,
+	localizedSceneTitle,
+	sceneTitleById,
+	localizedChoice,
+	choiceTextById,
+	historySceneTitle,
+	historyChoiceText,
+} = usePlayerLocale({
+	getLanguage: () => playerSettings.value.language,
+	getCharacters: () => characters.value,
+	getScenes: () => scenes.value,
+	getBranches: () => branches.value,
 });
-
-// 当前语言下的台词文本：优先译文，缺失时回退原文
-const localizedText = (dialogue) => {
-	if (!dialogue) return '';
-	const lang = playerSettings.value.language;
-	const translated = lang && lang !== 'zh-CN' ? dialogue.translations?.[lang] : '';
-	return (translated && String(translated).trim()) ? translated : (dialogue.content_text || '');
-};
-
-// 当前语言下的场景标题：优先译文，缺失时回退原文
-const localizedSceneTitle = (scene) => {
-	if (!scene) return '';
-	const lang = playerSettings.value.language;
-	const payload = lang && lang !== 'zh-CN' ? scene.translations?.[lang] : null;
-	const title = payload && payload.title ? String(payload.title).trim() : '';
-	return title || scene.title || '';
-};
-
-const sceneTitleById = (sceneId) => {
-	const scene = (scenes.value || []).find(s => Number(s.scene_id) === Number(sceneId));
-	return scene ? localizedSceneTitle(scene) : '';
-};
-
-// 当前语言下的选项文案：优先译文，缺失时回退原文
-const localizedChoice = (branch) => {
-	if (!branch) return '';
-	const lang = playerSettings.value.language;
-	const translated = lang && lang !== 'zh-CN' ? branch.translations?.[lang] : '';
-	return (translated && String(translated).trim()) ? translated : (branch.choice_text || '');
-};
-
-const choiceTextById = (pathId) => {
-	const branch = (branches.value || []).find(b => Number(b.path_id) === Number(pathId));
-	return branch ? localizedChoice(branch) : '';
-};
-
-// 回想里的场景名：老存档只有 scene_title 字符串，新数据可用 scene_id 实时本地化
-const historySceneTitle = (dialogue) => {
-	const title = dialogue?.scene_id ? sceneTitleById(dialogue.scene_id) : '';
-	return title || dialogue?.scene_title || '';
-};
-
-// 回想里的选项：优先按 path_id 实时本地化，老存档回退已存文案
-const historyChoiceText = (dialogue) => {
-	const text = dialogue?.chosen_path_id ? choiceTextById(dialogue.chosen_path_id) : '';
-	return text || dialogue?.chosen || '';
-};
 
 // 对白富文本：纯文本用于逐字显示，HTML 用于渲染颜色/加粗/注音
 const richContent = computed(() => parseRichText(localizedText(currentDialogue.value)));
