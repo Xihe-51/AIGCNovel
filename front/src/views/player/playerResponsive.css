@@ -5,9 +5,4 @@
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     max-height: 52vh;
   }
-
-  .history-dialogue-content {
-    width: 94vw;
-    max-height: 82vh;
-  }
 }

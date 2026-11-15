@@ -114,32 +114,12 @@
 			@back-home="backToHome"
 		>
 			<!-- 历史对话弹窗 -->
-			<div 
-				v-if="showHistoryDialogue" 
-				class="history-dialogue-container"
-				@click="toggleHistoryDialogue"
-			>
-				<div class="history-dialogue-content">
-					<div class="history-header">
-						<h3>{{ t('history.title') }}</h3>
-						<el-icon @click.stop="toggleHistoryDialogue" class="close-btn">
-							<CloseBold />
-						</el-icon>
-					</div>
-					<div class="history-scroll-area">
-						<div 
-							v-for="(dialogue, index) in filteredHistoryDialogues" 
-							:key="index" 
-							class="history-item"
-						>
-							<div v-if="historySceneTitle(dialogue)" class="history-scene">{{ historySceneTitle(dialogue) }}</div>
-							<span class="history-character">{{ getCharacterName(dialogue.character_id) }}</span>
-							<span class="history-text">{{ localizedText(dialogue) }}</span>
-							<div v-if="dialogue.chosen" class="history-chosen">{{ t('history.choiceLabel') }}{{ historyChoiceText(dialogue) }}</div>
-						</div>
-					</div>
-				</div>
-			</div>
+			<PlayerHistoryDialog
+				:language="playerSettings.language"
+				:visible="showHistoryDialogue"
+				:items="historyItemViews"
+				@close="toggleHistoryDialogue"
+			/>
 			
 			<!-- 对话显示区域（含选项与功能键） -->
 			<PlayerDialogueBox
@@ -303,6 +283,7 @@ import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
 import PlayerDialogueBox from '@/components/player/PlayerDialogueBox.vue'
 import PlayerPreviewStage from '@/components/player/PlayerPreviewStage.vue'
+import PlayerHistoryDialog from '@/components/player/PlayerHistoryDialog.vue'
 import PlayerEntryBar from '@/components/player/PlayerEntryBar.vue'
 import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
 import PlayerDebugPanel from '@/components/player/PlayerDebugPanel.vue'
@@ -310,10 +291,6 @@ import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
 } from '@/utils/request'
-import { 
-  WarningFilled,
-  CloseBold
-} from '@element-plus/icons-vue'
 import { ElMessage, ElLoading, ElIcon } from 'element-plus'
 
 // 获取路由实例
@@ -746,6 +723,18 @@ const { previewSpeaker, previewAvatarLayers, previewAvatarSrc, currentChoices } 
 const filteredHistoryDialogues = computed(() => {
 	return historyDialogues.value;
 });
+
+// 历史回想浮层的展示模型（文本/作者/场景标题在此定稿，浮层组件只负责渲染）
+const historyItemViews = computed(() =>
+	filteredHistoryDialogues.value.map((dialogue, index) => ({
+		key: index,
+		sceneTitle: historySceneTitle(dialogue),
+		character: getCharacterName(dialogue.character_id),
+		text: localizedText(dialogue),
+		chosen: !!dialogue.chosen,
+		choiceText: dialogue.chosen ? historyChoiceText(dialogue) : '',
+	})),
+);
 
 // 初始化历史对话（根据当前进度）
 const initHistoryDialogues = () => {
@@ -1372,5 +1361,4 @@ const backToHome = () => {
 </script>
 
 <style scoped src="./player/playerShell.css"></style>
-<style scoped src="./player/playerDialogue.css"></style>
 <style scoped src="./player/playerResponsive.css"></style>
