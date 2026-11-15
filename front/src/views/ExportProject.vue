@@ -704,7 +704,6 @@ import { jwtDecode } from 'jwt-decode'
 import { saveDialogues } from '@/api/dialogue'
 import { updateScene } from '@/api/scenes'
 import { listPublicReleases } from '@/api/release'
-import { listEndings, unlockEnding } from '@/api/ending'
 import { unlockMusic } from '@/api/gallery'
 import { themeClass } from '@/utils/uiThemes'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
@@ -721,6 +720,7 @@ import { usePlayerGamepad } from '@/composables/player/usePlayerGamepad'
 import { usePlayerKeyboard } from '@/composables/player/usePlayerKeyboard'
 import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
+import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import { usePlayerStage } from '@/composables/player/usePlayerStage'
@@ -989,11 +989,26 @@ const {
 const statusDialogVisible = ref(false);
 const lastEffectKey = ref('');
 
-// 结局
-const endings = ref([]);
-const triggeredEndings = ref(new Set());
-const endingDialogVisible = ref(false);
-const currentEnding = ref(null);
+// ==================== 结局 ====================
+// 结局清单 / 已触发集合 / 结局页可见性由 usePlayerEnding 自管
+const {
+	endings,
+	triggeredEndings,
+	endingDialogVisible,
+	currentEnding,
+	loadEndings,
+	checkEndingForCurrent,
+	resetEndings,
+} = usePlayerEnding({
+	projectId: () => Number(props.projectId),
+	getCurrentDialogue: () => currentDialogue.value,
+	getCurrentScene: () => currentScene.value,
+	evalCondition: (condition) => evalCondition(condition),
+	logPlayEvent: (event, payload) => logPlayEvent(event, payload),
+	scheduleAchievementCheck: () => scheduleAchievementCheck(),
+	clearTyping: () => clearTyping(),
+	clearAutoTimer: () => clearAutoTimer(),
+});
 
 // 更新日志 / 公开版本
 const changelogVisible = ref(false);
@@ -1413,16 +1428,6 @@ const debugJumpTo = (contentId) => {
 	debugJump();
 };
 
-// ==================== 结局 ====================
-const loadEndings = async () => {
-	try {
-		endings.value = await listEndings(Number(props.projectId));
-	} catch (e) {
-		console.warn('读取结局失败:', e);
-		endings.value = [];
-	}
-};
-
 // ==================== 成就 ====================
 const {
 	achievements,
@@ -1447,52 +1452,12 @@ const loadPublicReleases = async () => {
 	}
 };
 
-const endingMatches = (ending) => {
-	const conditions = ending?.conditions || [];
-	return conditions.every(c => evalCondition(c));
-};
-
-const checkEndingForCurrent = () => {
-	const d = currentDialogue.value;
-	if (!d?.content_id || !endings.value.length) return false;
-	for (const ending of endings.value) {
-		if (Number(ending.content_id) !== Number(d.content_id)) continue;
-		if (triggeredEndings.value.has(ending.ending_id)) continue;
-		if (!endingMatches(ending)) continue;
-		triggerEnding(ending);
-		return true;
-	}
-	return false;
-};
-
-const triggerEnding = async (ending) => {
-	triggeredEndings.value.add(ending.ending_id);
-	const endingRow = endings.value.find(e => Number(e.ending_id) === Number(ending.ending_id));
-	if (endingRow) endingRow.unlocked = true;
-	logPlayEvent('ending', {
-		ending_id: Number(ending.ending_id) || null,
-		content_id: Number(currentDialogue.value?.content_id) || null,
-		scene_id: Number(currentScene.value?.scene_id) || null,
-	});
-	scheduleAchievementCheck();
-	currentEnding.value = ending;
-	endingDialogVisible.value = true;
-	clearTyping();
-	clearAutoTimer();
-	try {
-		await unlockEnding(Number(props.projectId), ending.ending_id);
-	} catch (e) {
-		console.warn('记录结局失败:', e);
-	}
-};
-
 const resetGame = () => {
 	stopBackgroundMusic();
 	currentSceneIndex.value = 0;
 	currentDialogueIndex.value = 0;
 	historyDialogues.value = [];
-	triggeredEndings.value = new Set();
-	endingDialogVisible.value = false;
+	resetEndings();
 	resetAchievementState();
 	resetVariables();
 	clearLineSnapshots();
@@ -1504,11 +1469,10 @@ const resetGame = () => {
 const startNextPlaythrough = () => {
 	stopBackgroundMusic();
 	clearAutoTimer();
-	endingDialogVisible.value = false;
+	resetEndings();
 	currentSceneIndex.value = 0;
 	currentDialogueIndex.value = 0;
 	historyDialogues.value = [];
-	triggeredEndings.value = new Set();
 	resetAchievementState();
 	clearVariableNotices();
 	lastEffectKey.value = '';
