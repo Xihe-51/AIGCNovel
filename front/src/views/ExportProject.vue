@@ -726,6 +726,7 @@ import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import { usePlayerStage } from '@/composables/player/usePlayerStage'
 import { usePlayerStageFx } from '@/composables/player/usePlayerStageFx'
 import { usePlayerVariableEffects } from '@/composables/player/usePlayerVariableEffects'
+import { usePlayerLineLifecycle } from '@/composables/player/usePlayerLineLifecycle'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
@@ -1463,55 +1464,31 @@ const startNextPlaythrough = () => {
 	ElMessage.success(t('toast.nextPlaythrough', { n: playthrough.value }));
 };
 
-const startTyping = () => {
-	if (!currentDialogue.value) return;
-	applyEffectsForCurrent();
-	// 回退/演出编辑后强制展示当前句：即使命中结局分支也要先消费标记，避免标记泄漏到下一句
-	const forceShowRestored = consumeSkipRestoredLine();
-	// 到达结局节点且条件成立：弹结局页，不再继续打字
-	if (checkEndingForCurrent()) return;
-	clearTyping();
-	clearAutoTimer();
-
-	// 跳过已读：连续跳过已读节点，直到未读或遇到选择
-	if (!forceShowRestored && shouldSkipCurrent()) {
-		if (allowSkip()) {
-			nextDialogue();
-			return;
-		}
-	} else {
-		resetSkipGuard();
-	}
-
-	markCurrentRead();
-
-	// 活叙事：在选择节点开始计时（未启用行为变量时仅计时、不写入）
-	if (currentDialogue.value?.content_type === '选择') {
-		markHesitationStart(currentDialogue.value.content_id);
-	}
-
-	typeOut();
-};
-
-// 文字速度变化时，当前句按新速度重新显示
-watch(() => playerSettings.value.textSpeed, () => startTyping());
-// 切换语言后，当前句立即换成对应译文（正在打字时直接显示整句）
-watch(() => playerSettings.value.language, () => {
-	if (!isPlaying.value || !currentDialogue.value) return;
-	finishTyping();
-});
-watch(() => playerSettings.value.autoDelay, () => scheduleAutoAdvance());
-// 关闭语音时立刻恢复 BGM 音量
-watch(() => playerSettings.value.voiceEnabled, (on) => {
-	if (!on) setBgmDucking(false);
-});
-
-// 切换对话/场景时重新逐字显示
-watch([currentSceneIndex, currentDialogueIndex], () => {
-	nextTick(() => {
-		startTyping();
-		applyVolumes();
-	});
+// 一句台词开始播放时的固定顺序（结算变量 → 回退标记 → 结局 → 清定时器 → 跳过已读
+// → 记录已读 → 选择计时 → 逐字显示）以及设置变更后的重播监听，全部由
+// usePlayerLineLifecycle 编排；这里只提供各步骤的实现。
+const { startTyping } = usePlayerLineLifecycle({
+	currentDialogue,
+	sceneIndex: currentSceneIndex,
+	dialogueIndex: currentDialogueIndex,
+	settings: playerSettings,
+	isPlaying,
+	applyEffectsForCurrent: () => applyEffectsForCurrent(),
+	checkEndingForCurrent: () => checkEndingForCurrent(),
+	consumeSkipRestoredLine: () => consumeSkipRestoredLine(),
+	shouldSkipCurrent: () => shouldSkipCurrent(),
+	allowSkip: () => allowSkip(),
+	resetSkipGuard: () => resetSkipGuard(),
+	markCurrentRead: () => markCurrentRead(),
+	markHesitationStart: (contentId) => markHesitationStart(contentId),
+	clearTyping: () => clearTyping(),
+	clearAutoTimer: () => clearAutoTimer(),
+	typeOut: () => typeOut(),
+	finishTyping: () => finishTyping(),
+	scheduleAutoAdvance: () => scheduleAutoAdvance(),
+	nextDialogue: () => nextDialogue(),
+	setBgmDucking: (on) => setBgmDucking(on),
+	applyVolumes: () => applyVolumes(),
 });
 
 // 自动存档：每次推进对话后延迟写入 slot 0（不打扰玩家）
