@@ -713,10 +713,8 @@ import {
 } from '@/api/scenes'
 import { listBranches } from '@/api/branch'
 import { listPublicReleases } from '@/api/release'
-import { listChapters } from '@/api/chapter'
 import { listEndings, unlockEnding } from '@/api/ending'
-import { listMusicGallery, unlockMusic } from '@/api/gallery'
-import { getGallery } from '@/api/cg'
+import { unlockMusic } from '@/api/gallery'
 import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
@@ -740,6 +738,8 @@ import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
 import { usePlayerFlow } from '@/composables/player/usePlayerFlow'
+import { usePlayerChapters } from '@/composables/player/usePlayerChapters'
+import { usePlayerCollections } from '@/composables/player/usePlayerCollections'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -973,156 +973,51 @@ const triggeredEndings = ref(new Set());
 const endingDialogVisible = ref(false);
 const currentEnding = ref(null);
 
-// 鉴赏 / 收藏：CG、BGM、结局
-const galleryDialogVisible = ref(false);
+// 更新日志 / 公开版本
 const changelogVisible = ref(false);
 const publicReleases = ref([]);
-// 章节快捷跳转 / 路线图鉴
-const chaptersVisible = ref(false);
-const chapterData = ref({ chapters: [], scene_map: {} });
 
-const loadChapterData = async () => {
-	try {
-		const data = await listChapters(Number(props.projectId));
-		chapterData.value = {
-			chapters: (data && data.chapters) || [],
-			scene_map: (data && data.scene_map) || {},
-		};
-	} catch (e) {
-		chapterData.value = { chapters: [], scene_map: {} };
-	}
-};
-
-// 每个章节的场景 / 节点 / 已读进度；第一个章节与读过的章节可跳转
-const chapterRoute = computed(() => {
-	const chapters = chapterData.value.chapters || [];
-	const sceneMap = chapterData.value.scene_map || {};
-	return chapters.map((c, index) => {
-		const sceneIndexes = scenes.value
-			.map((s, idx) => ({ s, idx }))
-			.filter(({ s }) => sceneMap[String(s.scene_id)] === c.chapter_id)
-			.map(({ idx }) => idx);
-		let total = 0;
-		let read = 0;
-		for (const idx of sceneIndexes) {
-			const list = allDialogues.value[scenes.value[idx].scene_id] || [];
-			total += list.length;
-			for (const node of list) {
-				if (hasRead(node.content_id)) read += 1;
-			}
-		}
-		return {
-			chapter_id: c.chapter_id,
-			title: c.title,
-			order_num: c.order_num ?? index + 1,
-			sceneIndexes,
-			total,
-			read,
-			unlocked: index === 0 || read > 0,
-		};
-	});
+// ==================== 章节快捷跳转 / 路线图鉴 ====================
+const {
+	chaptersVisible,
+	chapterRoute,
+	routeStats,
+	loadChapterData,
+	jumpToChapter,
+} = usePlayerChapters({
+	projectId: () => Number(props.projectId),
+	getScenes: () => scenes.value,
+	getAllDialogues: () => allDialogues.value,
+	getEndings: () => endings.value,
+	hasRead: (contentId) => hasRead(contentId),
+	scenePlayable: (sceneId) => scenePlayable(sceneId),
+	firstPlayableNodeIndex: (sceneId) => firstPlayableNodeIndex(sceneId),
+	setSceneIndex: (value) => { currentSceneIndex.value = value },
+	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
+	clearLineSnapshots: () => clearLineSnapshots(),
+	startPreview: () => startPreview(),
+	t: (key, params) => t(key, params),
 });
 
-const routeStats = computed(() => {
-	let total = 0;
-	let read = 0;
-	for (const list of Object.values(allDialogues.value)) {
-		for (const node of list || []) {
-			total += 1;
-			if (hasRead(node.content_id)) read += 1;
-		}
-	}
-	return {
-		total,
-		read,
-		endingUnlocked: endings.value.filter((e) => e.unlocked).length,
-	};
+// ==================== 鉴赏 / 收藏 ====================
+const {
+	galleryDialogVisible,
+	galleryTab,
+	galleryItems,
+	galleryCountText,
+	musicItems,
+	musicLoading,
+	switchGalleryTab,
+	openGallery,
+} = usePlayerCollections({
+	projectId: () => Number(props.projectId),
+	getEndings: () => endings.value,
+	getAchievements: () => achievements.value,
+	getUnlockedAchievementCount: () => unlockedAchievementCount.value,
+	loadPlayerAchievements: () => loadPlayerAchievements(),
+	loadEndings: () => loadEndings(),
+	t: (key, params) => t(key, params),
 });
-
-// 跳到章节内第一个可播放场景的第一条可播放台词
-const jumpToChapter = (chapter) => {
-	if (!chapter.unlocked) {
-		ElMessage.warning(t('chapters.lockedToast'));
-		return;
-	}
-	const sceneIdx = chapter.sceneIndexes.find((idx) => (
-		scenePlayable(scenes.value[idx].scene_id)
-		&& (allDialogues.value[scenes.value[idx].scene_id] || []).length
-	));
-	if (sceneIdx === undefined) {
-		ElMessage.warning(t('chapters.emptyToast'));
-		return;
-	}
-	const di = firstPlayableNodeIndex(scenes.value[sceneIdx].scene_id);
-	// 章节跳转属于「瞬移」，清空回退快照，避免回退到跳转前的位置
-	clearLineSnapshots();
-	currentSceneIndex.value = sceneIdx;
-	currentDialogueIndex.value = di;
-	chaptersVisible.value = false;
-	nextTick(() => startPreview());
-	ElMessage.success(t('chapters.jumpedToast', { title: chapter.title }));
-};
-const galleryTab = ref('cg');
-const galleryItems = ref([]);
-const galleryTotal = ref(0);
-const galleryUnlocked = ref(0);
-const musicItems = ref([]);
-const musicTotal = ref(0);
-const musicUnlocked = ref(0);
-const musicLoading = ref(false);
-
-const galleryCountText = computed(() => {
-	if (galleryTab.value === 'cg') return t('gallery.unlockedStats', { n: galleryUnlocked.value, total: galleryTotal.value });
-	if (galleryTab.value === 'bgm') return t('gallery.unlockedStats', { n: musicUnlocked.value, total: musicTotal.value });
-	if (galleryTab.value === 'achievement') {
-		return t('gallery.unlockedStats', { n: unlockedAchievementCount.value, total: achievements.value.length });
-	}
-	const unlocked = endings.value.filter((e) => e.unlocked).length;
-	return t('gallery.reachedStats', { n: unlocked, total: endings.value.length });
-});
-
-const loadCgGallery = async () => {
-	try {
-		const data = await getGallery(Number(props.projectId));
-		galleryItems.value = data?.items || [];
-		galleryTotal.value = data?.total || 0;
-		galleryUnlocked.value = data?.unlocked_count || 0;
-	} catch (e) {
-		galleryItems.value = [];
-		galleryTotal.value = 0;
-		galleryUnlocked.value = 0;
-		ElMessage.error(e?.response?.data?.message || t('gallery.loadFailed'));
-	}
-};
-
-const loadMusicGallery = async () => {
-	musicLoading.value = true;
-	try {
-		const data = await listMusicGallery(Number(props.projectId));
-		musicItems.value = data?.items || [];
-		musicTotal.value = data?.total || 0;
-		musicUnlocked.value = data?.unlocked_count || 0;
-	} catch (e) {
-		musicItems.value = [];
-		musicTotal.value = 0;
-		musicUnlocked.value = 0;
-	} finally {
-		musicLoading.value = false;
-	}
-};
-
-const switchGalleryTab = (key) => {
-	galleryTab.value = key;
-	if (key === 'cg') loadCgGallery();
-	else if (key === 'bgm') loadMusicGallery();
-	else if (key === 'achievement') loadPlayerAchievements();
-	else if (!endings.value.length) loadEndings();
-};
-
-const openGallery = async () => {
-	galleryDialogVisible.value = true;
-	await switchGalleryTab(galleryTab.value);
-};
 
 // 阅读设置（localStorage 持久化）
 const {
