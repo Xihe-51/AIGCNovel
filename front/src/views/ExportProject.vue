@@ -238,7 +238,6 @@ import {
 	getCurrentInstance
 } from 'vue'
 import { useRoute } from 'vue-router'
-import { jwtDecode } from 'jwt-decode'
 import { saveDialogues } from '@/api/dialogue'
 import { updateScene } from '@/api/scenes'
 import { listPublicReleases } from '@/api/release'
@@ -257,6 +256,7 @@ import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
 import { usePlayerInput } from '@/composables/player/usePlayerInput'
 import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerPositionEffects } from '@/composables/player/usePlayerPositionEffects'
+import { usePlayerOwnership } from '@/composables/player/usePlayerOwnership'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
@@ -321,26 +321,17 @@ const debugMode = ref(false)
 const debugPanelVisible = ref(false)
 
 // 演出模式：仅作者本人带 ?edit=1 预览时可用；公开发布的玩家端不会渲染编辑入口
-const currentUserId = (() => {
-	try {
-		const token = localStorage.getItem('token')
-		const decoded = token ? jwtDecode(token) : null
-		return decoded && decoded.identity ? String(decoded.identity) : ''
-	} catch (e) {
-		return ''
-	}
-})()
-const projectOwnerId = ref(0)
-const isOwner = computed(() =>
-	!!currentUserId
-	&& projectOwnerId.value > 0
-	&& String(projectOwnerId.value) === currentUserId
-)
-const canPerform = computed(() =>
-	!releaseView.value
-	&& route.query.edit === '1'
-	&& isOwner.value
-)
+// 登录身份解出与作者比对由 usePlayerOwnership 自管
+const {
+	currentUserId,
+	projectOwnerId,
+	isOwner,
+	canPerform,
+	setProjectOwnerId,
+} = usePlayerOwnership({
+	isReleaseView: () => releaseView.value,
+	isEditQuery: () => route.query.edit === '1',
+});
 // 演出模式表单与保存编排在 usePlayerPerform 内（见下方演出模式段落）
 
 // ==================== 开局装载：作品 / 场景 / 台词 / 分支 / 角色 ====================
@@ -364,7 +355,7 @@ const {
 	startQuery: () => route.query.start,
 	setDebugMode: (value) => { debugMode.value = value },
 	setPerformMode: (value) => { performMode.value = value },
-	setProjectOwnerId: (value) => { projectOwnerId.value = value },
+	setProjectOwnerId: (value) => setProjectOwnerId(value),
 	setSceneIndex: (value) => { currentSceneIndex.value = value },
 	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
 	loadProgress: () => loadProgress(),
