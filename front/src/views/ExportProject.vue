@@ -725,6 +725,7 @@ import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import { usePlayerStage } from '@/composables/player/usePlayerStage'
 import { usePlayerStageFx } from '@/composables/player/usePlayerStageFx'
+import { usePlayerVariableEffects } from '@/composables/player/usePlayerVariableEffects'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
@@ -1327,8 +1328,9 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 }
 
 // ==================== 项目变量 ====================
-// 变量定义/取值/持久化/行为变量已在 usePlayerVariables 内，条件求值在 usePlayerConditions 内，
-// 这里只保留"按当前台词应用变量效果"的编排逻辑。
+// 变量定义/取值/持久化/行为变量在 usePlayerVariables 内，
+// 条件求值在 usePlayerConditions 内，效果结算与重置在 usePlayerVariableEffects 内；
+// 这里只剩三个部件的装配与 lastEffectKey 这一处共享状态。
 
 // 条件求值（变量比较 / 条件组 / 剧情锁 / 台词级条件）由 usePlayerConditions 自管
 const {
@@ -1341,54 +1343,26 @@ const {
 	conditionText,
 } = usePlayerConditions({ projectVariables, variableValues, sceneLocks, allDialogues });
 
-const applyEffectsForCurrent = () => {
-	const d = currentDialogue.value;
-	if (!d?.content_id) return;
-	const key = `${currentSceneIndex.value}:${currentDialogueIndex.value}:${d.content_id}`;
-	if (key === lastEffectKey.value) return;
-	lastEffectKey.value = key;
-
-	const list = variableEffects.value.filter(e => e.content_id === d.content_id);
-	if (!list.length) return;
-
-	const next = { ...variableValues.value };
-	const notices = [];
-	let touchedPersist = false;
-	for (const e of list) {
-		const v = projectVariables.value.find(x => x.variable_id === e.variable_id);
-		if (!v) continue;
-		const current = Number(next[v.name] ?? v.initial_value);
-		const after = clampVariable(v, current + Number(e.delta));
-		const delta = after - current;
-		if (delta !== 0) {
-			notices.push({ label: v.label || v.name, delta });
-			pushVariableHistory(v.label || v.name, current, after, `节点 #${d.content_id}`);
-		}
-		next[v.name] = after;
-		if (v.persist) touchedPersist = true;
-	}
-	variableValues.value = next;
-	if (touchedPersist) syncProjectMeta();
-	if (notices.length) pushVariableNotices(notices);
-	checkDebugBreakpoint();
-	scheduleAchievementCheck();
-};
-
-const resetVariables = () => {
-	const next = {};
-	const changed = [];
-	for (const v of projectVariables.value) {
-		next[v.name] = initialValueOf(v);
-		const before = Number(variableValues.value[v.name] ?? v.initial_value);
-		if (before !== next[v.name]) changed.push([v, before, next[v.name]]);
-	}
-	variableValues.value = next;
-	lastEffectKey.value = '';
-	for (const [v, before, after] of changed) {
-		pushVariableHistory(v.label || v.name, before, after, '重置');
-	}
-	checkDebugBreakpoint();
-};
+// 按台词应用变量效果 / 周目重置由 usePlayerVariableEffects 编排；
+// lastEffectKey 仍留在视图，作为「同节点只结算一次」的共享标记（存档也要读它）。
+const { applyEffectsForCurrent, resetVariables } = usePlayerVariableEffects({
+	getCurrentDialogue: () => currentDialogue.value,
+	getSceneIndex: () => currentSceneIndex.value,
+	getDialogueIndex: () => currentDialogueIndex.value,
+	getLastEffectKey: () => lastEffectKey.value,
+	setLastEffectKey: (value) => { lastEffectKey.value = value },
+	getProjectVariables: () => projectVariables.value,
+	getVariableEffects: () => variableEffects.value,
+	getVariableValues: () => variableValues.value,
+	setVariableValues: (value) => { variableValues.value = value },
+	clampVariable: (v, value) => clampVariable(v, value),
+	initialValueOf: (v) => initialValueOf(v),
+	syncProjectMeta: () => syncProjectMeta(),
+	pushVariableNotices: (items) => pushVariableNotices(items),
+	pushVariableHistory: (label, before, after, reason) => pushVariableHistory(label, before, after, reason),
+	checkDebugBreakpoint: () => checkDebugBreakpoint(),
+	scheduleAchievementCheck: () => scheduleAchievementCheck(),
+});
 
 /* ===== 调试器：变量热改 / 任意节点跳转 ===== */
 const setDebugVar = (v, e) => {
