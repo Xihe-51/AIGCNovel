@@ -234,7 +234,6 @@ import {
 	onMounted,
 	computed,
 	nextTick,
-	watch,
 	onUnmounted,
 	getCurrentInstance
 } from 'vue'
@@ -257,6 +256,7 @@ import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
 import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
 import { usePlayerInput } from '@/composables/player/usePlayerInput'
 import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
+import { usePlayerPositionEffects } from '@/composables/player/usePlayerPositionEffects'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
@@ -482,8 +482,7 @@ const showHistoryDialogue = ref(false); // 控制历史对话显示/隐藏
 // 空场景（没有台词/选项节点）直接跳过，避免试玩停在只有背景的画面上
 const sceneHasDialogues = (sceneId) => (allDialogues.value[sceneId] || []).length > 0;
 
-// 存档
-let autoSaveTimer = null;
+// 自动存档定时器由 usePlayerPositionEffects 自持
 
 // 已读记录（跳过已读 / 二周目）由 usePlayerReads 自管
 
@@ -940,16 +939,6 @@ const { startPreview, resetGame, startNextPlaythrough, restartGame } = usePlayer
 	t: (key, params) => t(key, params),
 });
 
-// 自动存档：每次推进对话后延迟写入 slot 0（不打扰玩家）
-watch([currentSceneIndex, currentDialogueIndex], () => {
-	if (isRestoring.value || loading.value || error.value) return;
-	if (autoSaveTimer) clearTimeout(autoSaveTimer);
-	autoSaveTimer = setTimeout(() => {
-		autoSaveTimer = null;
-		saveToSlot(0, true);
-	}, 1500);
-});
-
 // ==================== 演出时序 ====================
 // 画面效果与「停顿」的定时器由 usePlayerStageFx 自管
 const {
@@ -1014,17 +1003,6 @@ const { applyDirectives } = usePlayerDirectives({
 	triggerEffect: (payload) => triggerEffect(payload),
 	scheduleWait: (ms) => scheduleWait(ms),
 });
-
-// 应用到新对话时，若还在加载或指令尚未拉回，等完成后自动重试
-watch(
-	() => [loading.value, error.value, currentDialogue.value?.content_id, directivesByContent.value],
-	() => {
-		if (loading.value || error.value) return;
-		resetStage();
-		applyDirectives(currentDialogue.value);
-	},
-	{ immediate: true }
-);
 
 loadSettings();
 saveSettings();
@@ -1142,6 +1120,24 @@ const {
 	t: (key, params) => t(key, params),
 });
 
+// ==================== 位置副作用（自动存档 / 指令重放 / 换场换曲） ====================
+// 三处 watch 由 usePlayerPositionEffects 统一注册，自动存档定时器也归它清理
+usePlayerPositionEffects({
+	isLoading: () => loading.value,
+	getError: () => error.value,
+	isRestoring: () => isRestoring.value,
+	getSceneIndex: () => currentSceneIndex.value,
+	getDialogueIndex: () => currentDialogueIndex.value,
+	saveToSlot: (slot, silent) => saveToSlot(slot, silent),
+	getCurrentDialogue: () => currentDialogue.value,
+	getCurrentScene: () => currentScene.value,
+	getDirectivesByContent: () => directivesByContent.value,
+	getIsPlaying: () => isPlaying.value,
+	resetStage: () => resetStage(),
+	applyDirectives: (dialogue) => applyDirectives(dialogue),
+	playBackgroundMusic: () => playBackgroundMusic(),
+});
+
 // ==================== 演出模式（作者预览热更新） ====================
 // 表单快照 / 脏字段比对 / 保存编排由 usePlayerPerform 自管
 const {
@@ -1211,14 +1207,7 @@ usePlayerInput({
 	t: (key) => t(key),
 });
 
-// 监听场景变化，更新背景音乐
-watch(currentScene, (newScene, oldScene) => {
-	if (newScene.scene_id !== oldScene.scene_id && isPlaying.value) {
-		nextTick(() => {
-			playBackgroundMusic();
-		});
-	}
-});
+// 监听场景变化，更新背景音乐的 watch 已由 usePlayerPositionEffects 注册
 
 // 组件挂载时获取数据并设置事件监听
 onMounted(() => {
@@ -1236,10 +1225,6 @@ onUnmounted(() => {
 	disposeTypewriter();
 	clearVariableNotices();
 	disposeReads();
-	if (autoSaveTimer) {
-		clearTimeout(autoSaveTimer);
-		autoSaveTimer = null;
-	}
 	disposeStageFx();
 	clearStageTransitions();
 	stopBackgroundMusic();
