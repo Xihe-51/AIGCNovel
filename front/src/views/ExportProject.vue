@@ -724,6 +724,7 @@ import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
 import { usePlayerProgress } from '@/composables/player/usePlayerProgress'
+import { usePlayerRewind } from '@/composables/player/usePlayerRewind'
 import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
@@ -1262,69 +1263,43 @@ watch(
 );
 
 // ==================== 上一句回退 ====================
-// 内存环形快照：每次推进前记录当前位置与关键状态，不落盘，刷新即失效。
-const LINE_SNAPSHOT_LIMIT = 30;
-const lineSnapshots = ref([]);
-const canRollback = computed(() => lineSnapshots.value.length > 0);
-
-const captureLineSnapshot = () => {
-	const dlg = currentDialogue.value;
-	if (!dlg) return null;
-	return {
-		sceneIndex: currentSceneIndex.value,
-		dialogueIndex: currentDialogueIndex.value,
-		variables: { ...variableValues.value },
-		lastEffectKey: lastEffectKey.value,
-		endings: [...triggeredEndings.value],
-		historyLength: historyDialogues.value.length,
-	};
-};
-
-const pushLineSnapshot = (snap = null) => {
-	const item = snap || captureLineSnapshot();
-	if (!item) return;
-	const last = lineSnapshots.value[lineSnapshots.value.length - 1];
-	if (last && last.sceneIndex === item.sceneIndex && last.dialogueIndex === item.dialogueIndex) {
-		return;
-	}
-	lineSnapshots.value = [...lineSnapshots.value, item].slice(-LINE_SNAPSHOT_LIMIT);
-};
-
-const clearLineSnapshots = () => {
-	lineSnapshots.value = [];
-};
-
-const rollbackOneLine = () => {
-	const snap = lineSnapshots.value[lineSnapshots.value.length - 1];
-	if (!snap) return;
-	lineSnapshots.value = lineSnapshots.value.slice(0, -1);
-	bumpBehaviorReview();
-
-	// 停掉正在进行的逐字、停顿与自动推进，避免回退后继续往前跑
-	clearWait();
-	clearTyping();
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
-	isWaiting.value = false;
-	isPlaying.value = true;
-	showDialogueBox.value = true;
-
-	// 回退期间不记录埋点（已读记录本身按 content_id 去重）
-	currentSceneIndex.value = snap.sceneIndex;
-	currentDialogueIndex.value = snap.dialogueIndex;
-	variableValues.value = { ...snap.variables };
-	lastEffectKey.value = snap.lastEffectKey;
-	triggeredEndings.value = new Set(snap.endings);
-	historyDialogues.value = historyDialogues.value.slice(0, snap.historyLength);
-	markSkipRestoredLine();
-
-	nextTick(() => {
-		startTyping();
-		applyVolumes();
-	});
-};
+// 行快照入栈 / 去重 / 截断与回退还原由 usePlayerRewind 托管
+const {
+	canRollback,
+	captureLineSnapshot,
+	pushLineSnapshot,
+	clearLineSnapshots,
+	rollbackOneLine,
+} = usePlayerRewind({
+	getDialogue: () => currentDialogue.value,
+	getSceneIndex: () => currentSceneIndex.value,
+	setSceneIndex: (value) => { currentSceneIndex.value = value },
+	getDialogueIndex: () => currentDialogueIndex.value,
+	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
+	getVariables: () => variableValues.value,
+	setVariables: (value) => { variableValues.value = value },
+	getLastEffectKey: () => lastEffectKey.value,
+	setLastEffectKey: (value) => { lastEffectKey.value = value },
+	getEndings: () => triggeredEndings.value,
+	setEndings: (value) => { triggeredEndings.value = value },
+	getHistory: () => historyDialogues.value,
+	setHistory: (value) => { historyDialogues.value = value },
+	setIsWaiting: (value) => { isWaiting.value = value },
+	setIsPlaying: (value) => { isPlaying.value = value },
+	setShowDialogueBox: (value) => { showDialogueBox.value = value },
+	bumpBehaviorReview: () => bumpBehaviorReview(),
+	clearWait: () => clearWait(),
+	clearTyping: () => clearTyping(),
+	resetAutoTimer: () => {
+		if (autoTimer) {
+			clearTimeout(autoTimer);
+			autoTimer = null;
+		}
+	},
+	markSkipRestoredLine: () => markSkipRestoredLine(),
+	startTyping: () => startTyping(),
+	applyVolumes: () => applyVolumes(),
+});
 
 // 预览立绘：旁白沿用本场景最近一位说话的角色，直到出现新角色
 const previewSpeaker = computed(() => {
