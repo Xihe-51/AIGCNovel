@@ -270,6 +270,7 @@ import { usePlayerPlaySession } from '@/composables/player/usePlayerPlaySession'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerPlayback } from '@/composables/player/usePlayerPlayback'
+import { usePlayerNarrative } from '@/composables/player/usePlayerNarrative'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
 import { usePlayerFlow } from '@/composables/player/usePlayerFlow'
 import { usePlayerChapters } from '@/composables/player/usePlayerChapters'
@@ -288,7 +289,6 @@ import PlayerHistoryDialog from '@/components/player/PlayerHistoryDialog.vue'
 import PlayerEntryBar from '@/components/player/PlayerEntryBar.vue'
 import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
 import PlayerDebugPanel from '@/components/player/PlayerDebugPanel.vue'
-import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
 } from '@/utils/request'
@@ -636,54 +636,38 @@ const {
 	getBranches: () => branches.value,
 });
 
-// 对白富文本：纯文本用于逐字显示，HTML 用于渲染颜色/加粗/注音
-const richContent = computed(() => parseRichText(localizedText(currentDialogue.value)));
-const displayedHtml = computed(() => renderRichHtml(richContent.value, displayedText.value.length));
-
-// 当前预览状态
-const currentSceneIndex = ref(0);
-const currentDialogueIndex = ref(0);
-
-// 计算属性
-const currentScene = computed(() => {
-	return scenes.value[currentSceneIndex.value] || {};
+// ==================== 叙事位置与派生 ====================
+// 当前场景 / 当前台词 / 富文本 / 回想展示模型，以及场景埋点、曲目解锁、节点覆盖率
+// 三个跟随播放位置的 watch，全部由 usePlayerNarrative 托管
+const {
+	currentSceneIndex,
+	currentDialogueIndex,
+	currentScene,
+	currentSceneDialogues,
+	currentDialogue,
+	displayedHtml,
+	historyItemViews,
+	initHistoryDialogues,
+} = usePlayerNarrative({
+	projectId: () => Number(props.projectId),
+	getScenes: () => scenes.value,
+	getAllDialogues: () => allDialogues.value,
+	getHistory: () => historyDialogues.value,
+	setHistory: (value) => { historyDialogues.value = value },
+	getLoading: () => loading.value,
+	getError: () => error.value,
+	getDebugMode: () => debugMode.value,
+	getDisplayedLength: () => displayedText.value.length,
+	localizedText: (dialogue) => localizedText(dialogue),
+	getCharacterName: (characterId) => getCharacterName(characterId),
+	historySceneTitle: (dialogue) => historySceneTitle(dialogue),
+	historyChoiceText: (dialogue) => historyChoiceText(dialogue),
+	buildHistoryDialogues,
+	logCurrentScene: () => logCurrentScene(),
+	markVisitedContent: (contentId) => markVisitedContent(contentId),
+	sceneHasDialogues: (sceneId) => sceneHasDialogues(sceneId),
+	unlockMusic: (projectId, url) => unlockMusic(projectId, url),
 });
-
-// 场景切换时记录到达埋点（首个场景由加载完成后单独补记）
-watch(currentSceneIndex, () => {
-	if (loading.value || error.value) return;
-	nextTick(() => logCurrentScene());
-});
-
-// 进入使用某首 BGM 的场景时解锁曲目
-const unlockedMusic = ref([]);
-watch(
-	() => currentScene.value.music_url,
-	(url) => {
-		if (!url || loading.value || !sceneHasDialogues(currentScene.value.scene_id)) return;
-		if (unlockedMusic.value.includes(url)) return;
-		unlockedMusic.value.push(url);
-		unlockMusic(Number(props.projectId), url).catch(() => { /* 非作者或未登录时忽略 */ });
-	},
-	{ immediate: true }
-);
-
-const currentSceneDialogues = computed(() => {
-	return allDialogues.value[currentScene.value.scene_id] || [];
-});
-
-const currentDialogue = computed(() => {
-	return currentSceneDialogues.value[currentDialogueIndex.value];
-});
-
-// 调试覆盖率：当前节点一展示即记为已走
-watch(
-	() => currentDialogue.value?.content_id,
-	(id) => {
-		if (debugMode.value && id) markVisitedContent(id)
-	},
-	{ immediate: true }
-);
 
 // ==================== 上一句回退 ====================
 // 行快照入栈 / 去重 / 截断与回退还原由 usePlayerRewind 托管
@@ -731,32 +715,7 @@ const { previewSpeaker, previewAvatarLayers, previewAvatarSrc, currentChoices } 
 	evalCondition: (conditions) => evalCondition(conditions),
 });
 
-// 完整回想：显示全局历史（不再只过滤当前场景）
-const filteredHistoryDialogues = computed(() => {
-	return historyDialogues.value;
-});
-
-// 历史回想浮层的展示模型（文本/作者/场景标题在此定稿，浮层组件只负责渲染）
-const historyItemViews = computed(() =>
-	filteredHistoryDialogues.value.map((dialogue, index) => ({
-		key: index,
-		sceneTitle: historySceneTitle(dialogue),
-		character: getCharacterName(dialogue.character_id),
-		text: localizedText(dialogue),
-		chosen: !!dialogue.chosen,
-		choiceText: dialogue.chosen ? historyChoiceText(dialogue) : '',
-	})),
-);
-
-// 初始化历史对话（根据当前进度）
-const initHistoryDialogues = () => {
-	historyDialogues.value = buildHistoryDialogues(
-		scenes.value,
-		allDialogues.value,
-		currentSceneIndex.value,
-		currentDialogueIndex.value,
-	);
-};
+// 回想展示模型与历史重建已随叙事派生下沉到 usePlayerNarrative
 
 // ==================== 音频混音：BGM 淡入 + 语音闪避 ====================
 const {
