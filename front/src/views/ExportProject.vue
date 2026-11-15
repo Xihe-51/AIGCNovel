@@ -739,6 +739,7 @@ import { usePlayerStage } from '@/composables/player/usePlayerStage'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
+import { usePlayerFlow } from '@/composables/player/usePlayerFlow'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -1930,207 +1931,54 @@ watch(
 loadSettings();
 saveSettings();
 
-// 跳到指定剧情节点；返回 ok / locked / missing
-const jumpToDialogue = (targetId) => {
-	for (let si = 0; si < scenes.value.length; si++) {
-		const list = allDialogues.value[scenes.value[si].scene_id] || [];
-		const di = list.findIndex(d => Number(d.content_id) === Number(targetId));
-		if (di >= 0) {
-			if (!scenePlayable(scenes.value[si].scene_id)) return 'locked';
-			if (!debugMode.value && !nodePlayable(list[di])) return 'locked';
-			currentSceneIndex.value = si;
-			currentDialogueIndex.value = di;
-			showDialogueBox.value = true;
-			nextTick(() => {
-				if (isPlaying.value) {
-					playBackgroundMusic();
-					if (autoPlay.value) autoAdvanceDialogue();
-				}
-			});
-			return 'ok';
-		}
-	}
-	return 'missing';
-};
-
-// 下一个对话
-const nextDialogue = () => {
-	// 正在逐字显示时，第一次点击先把文字补全
-	if (isTyping.value) {
-		finishTyping();
-		return;
-	}
-	// 演出「停顿」期间不允许推进
-	if (isWaiting.value) return;
-	// 「选择」节点必须等玩家点选项，不能自动往下走
-	if (currentChoices.value.length) return;
-
-	// 推进前记录当前位置，供「上一句」回退
-	pushLineSnapshot();
-
-	// 非「选择」节点若配置了自动跳转，播完本节点后直接跳过去
-	const cur = currentDialogue.value;
-	if (cur && cur.content_type !== '选择') {
-		const edge = (branches.value || []).find(b =>
-			Number(b.source_content_id) === Number(cur.content_id) &&
-			!(b.choice_text || '').trim() &&
-			evalCondition(b.conditions)
-		);
-		if (edge) {
-			markVisitedEdge(cur.content_id, edge.target_content_id);
-			historyDialogues.value.push({
-				...cur,
-				scene_id: currentScene.value.scene_id,
-				scene_title: currentScene.value.title || '',
-			});
-			const result = jumpToDialogue(edge.target_content_id);
-			if (result === 'ok') {
-				showDialogueBox.value = true;
-				return;
-			}
-			if (result === 'locked') {
-				ElMessage.warning(t('toast.targetSceneLocked'));
-			}
-		}
-	}
-
-	if (currentDialogueIndex.value < currentSceneDialogues.value.length) {
-		// 将当前对话添加到历史记录中
-		if (currentDialogue.value) {
-				historyDialogues.value.push({
-					...currentDialogue.value,
-					scene_id: currentScene.value.scene_id,
-					scene_title: currentScene.value.title || '',
-				});
-			}
-			
-			// 跳过条件不满足的台词，直接推进到下一条可播放内容
-			const list = currentSceneDialogues.value;
-			let nextIndex = currentDialogueIndex.value + 1;
-			while (nextIndex < list.length && !nodePlayable(list[nextIndex])) nextIndex++;
-			currentDialogueIndex.value = nextIndex;
-			
-			// 本场景没有更多可播放台词，进入下一场景
-			if (nextIndex >= list.length) {
-				nextScene();
-			}
-		}
-	showDialogueBox.value = true;
-};
-
-// 选择分支：跳到目标节点所在的场景/位置
-const selectBranch = (branch) => {
-	if (!branch) return;
-	if (branch.locked) {
-		ElMessage.warning(t('choice.conditionNotMet', { cond: conditionText(branch.conditions) }));
-		return;
-	}
-	// 活叙事：记录玩家在这个选择节点上犹豫的秒数
-	commitHesitation();
-	clearWait();
-	clearAutoTimer();
-	// 先取回退点，等确认分支可跳转后再入栈
-	const lineSnapshot = captureLineSnapshot();
-
-	if (currentDialogue.value) {
-		historyDialogues.value.push({
-			...currentDialogue.value,
-			scene_id: currentScene.value.scene_id,
-			scene_title: currentScene.value.title || '',
-			chosen: branch.choice_text || '',
-			chosen_path_id: branch.path_id || null,
-		});
-		markVisitedEdge(currentDialogue.value.content_id, branch.target_content_id);
-		logPlayEvent('choice', {
-			scene_id: Number(currentScene.value.scene_id) || null,
-			content_id: Number(currentDialogue.value.content_id) || null,
-			path_id: Number(branch.path_id) || null,
-			payload: {
-				choice_text: branch.choice_text || '',
-				target_content_id: Number(branch.target_content_id) || null,
-			},
-		});
-	}
-
-	const targetId = branch.target_content_id;
-	for (let si = 0; si < scenes.value.length; si++) {
-		const list = allDialogues.value[scenes.value[si].scene_id] || [];
-		const di = list.findIndex(d => d.content_id === targetId);
-		if (di >= 0) {
-			if (!scenePlayable(scenes.value[si].scene_id)) {
-				ElMessage.warning(t('toast.sceneLocked'));
-				return;
-			}
-			if (!nodePlayable(list[di])) {
-				ElMessage.warning(t('toast.targetDialogueLocked', { cond: conditionText(list[di].branch_condition) }));
-				return;
-			}
-			pushLineSnapshot(lineSnapshot);
-			currentSceneIndex.value = si;
-			currentDialogueIndex.value = di;
-			showDialogueBox.value = true;
-			nextTick(() => {
-				if (isPlaying.value) {
-					playBackgroundMusic();
-					if (autoPlay.value) autoAdvanceDialogue();
-				}
-			});
-			return;
-		}
-	}
-
-	ElMessage.warning(t('toast.branchMissing'));
-};
+// ==================== 剧情推进 ====================
+// 节点寻址、下一句 / 下一场景与选项分支跳转由 usePlayerFlow 托管
+const { jumpToDialogue, nextDialogue, selectBranch, nextScene } = usePlayerFlow({
+	getScenes: () => scenes.value,
+	getAllDialogues: () => allDialogues.value,
+	getBranches: () => branches.value,
+	getCurrentDialogue: () => currentDialogue.value,
+	getCurrentScene: () => currentScene.value,
+	getCurrentSceneDialogues: () => currentSceneDialogues.value,
+	getHistory: () => historyDialogues.value,
+	hasChoices: () => currentChoices.value.length > 0,
+	getSceneIndex: () => currentSceneIndex.value,
+	setSceneIndex: (value) => { currentSceneIndex.value = value },
+	getDialogueIndex: () => currentDialogueIndex.value,
+	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
+	setShowDialogueBox: (value) => { showDialogueBox.value = value },
+	scenePlayable: (sceneId) => scenePlayable(sceneId),
+	nodePlayable: (node) => nodePlayable(node),
+	sceneHasPlayableDialogues: (sceneId) => sceneHasPlayableDialogues(sceneId),
+	firstPlayableNodeIndex: (sceneId) => firstPlayableNodeIndex(sceneId),
+	evalCondition: (conditions) => evalCondition(conditions),
+	conditionText: (conditions) => conditionText(conditions),
+	isDebugMode: () => debugMode.value,
+	isPlaying: () => isPlaying.value,
+	isTyping: () => isTyping.value,
+	isWaiting: () => isWaiting.value,
+	getAutoPlay: () => autoPlay.value,
+	setIsPlaying: (value) => { isPlaying.value = value },
+	finishTyping: () => finishTyping(),
+	playBackgroundMusic: () => playBackgroundMusic(),
+	stopBackgroundMusic: () => stopBackgroundMusic(),
+	scheduleAutoAdvance: () => scheduleAutoAdvance(),
+	scheduleAutoAdvanceAfter: (ms) => scheduleAutoAdvanceAfter(ms),
+	clearAutoTimer: () => clearAutoTimer(),
+	clearWait: () => clearWait(),
+	commitHesitation: () => commitHesitation(),
+	pushLineSnapshot: (snapshot) => pushLineSnapshot(snapshot),
+	captureLineSnapshot: () => captureLineSnapshot(),
+	markVisitedEdge: (sourceId, targetId) => markVisitedEdge(sourceId, targetId),
+	logPlayEvent: (type, payload) => logPlayEvent(type, payload),
+	scheduleAchievementCheck: (force) => scheduleAchievementCheck(force),
+	goHome: () => { proxy.$router.push('/home'); },
+	t: (key, params) => t(key, params),
+});
 
 // 自动前进对话：统一交给 scheduleAutoAdvance（受设置里的间隔控制）
 const autoAdvanceDialogue = () => {
 	scheduleAutoAdvance();
-};
-
-// 下一个场景
-const nextScene = () => {
-	// 停止当前场景音乐
-	stopBackgroundMusic();
-
-	// 跳过播放条件不满足、没有可播放台词或台词全部被条件过滤的场景
-	let nextIndex = currentSceneIndex.value + 1;
-	while (nextIndex < scenes.value.length && (
-		!scenePlayable(scenes.value[nextIndex].scene_id) ||
-		!sceneHasPlayableDialogues(scenes.value[nextIndex].scene_id)
-	)) {
-		nextIndex++;
-	}
-
-	if (nextIndex < scenes.value.length) {
-		// 切换到下一个可播放场景（从第一条条件满足的台词开始）
-		currentSceneIndex.value = nextIndex;
-		currentDialogueIndex.value = firstPlayableNodeIndex(scenes.value[nextIndex].scene_id);
-		
-		// 播放新场景音乐
-		nextTick(() => {
-			if (isPlaying.value) {
-				playBackgroundMusic();
-				
-				// 自动播放，继续自动前进
-				if (autoPlay.value) {
-					scheduleAutoAdvanceAfter(1000);
-				}
-			}
-		});
-	} else {
-		// 所有场景预览结束，弹出游戏结束提示
-		logPlayEvent('finish', {
-			scene_id: Number(currentScene.value?.scene_id) || null,
-		});
-		scheduleAchievementCheck(true);
-		isPlaying.value = false;
-		ElMessageBox.alert(t('ending.gameOverText'), t('ending.gameOverTitle'), {
-			confirmButtonText: t('common.confirm'),
-			callback: () => {
-				proxy.$router.push('/home');
-			}
-		});
-	}
 };
 
 // 快进至下一场景
