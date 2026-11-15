@@ -269,6 +269,7 @@ import { usePlayerLineLifecycle } from '@/composables/player/usePlayerLineLifecy
 import { usePlayerPlaySession } from '@/composables/player/usePlayerPlaySession'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
+import { usePlayerPlayback } from '@/composables/player/usePlayerPlayback'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
 import { usePlayerFlow } from '@/composables/player/usePlayerFlow'
 import { usePlayerChapters } from '@/composables/player/usePlayerChapters'
@@ -1115,35 +1116,29 @@ const { jumpToDialogue, nextDialogue, selectBranch, nextScene } = usePlayerFlow(
 	t: (key, params) => t(key, params),
 });
 
-// 自动前进对话：统一交给 scheduleAutoAdvance（受设置里的间隔控制）
-const autoAdvanceDialogue = () => {
-	scheduleAutoAdvance();
-};
-
-// 快进至下一场景
-const skipToNextScene = () => {
-	pushLineSnapshot();
-	nextScene();
-};
-
-// 切换对话框显示/隐藏
-const toggleDialogueBox = () => {
-	showDialogueBox.value = !showDialogueBox.value;
-};
-
-// 切换历史对话显示/隐藏
-const toggleHistoryDialogue = () => {
-	if (!showHistoryDialogue.value) bumpBehaviorReview();
-	showHistoryDialogue.value = !showHistoryDialogue.value;
-};
-
-// 切换自动播放状态
-const toggleAutoPlay = () => {
-	autoPlay.value = !autoPlay.value;
-	if (autoPlay.value) {
-		autoAdvanceDialogue();
-	}
-};
+// ==================== 播放控制 ====================
+// 自动前进 / 快进下一场景 / 对话框与回想显隐 / 上滑唤回想 / 选项点击由 usePlayerPlayback 托管
+const {
+	skipToNextScene,
+	toggleDialogueBox,
+	toggleHistoryDialogue,
+	toggleAutoPlay,
+	onWheelUp,
+	handleChoiceSelect,
+} = usePlayerPlayback({
+	getAutoPlay: () => autoPlay.value,
+	setAutoPlay: (value) => { autoPlay.value = value },
+	getShowDialogueBox: () => showDialogueBox.value,
+	setShowDialogueBox: (value) => { showDialogueBox.value = value },
+	getShowHistory: () => showHistoryDialogue.value,
+	setShowHistory: (value) => { showHistoryDialogue.value = value },
+	getChoices: () => currentChoices.value,
+	scheduleAutoAdvance: () => scheduleAutoAdvance(),
+	pushLineSnapshot: () => pushLineSnapshot(),
+	nextScene: () => nextScene(),
+	selectBranch: (branch) => selectBranch(branch),
+	bumpBehaviorReview: () => bumpBehaviorReview(),
+});
 
 // ==================== 进度存档（本地兜底 + 云端槽位 + 退出） ====================
 // 存档采集、槽位编排与退出流程由 usePlayerProgress 托管
@@ -1223,18 +1218,7 @@ const {
 	projectId: () => Number(props.projectId),
 });
 
-// 舞台上滑（子组件已判定方向）：不在自动播放状态时唤出历史对话
-const onWheelUp = () => {
-	if (!autoPlay.value) {
-		toggleHistoryDialogue();
-	}
-};
-
-// 选项点击：按 path_id 找回原始分支对象，再交给流程层处理锁定/跳转
-const handleChoiceSelect = (pathId) => {
-	const branch = currentChoices.value.find((choice) => choice.path_id === pathId);
-	if (branch) selectBranch(branch);
-};
+// 舞台上滑 / 选项点击已随播放控制下沉到 usePlayerPlayback
 
 // 获取角色名称（按当前阅读语言显示译名）
 const getCharacterName = (characterId) => {
