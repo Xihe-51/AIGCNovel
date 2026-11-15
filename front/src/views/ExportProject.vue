@@ -1,42 +1,28 @@
 <template>
 	<div class="export-project-container" @touchstart.passive="onTouchStart" @touchend="onTouchEnd">
-		<!-- 阅读设置入口 -->
-		<button v-if="!loading && !error" class="player-settings-btn" @click="openSettings" :title="t('player.settingsTitle')">
-			<el-icon><Setting /></el-icon>
-		</button>
-		<button
-			v-if="!loading && !error && canRollback"
-			class="player-back-btn"
-			@click="rollbackOneLine"
-			:title="t('player.backOneLine')"
-		>
-			<el-icon><RefreshLeft /></el-icon>
-		</button>
-		<button
-			v-if="!loading && !error && canPerform"
-			class="player-perform-btn"
-			:class="{ 'is-active': performMode }"
-			@click="togglePerformMode"
-			title="演出模式（作者预览）"
-		>
-			<el-icon><EditPen /></el-icon>
-		</button>
-		<button v-if="!loading && !error && projectVariables.length" class="player-status-btn"
-				@click="statusDialogVisible = true" :title="t('player.statusTitle')">
-			<el-icon><DataLine /></el-icon>
-		</button>
-		<button v-if="!loading && !error" class="player-gallery-btn"
-				@click="openGallery" :title="t('player.galleryTitle')">
-			<el-icon><Picture /></el-icon>
-		</button>
-		<button v-if="!loading && !error && publicReleases.length" class="player-changelog-btn"
-				@click="changelogVisible = true" :title="t('changelog.title')">
-			{{ t('player.updateBtn') }}
-		</button>
-		<button v-if="!loading && !error && chapterRoute.length" class="player-chapter-btn"
-				@click="chaptersVisible = true" :title="t('chapters.title')">
-			{{ t('player.chapterBtn') }}
-		</button>
+		<!-- 右上角入口栏 + 竖屏提示 -->
+		<PlayerEntryBar
+			:language="playerSettings.language"
+			:loading="loading"
+			:error="error"
+			:can-rollback="canRollback"
+			:can-perform="canPerform"
+			:perform-mode="performMode"
+			:has-variables="!!projectVariables.length"
+			:has-releases="!!publicReleases.length"
+			:has-chapters="!!chapterRoute.length"
+			:debug-mode="debugMode"
+			:show-rotate-hint="showRotateHint"
+			@open-settings="openSettings"
+			@rollback="rollbackOneLine"
+			@toggle-perform="togglePerformMode"
+			@open-status="statusDialogVisible = true"
+			@open-gallery="openGallery"
+			@open-changelog="changelogVisible = true"
+			@open-chapters="chaptersVisible = true"
+			@toggle-debug="debugPanelVisible = !debugPanelVisible"
+			@dismiss-rotate="dismissRotateHint"
+		/>
 
 		<!-- 演出模式：仅作者预览（?edit=1）可见，公开发布后玩家端不会出现 -->
 		<PlayerPerformPanel
@@ -57,9 +43,6 @@
 		/>
 
 		<!-- 调试器（仅 ?debug=1 时显示） -->
-		<button v-if="debugMode && !loading && !error" class="player-debug-btn" @click="debugPanelVisible = !debugPanelVisible" title="调试器">
-			调试
-		</button>
 		<PlayerDebugPanel
 			v-if="debugMode && debugPanelVisible && !loading && !error"
 			v-model:jump-id="debugJumpId"
@@ -86,11 +69,6 @@
 			@close="debugPanelVisible = false"
 		/>
 
-		<!-- 竖屏提示 -->
-		<div v-if="showRotateHint && !loading && !error" class="rotate-hint">
-			<span>{{ t('player.rotateHint') }}</span>
-			<button @click.stop="dismissRotateHint">{{ t('player.gotIt') }}</button>
-		</div>
 		<!-- 预览区域 -->
 		<div class="preview-panel">
 			<!-- 背景音乐播放器 -->
@@ -493,6 +471,7 @@ import PlayerStatusDialog from '@/components/player/PlayerStatusDialog.vue'
 import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
 import PlayerFunctionButtons from '@/components/player/PlayerFunctionButtons.vue'
+import PlayerEntryBar from '@/components/player/PlayerEntryBar.vue'
 import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
 import PlayerDebugPanel from '@/components/player/PlayerDebugPanel.vue'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
@@ -502,12 +481,7 @@ import {
 import { 
   WarningFilled,
   View,
-  CloseBold,
-  Setting,
-  DataLine,
-  Picture,
-  RefreshLeft,
-  EditPen
+  CloseBold
 } from '@element-plus/icons-vue'
 import { ElMessage, ElLoading, ElIcon } from 'element-plus'
 
@@ -1554,7 +1528,6 @@ const backToHome = () => {
 </script>
 
 <style scoped src="./player/playerShell.css"></style>
-<style scoped src="./player/playerDebug.css"></style>
 <style scoped src="./player/playerStage.css"></style>
 <style scoped src="./player/playerDialogue.css"></style>
 <style scoped src="./player/playerResponsive.css"></style>
