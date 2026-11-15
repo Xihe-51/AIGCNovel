@@ -727,6 +727,7 @@ import { usePlayerStage } from '@/composables/player/usePlayerStage'
 import { usePlayerStageFx } from '@/composables/player/usePlayerStageFx'
 import { usePlayerVariableEffects } from '@/composables/player/usePlayerVariableEffects'
 import { usePlayerLineLifecycle } from '@/composables/player/usePlayerLineLifecycle'
+import { usePlayerPlaySession } from '@/composables/player/usePlayerPlaySession'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
@@ -761,7 +762,7 @@ import {
   RefreshLeft,
   EditPen
 } from '@element-plus/icons-vue'
-import { ElMessage, ElLoading, ElIcon, ElMessageBox } from 'element-plus'
+import { ElMessage, ElLoading, ElIcon } from 'element-plus'
 
 // 获取路由实例
 const { proxy } = getCurrentInstance();
@@ -1204,37 +1205,6 @@ const initHistoryDialogues = () => {
 	);
 };
 
-// 开始预览
-const startPreview = () => {
-	// 起始场景若被剧情锁挡住或没有可播放台词，自动跳到下一个可播放场景
-	let idx = currentSceneIndex.value;
-	if (scenes.value[idx] && (
-		!scenePlayable(scenes.value[idx].scene_id) ||
-		!sceneHasPlayableDialogues(scenes.value[idx].scene_id)
-	)) {
-		while (idx < scenes.value.length && (
-			!scenePlayable(scenes.value[idx].scene_id) ||
-			!sceneHasPlayableDialogues(scenes.value[idx].scene_id)
-		)) idx++;
-		if (idx < scenes.value.length) {
-			currentSceneIndex.value = idx;
-			currentDialogueIndex.value = 0;
-		}
-	}
-
-	// 当前台词条件不满足时，从当前位置向后找第一条可播放台词
-	const list = allDialogues.value[scenes.value[idx]?.scene_id] || [];
-	if (list.length && !nodePlayable(list[currentDialogueIndex.value])) {
-		let di = firstPlayableNodeIndex(scenes.value[idx].scene_id, currentDialogueIndex.value);
-		if (di >= list.length) di = firstPlayableNodeIndex(scenes.value[idx].scene_id, 0);
-		if (di < list.length) currentDialogueIndex.value = di;
-	}
-
-	isPlaying.value = true;
-	playBackgroundMusic();
-	startTyping();
-};
-
 // ==================== 音频混音：BGM 淡入 + 语音闪避 ====================
 const {
 	bgmTargetVolume,
@@ -1428,42 +1398,6 @@ const loadPublicReleases = async () => {
 	}
 };
 
-const resetGame = () => {
-	stopBackgroundMusic();
-	currentSceneIndex.value = 0;
-	currentDialogueIndex.value = 0;
-	historyDialogues.value = [];
-	resetEndings();
-	resetAchievementState();
-	resetVariables();
-	clearLineSnapshots();
-	resetTelemetryTracking();
-	nextTick(() => startPreview());
-};
-
-// 二周目：从头播放，但保留上一周目结束时的变量值
-const startNextPlaythrough = () => {
-	stopBackgroundMusic();
-	clearAutoTimer();
-	resetEndings();
-	currentSceneIndex.value = 0;
-	currentDialogueIndex.value = 0;
-	historyDialogues.value = [];
-	resetAchievementState();
-	clearVariableNotices();
-	lastEffectKey.value = '';
-	clearLineSnapshots();
-	resetTelemetryTracking();
-	// 进入下一周目前，把本周目结束时的跨周目变量写回服务端
-	syncProjectMeta(true);
-	playthrough.value += 1;
-	try {
-		localStorage.setItem(playthroughKey(), String(playthrough.value));
-	} catch (_) { /* ignore */ }
-	nextTick(() => startPreview());
-	ElMessage.success(t('toast.nextPlaythrough', { n: playthrough.value }));
-};
-
 // 一句台词开始播放时的固定顺序（结算变量 → 回退标记 → 结局 → 清定时器 → 跳过已读
 // → 记录已读 → 选择计时 → 逐字显示）以及设置变更后的重播监听，全部由
 // usePlayerLineLifecycle 编排；这里只提供各步骤的实现。
@@ -1489,6 +1423,37 @@ const { startTyping } = usePlayerLineLifecycle({
 	nextDialogue: () => nextDialogue(),
 	setBgmDucking: (on) => setBgmDucking(on),
 	applyVolumes: () => applyVolumes(),
+});
+
+// ==================== 开局与重开 ====================
+// 起点修正（起始场景/台词被剧情锁或条件挡住时向后找）、完整重置、二周目推进、
+// 玩家主动重开四个入口由 usePlayerPlaySession 编排；这里只提供状态引用与各步骤实现。
+const { startPreview, resetGame, startNextPlaythrough, restartGame } = usePlayerPlaySession({
+	scenes,
+	allDialogues,
+	sceneIndex: currentSceneIndex,
+	dialogueIndex: currentDialogueIndex,
+	history: historyDialogues,
+	isPlaying,
+	playthrough,
+	playthroughKey: () => playthroughKey(),
+	scenePlayable: (sceneId) => scenePlayable(sceneId),
+	sceneHasPlayableDialogues: (sceneId) => sceneHasPlayableDialogues(sceneId),
+	nodePlayable: (node) => nodePlayable(node),
+	firstPlayableNodeIndex: (sceneId, from) => firstPlayableNodeIndex(sceneId, from),
+	playBackgroundMusic: () => playBackgroundMusic(),
+	stopBackgroundMusic: () => stopBackgroundMusic(),
+	clearAutoTimer: () => clearAutoTimer(),
+	startTyping: () => startTyping(),
+	resetEndings: () => resetEndings(),
+	resetAchievementState: () => resetAchievementState(),
+	resetVariables: () => resetVariables(),
+	resetTelemetryTracking: () => resetTelemetryTracking(),
+	clearLineSnapshots: () => clearLineSnapshots(),
+	clearVariableNotices: () => clearVariableNotices(),
+	syncProjectMeta: (immediate) => syncProjectMeta(immediate),
+	setLastEffectKey: (value) => { lastEffectKey.value = value },
+	t: (key, params) => t(key, params),
 });
 
 // 自动存档：每次推进对话后延迟写入 slot 0（不打扰玩家）
@@ -1634,42 +1599,6 @@ const autoAdvanceDialogue = () => {
 const skipToNextScene = () => {
 	pushLineSnapshot();
 	nextScene();
-};
-
-// 重新开始游戏
-const restartGame = () => {
-	ElMessageBox.confirm(
-		t('toast.restartConfirm'),
-		t('toast.restartTitle'),
-		{
-			confirmButtonText: t('common.confirm'),
-			cancelButtonText: t('common.cancel'),
-			type: 'info',
-		}
-	)
-	.then(() => {
-		// 停止当前音乐
-		stopBackgroundMusic();
-		
-		// 重置进度和历史对话
-		currentSceneIndex.value = 0;
-		currentDialogueIndex.value = 0;
-		historyDialogues.value = [];
-		resetVariables();
-		clearLineSnapshots();
-		// 新一轮从头开始，重新允许记录本轮埋点
-		resetTelemetryTracking();
-		
-		// 重新开始
-		nextTick(() => {
-			startPreview();
-		});
-		
-		ElMessage.success(t('toast.restarted'));
-	})
-	.catch(() => {
-		// 用户取消重新开始
-	});
 };
 
 // 切换对话框显示/隐藏
