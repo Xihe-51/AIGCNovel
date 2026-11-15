@@ -737,6 +737,7 @@ import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import { usePlayerStage } from '@/composables/player/usePlayerStage'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
+import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -1250,34 +1251,16 @@ const {
 	applyVolumes: () => applyVolumes(),
 });
 
-// 预览立绘：旁白沿用本场景最近一位说话的角色，直到出现新角色
-const previewSpeaker = computed(() => {
-	const list = currentSceneDialogues.value || [];
-	for (let i = Math.min(currentDialogueIndex.value, list.length - 1); i >= 0; i--) {
-		const d = list[i];
-		if (d && d.character_id) return d;
-	}
-	return null;
-});
-
-// 基础图 + 差分层：按 order 从小到大叠放
-const previewAvatarLayers = computed(() => {
-	const d = previewSpeaker.value;
-	if (!d) return [];
-	const byAvatar = avatarLayersOf(d.avatar_id);
-	if (byAvatar.length) return byAvatar;
-	return defaultAvatarLayersOf(d.character_id);
-});
-
-const previewAvatarSrc = computed(() => previewAvatarLayers.value[0] || '');
-
-// 当前「选择」节点的分支选项；条件未满足时保留按钮但标记为锁定
-const currentChoices = computed(() => {
-	const d = currentDialogue.value;
-	if (!d || d.content_type !== '选择') return [];
-	return (branches.value || [])
-		.filter(b => b.source_content_id === d.content_id)
-		.map(b => ({ ...b, locked: !evalCondition(b.conditions) }));
+// ==================== 预览派生状态 ====================
+// 说话人回溯、立绘分层与分支选项由 usePlayerPreview 托管
+const { previewSpeaker, previewAvatarLayers, previewAvatarSrc, currentChoices } = usePlayerPreview({
+	getDialogues: () => currentSceneDialogues.value,
+	getCurrentIndex: () => currentDialogueIndex.value,
+	getCurrentDialogue: () => currentDialogue.value,
+	getBranches: () => branches.value,
+	avatarLayersOf: (avatarId) => avatarLayersOf(avatarId),
+	defaultAvatarLayersOf: (characterId) => defaultAvatarLayersOf(characterId),
+	evalCondition: (conditions) => evalCondition(conditions),
 });
 
 // 完整回想：显示全局历史（不再只过滤当前场景）
