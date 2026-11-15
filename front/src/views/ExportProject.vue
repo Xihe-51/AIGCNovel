@@ -240,7 +240,6 @@ import {
 import { useRoute } from 'vue-router'
 import { saveDialogues } from '@/api/dialogue'
 import { updateScene } from '@/api/scenes'
-import { listPublicReleases } from '@/api/release'
 import { unlockMusic } from '@/api/gallery'
 import { themeClass } from '@/utils/uiThemes'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
@@ -257,6 +256,7 @@ import { usePlayerInput } from '@/composables/player/usePlayerInput'
 import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerPositionEffects } from '@/composables/player/usePlayerPositionEffects'
 import { usePlayerOwnership } from '@/composables/player/usePlayerOwnership'
+import { usePlayerChangelog } from '@/composables/player/usePlayerChangelog'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
@@ -544,9 +544,15 @@ const {
 	clearAutoTimer: () => clearAutoTimer(),
 });
 
-// 更新日志 / 公开版本
-const changelogVisible = ref(false);
-const publicReleases = ref([]);
+// ==================== 更新日志 / 公开版本 ====================
+// 公开版本清单与弹窗可见性由 usePlayerChangelog 自管
+const {
+	changelogVisible,
+	publicReleases,
+	loadPublicReleases,
+} = usePlayerChangelog({
+	projectId: () => Number(props.projectId),
+});
 
 // ==================== 章节快捷跳转 / 路线图鉴 ====================
 const {
@@ -863,14 +869,7 @@ const {
 	t,
 })
 
-// 玩家侧更新日志（公开作品才会返回）
-const loadPublicReleases = async () => {
-	try {
-		publicReleases.value = await listPublicReleases(Number(props.projectId));
-	} catch (e) {
-		publicReleases.value = [];
-	}
-};
+// 玩家侧更新日志的拉取已随清单状态下沉到 usePlayerChangelog
 
 // 一句台词开始播放时的固定顺序（结算变量 → 回退标记 → 结局 → 清定时器 → 跳过已读
 // → 记录已读 → 选择计时 → 逐字显示）以及设置变更后的重播监听，全部由
