@@ -51,6 +51,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { VariablePayload } from '@/api/variable'
 
 const props = defineProps<{
 	visible: boolean
@@ -62,7 +63,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	(e: 'update:visible', value: boolean): void
-	(e: 'save', payload: { variableId: number | null; payload: Record<string, any> }): void
+	(e: 'save', payload: { variableId: number | null; payload: VariablePayload }): void
 }>()
 
 const visibleModel = computed({

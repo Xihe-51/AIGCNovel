@@ -612,7 +612,6 @@ import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/trans
 import { getScenes } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
 import { getStoryGraph } from '@/api/branch'
-import { listVariables, createVariable, updateVariable, deleteVariable } from '@/api/variable'
 import { listEndings, createEnding, updateEnding, deleteEnding } from '@/api/ending'
 import { listCGs, createCG, updateCG, deleteCG } from '@/api/cg'
 import { BASE_URL } from '@/utils/request'
@@ -626,6 +625,7 @@ import ProjectFlowPreview from '@/components/project/ProjectFlowPreview.vue'
 import ProjectAssetDialog from '@/components/project/ProjectAssetDialog.vue'
 import ProjectLayerDialog from '@/components/project/ProjectLayerDialog.vue'
 import { useProjectCutout } from '@/composables/project/useProjectCutout'
+import { useProjectVariables } from '@/composables/project/useProjectVariables'
 
 // 接口定义保持不变
 interface Project {
@@ -734,37 +734,23 @@ export default defineComponent({
     const sceneScriptContents = ref<ScriptContent[]>([])
     const activeTab = ref('overview')
 
-    // 项目变量
-    const variables = ref<any[]>([])
-    // 活叙事：作者显式启用的行为变量（由播放器自动记录，不作为普通数值加减）
-    const BEHAVIOR_VARIABLES = [
-      {
-        name: 'behavior_hesitation',
-        label: '选择犹豫秒数',
-        initial_value: 0,
-        min_value: 0,
-        max_value: 60,
-        description: '玩家在当前选择节点上犹豫的秒数，每次做出选择后更新；可用于后续旁白/隐藏剧情条件',
-      },
-      {
-        name: 'behavior_review',
-        label: '回看次数',
-        initial_value: 0,
-        min_value: 0,
-        max_value: 99,
-        description: '本局玩家打开回想或执行「上一句」回退的次数；可用于隐藏剧情条件',
-      },
-    ]
-    const behaviorSaving = ref(false)
-    const isBehaviorVariable = (row: any) => String(row?.name || '').startsWith('behavior_')
-    const missingBehaviorVariables = computed(() =>
-      BEHAVIOR_VARIABLES.filter(def => !variables.value.some(v => v.name === def.name))
-    )
-    const variableDialogVisible = ref(false)
-    const editingVariableId = ref<number | null>(null)
-    const variableSaving = ref(false)
-    // 交给变量弹窗的初始行；null 表示新建
-    const variableInitial = ref<any | null>(null)
+    // 项目变量：列表读写、弹窗开关与行为变量启用都在 useProjectVariables 内
+    const {
+      variables,
+      behaviorSaving,
+      isBehaviorVariable,
+      missingBehaviorVariables,
+      variableDialogVisible,
+      editingVariableId,
+      variableSaving,
+      variableInitial,
+      fetchVariables,
+      enableBehaviorVariables,
+      openCreateVariable,
+      openEditVariable,
+      handleSaveVariable,
+      removeVariable,
+    } = useProjectVariables({ projectId: () => Number(props.projectId) })
 
     // 变量绑定角色后，播放器「好感度」页按角色展示
     const characterName = (id: number | null | undefined) => {
@@ -1149,89 +1135,6 @@ export default defineComponent({
     const startVoice = (voice_url: string) => {
       const audio = new Audio(BASE_URL + voice_url)
       audio.play().catch(error => console.error("播放失败:", error))
-    }
-
-    // ==================== 项目变量 ====================
-    const fetchVariables = async () => {
-      try {
-        variables.value = await listVariables(Number(props.projectId))
-      } catch (e) {
-        console.warn('读取变量失败:', e)
-        variables.value = []
-      }
-    }
-
-    // 一键启用行为变量：只创建缺失的定义，已存在的不重复创建
-    const enableBehaviorVariables = async () => {
-      if (behaviorSaving.value || !missingBehaviorVariables.value.length) return
-      behaviorSaving.value = true
-      try {
-        for (const def of missingBehaviorVariables.value) {
-          await createVariable(Number(props.projectId), {
-            name: def.name,
-            label: def.label,
-            character_id: null,
-            initial_value: def.initial_value,
-            min_value: def.min_value,
-            max_value: def.max_value,
-            description: def.description,
-            persist: false,
-          })
-        }
-        await fetchVariables()
-        ElMessage.success('行为变量已启用，可在剧情条件与后续旁白中使用')
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.message || e?.message || '启用行为变量失败')
-      } finally {
-        behaviorSaving.value = false
-      }
-    }
-
-    const openCreateVariable = () => {
-      editingVariableId.value = null
-      variableInitial.value = null
-      variableDialogVisible.value = true
-    }
-
-    const openEditVariable = (row: any) => {
-      editingVariableId.value = row.variable_id
-      variableInitial.value = row
-      variableDialogVisible.value = true
-    }
-
-    // 变量弹窗已完成校验，这里只负责落库与刷新
-    const handleSaveVariable = async ({ variableId, payload }: { variableId: number | null; payload: any }) => {
-      variableSaving.value = true
-      try {
-        if (variableId) {
-          await updateVariable(Number(props.projectId), variableId, payload)
-          ElMessage.success('变量已更新')
-        } else {
-          await createVariable(Number(props.projectId), payload)
-          ElMessage.success('变量已创建')
-        }
-        variableDialogVisible.value = false
-        await fetchVariables()
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.message || e?.message || '保存变量失败')
-      } finally {
-        variableSaving.value = false
-      }
-    }
-
-    const removeVariable = async (row: any) => {
-      try {
-        await ElMessageBox.confirm(
-          `删除变量「${row.label}」？引用它的节点数值变化也会被清除。`,
-          '删除变量',
-          { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-        )
-        await deleteVariable(Number(props.projectId), row.variable_id)
-        ElMessage.success('变量已删除')
-        await fetchVariables()
-      } catch (e) {
-        // 取消
-      }
     }
 
     // ==================== 结局 ====================
