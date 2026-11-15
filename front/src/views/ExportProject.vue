@@ -255,8 +255,7 @@ import { usePlayerReads } from '@/composables/player/usePlayerReads'
 import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
 import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
-import { usePlayerGamepad } from '@/composables/player/usePlayerGamepad'
-import { usePlayerKeyboard } from '@/composables/player/usePlayerKeyboard'
+import { usePlayerInput } from '@/composables/player/usePlayerInput'
 import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
@@ -1185,8 +1184,8 @@ const getCharacterName = (characterId) => {
 	return char ? localizedCharacterName(char) : '';
 };
 
-// ==================== 键盘快捷键 ====================
-// 按键判定与面板关闭优先级由 usePlayerKeyboard 托管
+// ==================== 输入接入（键盘 / 手柄 / 音频解锁） ====================
+// 按键判定、手柄轮询与首次交互解锁音频统一由 usePlayerInput 装配
 const ESC_PANELS = [
 	settingsVisible,
 	galleryDialogVisible,
@@ -1197,27 +1196,19 @@ const ESC_PANELS = [
 	debugPanelVisible,
 ];
 const ACTIVE_PANELS = [...ESC_PANELS, endingDialogVisible, changelogVisible];
-const { isPanelOpen, handleKeydown } = usePlayerKeyboard({
+usePlayerInput({
 	getEscPanels: () => ESC_PANELS,
 	getActivePanels: () => ACTIVE_PANELS,
+	getSkipRead: () => playerSettings.value.skipRead,
+	setSkipRead: (value) => {
+		playerSettings.value.skipRead = value;
+	},
 	rollbackOneLine: () => rollbackOneLine(),
 	nextDialogue: () => nextDialogue(),
 	toggleHistoryDialogue: () => toggleHistoryDialogue(),
 	toggleAutoPlay: () => toggleAutoPlay(),
-	toggleSkipRead: () => {
-		playerSettings.value.skipRead = !playerSettings.value.skipRead;
-		return playerSettings.value.skipRead;
-	},
+	playBackgroundMusic: () => playBackgroundMusic(),
 	t: (key) => t(key),
-});
-
-// ==================== 手柄操作（标准按键映射） ====================
-// A(0) 继续对话 / B(1) 回想 / X(2) 自动播放；轮询与边沿判定由 usePlayerGamepad 自管
-const { startGamepad, stopGamepad } = usePlayerGamepad({
-	isPanelOpen: () => isPanelOpen(),
-	nextDialogue: () => nextDialogue(),
-	toggleHistoryDialogue: () => toggleHistoryDialogue(),
-	toggleAutoPlay: () => toggleAutoPlay(),
 });
 
 // 监听场景变化，更新背景音乐
@@ -1233,17 +1224,8 @@ watch(currentScene, (newScene, oldScene) => {
 onMounted(() => {
 	fetchProjectData();
 	loadDirectiveData();
-	
-	// 监听用户交互，一旦有交互就尝试播放音乐（解决浏览器自动播放限制）
-	document.addEventListener('click', playBackgroundMusic, { once: true });
-	document.addEventListener('keydown', playBackgroundMusic, { once: true });
-	document.addEventListener('touchstart', playBackgroundMusic, { once: true, passive: true });
-	
-	// 监听键盘事件
-	document.addEventListener('keydown', handleKeydown);
 
-	// 手柄轮询（无手柄时不做任何操作）
-	startGamepad();
+	// 键盘 / 手柄 / 音频解锁监听由 usePlayerInput 在自身生命周期内注册
 
 	// 移动端方向提示
 	bindOrientation();
@@ -1261,11 +1243,6 @@ onUnmounted(() => {
 	disposeStageFx();
 	clearStageTransitions();
 	stopBackgroundMusic();
-	stopGamepad();
-	document.removeEventListener('keydown', handleKeydown);
-	document.removeEventListener('click', playBackgroundMusic);
-	document.removeEventListener('keydown', playBackgroundMusic);
-	document.removeEventListener('touchstart', playBackgroundMusic);
 	unbindOrientation();
 });
 
