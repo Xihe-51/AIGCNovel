@@ -735,13 +735,8 @@ import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
-import {
-	usePlayerStage,
-	layerIdOf,
-	layerNameOf,
-	layerOrderOf,
-	stageDefaultX,
-} from '@/composables/player/usePlayerStage'
+import { usePlayerStage } from '@/composables/player/usePlayerStage'
+import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -1962,104 +1957,24 @@ const scheduleWait = (ms) => {
 	}, delay);
 };
 
-const applyDirectives = (dialogue) => {
-	if (!dialogue) return;
-	const list = directivesByContent.value[dialogue.content_id] || [];
-	if (!list.length) return;
-
-	const next = { ...stageAvatars.value };
-	let waitMs = 0;
-	let lastEffect = null;
-	for (const d of list) {
-		const p = d.payload || {};
-		if (d.directive_type === 'avatar') {
-			const layerId = layerIdOf(p);
-			if (p.action === 'hide') {
-				delete next[layerId];
-			} else {
-				const assetSources = p.image_url ? [BASE_URL + p.image_url] : [];
-				const avatarSources = avatarLayersOf(p.avatar_id);
-				const fallbackSources = assetSources.length
-					? assetSources
-					: (avatarSources.length ? avatarSources : defaultAvatarLayersOf(p.character_id));
-				const src = fallbackSources[0];
-				if (src) {
-					// 旧指令用 position + sprite 坐标；统一折算成舞台坐标
-					const legacy = p.coord !== 'stage';
-					const x = legacy ? stageDefaultX(layerId) : (Number(p.x) || 0);
-					const y = legacy ? 100 : (Number(p.y) || 0);
-					const scale = Number(p.scale) || 1;
-					const opacity = p.opacity === undefined || p.opacity === null ? 1 : Number(p.opacity);
-					const rotate = Number(p.rotate) || 0;
-					const order = layerOrderOf(p);
-					const visible = p.visible !== false;
-					const boxStyle = {
-						left: `${x}%`,
-						top: `${y}%`,
-						bottom: 'auto',
-						right: 'auto',
-						transform: 'translate(-50%, -100%)',
-						zIndex: 10 + order
-					};
-					if (!visible) boxStyle.display = 'none';
-					const style = {
-						transform: `scale(${scale}) rotate(${rotate}deg)`,
-						opacity
-					};
-					next[layerId] = {
-						layer_id: layerId,
-						layer_name: layerNameOf(p),
-						order,
-						visible,
-						src,
-						sources: fallbackSources,
-						style,
-						boxStyle
-					};
-				}
-			}
-		} else if (d.directive_type === 'background') {
-			if (p.layer === 'foreground') {
-				fgFromDirective.value = p.url || '';
-			} else {
-				bgTransition.value = p.transition || 'fade';
-				bgDuration.value = Number(p.duration_ms) || 400;
-				bgFromDirective.value = p.url || '';
-			}
-		} else if (d.directive_type === 'music') {
-			if (p.action === 'stop') {
-				if (backgroundMusic.value) {
-					backgroundMusic.value.pause();
-					backgroundMusic.value.currentTime = 0;
-				}
-			} else if (p.url && backgroundMusic.value) {
-				backgroundMusic.value.src = BASE_URL + p.url;
-				backgroundMusic.value.volume = 0;
-				backgroundMusic.value.play().then(() => {
-					fadeBgmTo(bgmTargetVolume(), 600);
-				}).catch(() => {});
-			}
-		} else if (d.directive_type === 'sound' && p.url) {
-			const a = new Audio(BASE_URL + p.url);
-			a.volume = 1;
-			a.play().catch(() => {});
-		} else if (d.directive_type === 'wait') {
-			waitMs += Math.max(0, Number(p.ms) || 0);
-		} else if (d.directive_type === 'effect') {
-			lastEffect = p;
-		} else if (d.directive_type === 'stage') {
-			// 节点级舞台层显隐：背景 / 前景 / 对话框
-			const vis = { ...stageLayerVisible.value };
-			if (typeof p.background === 'boolean') vis.background = p.background;
-			if (typeof p.foreground === 'boolean') vis.foreground = p.foreground;
-			if (typeof p.dialogue === 'boolean') vis.dialogue = p.dialogue;
-			stageLayerVisible.value = vis;
-		}
-	}
-	stageAvatars.value = next;
-	if (lastEffect) triggerEffect(lastEffect);
-	if (waitMs) scheduleWait(waitMs);
-};
+// ==================== 演出指令应用 ====================
+// 指令解析以及舞台 / 音频副作用由 usePlayerDirectives 托管
+const { applyDirectives } = usePlayerDirectives({
+	getDirectivesByContent: () => directivesByContent.value,
+	stageAvatars,
+	stageLayerVisible,
+	fgFromDirective,
+	bgFromDirective,
+	bgTransition,
+	bgDuration,
+	getBackgroundMusic: () => backgroundMusic.value,
+	fadeBgmTo: (volume, duration) => fadeBgmTo(volume, duration),
+	getBgmTargetVolume: () => bgmTargetVolume(),
+	avatarLayersOf: (avatarId) => avatarLayersOf(avatarId),
+	defaultAvatarLayersOf: (characterId) => defaultAvatarLayersOf(characterId),
+	triggerEffect: (payload) => triggerEffect(payload),
+	scheduleWait: (ms) => scheduleWait(ms),
+});
 
 // 应用到新对话时，若还在加载或指令尚未拉回，等完成后自动重试
 watch(
