@@ -21,6 +21,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* 隐藏的音频播放器（BGM / 角色语音只负责播放，不进画面） */
+.hidden-audio {
+  display: none;
+}
+
 /* ---- 播放器皮肤预设 ---- */
 .export-project-container.theme-sakura {
   --ui-page-bg: #fff1f4;

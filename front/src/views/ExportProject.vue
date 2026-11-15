@@ -69,210 +69,109 @@
 			@close="debugPanelVisible = false"
 		/>
 
-		<!-- 预览区域 -->
-		<div class="preview-panel">
-			<!-- 背景音乐播放器 -->
-			<audio 
-				ref="backgroundMusic"
-				:src="currentScene.music_url ? BASE_URL + currentScene.music_url : ''" 
-				loop
-				class="hidden-audio"
-			>你的浏览器不支持音频播放</audio>
+		<!-- 背景音乐播放器 -->
+		<audio 
+			ref="backgroundMusic"
+			:src="currentScene.music_url ? BASE_URL + currentScene.music_url : ''" 
+			loop
+			class="hidden-audio"
+		>你的浏览器不支持音频播放</audio>
 
-			<!-- 角色语音播放器（隐藏，仅承载播放与闪避状态） -->
-			<audio
-				v-if="currentDialogue?.voice_url && playerSettings.voiceEnabled"
-				ref="dialogueVoice"
-				:src="BASE_URL + currentDialogue.voice_url"
-				controls
-				autoplay
-				class="hidden-audio"
-				@play="onVoicePlay"
-				@ended="onVoiceEnded"
-				@pause="onVoiceEnded"
-			>你的浏览器不支持音频播放</audio>
-			
-			<!-- 预览容器 -->
-			<div
-				class="preview-container"
-				:class="{
-					'fx-shake': activeEffect && activeEffect.effect === 'shake',
-					'is-audio-drama': playerSettings.audioDrama
-				}"
-				:style="{ '--fx-amp': (activeEffect && activeEffect.intensity ? activeEffect.intensity : 5) + 'px' }"
-				@wheel.prevent="handleWheel"
+		<!-- 角色语音播放器（隐藏，仅承载播放与闪避状态） -->
+		<audio
+			v-if="currentDialogue?.voice_url && playerSettings.voiceEnabled"
+			ref="dialogueVoice"
+			:src="BASE_URL + currentDialogue.voice_url"
+			controls
+			autoplay
+			class="hidden-audio"
+			@play="onVoicePlay"
+			@ended="onVoiceEnded"
+			@pause="onVoiceEnded"
+		>你的浏览器不支持音频播放</audio>
+
+		<!-- 预览区域：背景 / 立绘 / 演出效果（浮层由插槽投放） -->
+		<PlayerPreviewStage
+			:language="playerSettings.language"
+			:bg-src="bgShown"
+			:bg-fading="bgFading"
+			:bg-blackout="bgBlackout"
+			:stage-layers="stageLayers"
+			:has-stage-avatars="hasStageAvatars"
+			:preview-avatar-layers="previewAvatarLayers"
+			:fg-src="fgShown"
+			:fg-fading="fgFading"
+			:show-foreground="stageLayerVisible.foreground !== false"
+			:active-effect="activeEffect"
+			:is-waiting="isWaiting"
+			:variable-notices="variableNotices"
+			:audio-drama="playerSettings.audioDrama"
+			:sprite-motion="playerSettings.spriteMotion"
+			:loading="loading"
+			:error="error"
+			@background-click="onDialogueClick"
+			@wheel-up="onWheelUp"
+			@back-home="backToHome"
+		>
+			<!-- 历史对话弹窗 -->
+			<div 
+				v-if="showHistoryDialogue" 
+				class="history-dialogue-container"
+				@click="toggleHistoryDialogue"
 			>
-				<!-- 背景图（切图时先淡出、换图后再淡入） -->
-				<div class="scene-background" @click="onDialogueClick">
-					<img 
-						:src="bgShown" 
-						alt="场景背景" 
-						class="background-image"
-						:class="{ 'bg-fading': bgFading }"
-						decoding="async"
-					/>
-				</div>
-
-				<!-- 黑场转场遮罩 -->
-				<div class="bg-blackout" :class="{ 'is-on': bgBlackout }"></div>
-				
-				<!-- 演出指令控制的立绘：任意数量图层，按 order 叠放；每层可带差分叠加图 -->
-				<div v-if="hasStageAvatars" class="stage-layer">
-						<div
-							v-for="layer in stageLayers"
-							:key="layer.layer_id"
-							v-show="layer.visible !== false"
-							class="stage-avatar"
-							:style="layer.boxStyle"
+				<div class="history-dialogue-content">
+					<div class="history-header">
+						<h3>{{ t('history.title') }}</h3>
+						<el-icon @click.stop="toggleHistoryDialogue" class="close-btn">
+							<CloseBold />
+						</el-icon>
+					</div>
+					<div class="history-scroll-area">
+						<div 
+							v-for="(dialogue, index) in filteredHistoryDialogues" 
+							:key="index" 
+							class="history-item"
 						>
-							<div
-								class="sprite-stack"
-								:style="layer.style"
-								:class="{ 'sprite-motion': playerSettings.spriteMotion }"
-							>
-								<img
-									v-for="(src, si) in (layer.sources && layer.sources.length ? layer.sources : [layer.src])"
-									:key="si"
-									:src="src"
-									:class="{ 'sprite-overlay': si > 0 }"
-									alt=""
-									decoding="async"
-								/>
-							</div>
-						</div>
-					</div>
-
-				<!-- 回退：没有演出指令时，显示当前（或最近一位）说话角色的立绘 -->
-					<div v-else-if="!loading && !error && previewAvatarLayers.length" class="character-stand">
-						<div class="sprite-stack" :class="{ 'sprite-motion': playerSettings.spriteMotion }">
-							<img
-								v-for="(src, si) in previewAvatarLayers"
-								:key="si"
-								:src="src"
-								alt="角色立绘"
-								class="character-image"
-								:class="{ 'sprite-overlay': si > 0 }"
-								loading="lazy"
-								decoding="async"
-								@error="hideBrokenImage"
-							/>
-						</div>
-					</div>
-
-					<!-- 演出指令：前景图层（覆盖在立绘之上、对话框之下） -->
-					<div v-if="fgShown && stageLayerVisible.foreground !== false" class="stage-foreground">
-						<img
-							:src="fgShown"
-							alt=""
-							:class="{ 'fg-fading': fgFading }"
-							decoding="async"
-						/>
-					</div>
-
-				<!-- 演出效果：天气覆盖层 / 闪光 -->
-				<div
-					v-if="activeEffect && activeEffect.effect === 'weather'"
-					class="fx-weather"
-					:class="'fx-' + (activeEffect.weather || 'rain')"
-				></div>
-				<div
-					v-if="activeEffect && activeEffect.effect === 'flash'"
-					:key="activeEffect.key"
-					class="fx-flash"
-					:style="{ background: activeEffect.color || '#ffffff', animationDuration: activeEffect.duration_ms + 'ms' }"
-				></div>
-				
-				<!-- 演出「停顿」指令生效时的提示 -->
-				<div v-if="isWaiting && !loading && !error" class="wait-hint">
-					<span></span><span></span><span></span>
-				</div>
-
-				<!-- 变量变化提示：好感度 +5 / 线索 +1 -->
-				<div v-if="variableNotices.length" class="var-notice-layer">
-					<div
-						v-for="n in variableNotices"
-						:key="n.id"
-						:class="['var-notice', { 'is-down': n.delta < 0 }]"
-					>
-						<span class="var-notice-icon">{{ n.delta > 0 ? '♥' : '−' }}</span>
-						<span class="var-notice-label">{{ n.label }}</span>
-						<span class="var-notice-delta">{{ n.delta > 0 ? '+' + n.delta : n.delta }}</span>
-					</div>
-				</div>
-
-				<!-- 加载状态 -->
-				<div v-if="loading" class="loading-indicator">
-					<span class="ui-spinner ui-spinner-lg"></span>
-					<p>{{ t('common.loading') }}</p>
-				</div>
-				
-				<!-- 错误信息 -->
-				<div v-if="error" class="error-message">
-					<el-icon color="#F56C6C" size="24"><WarningFilled /></el-icon>
-					<p>{{ t('common.error') }}: {{ error }}</p>
-					<el-button type="primary" size="small" @click="backToHome">{{ t('common.backToList') }}</el-button>
-				</div>
-				
-				<!-- 历史对话弹窗 -->
-				<div 
-					v-if="showHistoryDialogue" 
-					class="history-dialogue-container"
-					@click="toggleHistoryDialogue"
-				>
-					<div class="history-dialogue-content">
-						<div class="history-header">
-							<h3>{{ t('history.title') }}</h3>
-							<el-icon @click.stop="toggleHistoryDialogue" class="close-btn">
-								<CloseBold />
-							</el-icon>
-						</div>
-						<div class="history-scroll-area">
-							<div 
-								v-for="(dialogue, index) in filteredHistoryDialogues" 
-								:key="index" 
-								class="history-item"
-							>
-								<div v-if="historySceneTitle(dialogue)" class="history-scene">{{ historySceneTitle(dialogue) }}</div>
-								<span class="history-character">{{ getCharacterName(dialogue.character_id) }}</span>
-								<span class="history-text">{{ localizedText(dialogue) }}</span>
-								<div v-if="dialogue.chosen" class="history-chosen">{{ t('history.choiceLabel') }}{{ historyChoiceText(dialogue) }}</div>
-							</div>
+							<div v-if="historySceneTitle(dialogue)" class="history-scene">{{ historySceneTitle(dialogue) }}</div>
+							<span class="history-character">{{ getCharacterName(dialogue.character_id) }}</span>
+							<span class="history-text">{{ localizedText(dialogue) }}</span>
+							<div v-if="dialogue.chosen" class="history-chosen">{{ t('history.choiceLabel') }}{{ historyChoiceText(dialogue) }}</div>
 						</div>
 					</div>
 				</div>
-				
-				<!-- 对话显示区域（含选项与功能键） -->
-				<PlayerDialogueBox
-					:language="playerSettings.language"
-					:visible="!loading && !error && showDialogueBox && stageLayerVisible.dialogue !== false"
-					:has-line="currentDialogueIndex < currentSceneDialogues.length"
-					:scene-ended="currentDialogueIndex >= currentSceneDialogues.length && currentSceneDialogues.length > 0"
-					:no-dialogues="currentSceneDialogues.length === 0"
-					:content-type="currentDialogue?.content_type || ''"
-					:box-style="playerSettings.boxStyle || 'classic'"
-					:font-size="playerSettings.fontSize"
-					:line-height="playerSettings.lineHeight"
-					:character-name="getCharacterName(currentDialogue?.character_id)"
-					:text-html="displayedHtml"
-					:avatar-src="previewAvatarSrc"
-					:show-voice-button="!!(currentDialogue?.voice_url && playerSettings.voiceEnabled)"
-					:auto-play="autoPlay"
-					:show-reveal-button="!loading && !error && !showDialogueBox && stageLayerVisible.dialogue !== false"
-					:choices="dialogueChoiceViews"
-					@advance="onDialogueClick"
-					@replay-voice="replayVoice"
-					@select-choice="handleChoiceSelect"
-					@history="toggleHistoryDialogue"
-					@toggle-box="toggleDialogueBox"
-					@skip="skipToNextScene"
-					@toggle-auto="toggleAutoPlay"
-					@restart="restartGame"
-					@save="openSaveDialog"
-					@exit="exitGame"
-					@reveal-box="toggleDialogueBox"
-				/>
 			</div>
-		</div>
+			
+			<!-- 对话显示区域（含选项与功能键） -->
+			<PlayerDialogueBox
+				:language="playerSettings.language"
+				:visible="!loading && !error && showDialogueBox && stageLayerVisible.dialogue !== false"
+				:has-line="currentDialogueIndex < currentSceneDialogues.length"
+				:scene-ended="currentDialogueIndex >= currentSceneDialogues.length && currentSceneDialogues.length > 0"
+				:no-dialogues="currentSceneDialogues.length === 0"
+				:content-type="currentDialogue?.content_type || ''"
+				:box-style="playerSettings.boxStyle || 'classic'"
+				:font-size="playerSettings.fontSize"
+				:line-height="playerSettings.lineHeight"
+				:character-name="getCharacterName(currentDialogue?.character_id)"
+				:text-html="displayedHtml"
+				:avatar-src="previewAvatarSrc"
+				:show-voice-button="!!(currentDialogue?.voice_url && playerSettings.voiceEnabled)"
+				:auto-play="autoPlay"
+				:show-reveal-button="!loading && !error && !showDialogueBox && stageLayerVisible.dialogue !== false"
+				:choices="dialogueChoiceViews"
+				@advance="onDialogueClick"
+				@replay-voice="replayVoice"
+				@select-choice="handleChoiceSelect"
+				@history="toggleHistoryDialogue"
+				@toggle-box="toggleDialogueBox"
+				@skip="skipToNextScene"
+				@toggle-auto="toggleAutoPlay"
+				@restart="restartGame"
+				@save="openSaveDialog"
+				@exit="exitGame"
+				@reveal-box="toggleDialogueBox"
+			/>
+		</PlayerPreviewStage>
 
 		<!-- 达成结局 -->
 		<PlayerEndingDialog
@@ -366,7 +265,6 @@ import { updateScene } from '@/api/scenes'
 import { listPublicReleases } from '@/api/release'
 import { unlockMusic } from '@/api/gallery'
 import { themeClass } from '@/utils/uiThemes'
-import { hideBrokenImage } from '@/utils/dom'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
@@ -404,6 +302,7 @@ import PlayerStatusDialog from '@/components/player/PlayerStatusDialog.vue'
 import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
 import PlayerDialogueBox from '@/components/player/PlayerDialogueBox.vue'
+import PlayerPreviewStage from '@/components/player/PlayerPreviewStage.vue'
 import PlayerEntryBar from '@/components/player/PlayerEntryBar.vue'
 import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
 import PlayerDebugPanel from '@/components/player/PlayerDebugPanel.vue'
@@ -1363,10 +1262,9 @@ const {
 	projectId: () => Number(props.projectId),
 });
 
-// 处理鼠标滚轮事件
-const handleWheel = (e) => {
-	// 向上滚动且不在自动播放状态时显示历史对话
-	if (e.deltaY < 0 && !autoPlay.value) {
+// 舞台上滑（子组件已判定方向）：不在自动播放状态时唤出历史对话
+const onWheelUp = () => {
+	if (!autoPlay.value) {
 		toggleHistoryDialogue();
 	}
 };
@@ -1474,6 +1372,5 @@ const backToHome = () => {
 </script>
 
 <style scoped src="./player/playerShell.css"></style>
-<style scoped src="./player/playerStage.css"></style>
 <style scoped src="./player/playerDialogue.css"></style>
 <style scoped src="./player/playerResponsive.css"></style>

@@ -1,18 +1,6 @@
 
 /* 响应式调整 */
-@media (max-width: 1200px) {
-  .character-stand {
-    left: 20px;
-    height: 70%;
-  }
-}
-
 @media (max-width: 768px) {
-  .character-stand {
-    left: 10px;
-    height: 60%;
-  }
-
   .gallery-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     max-height: 52vh;
