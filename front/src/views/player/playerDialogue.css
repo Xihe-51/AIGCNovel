@@ -313,34 +313,6 @@
   }
 }
 
-/* 功能按钮区域 */
-.function-buttons {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  display: flex;
-  gap: 10px;
-  z-index: 4;
-}
-
-.func-btn {
-  width: 30px;
-  height: 30px;
-  color: #d81f37;
-  cursor: pointer;
-  transition: all 0.2s;
-  background-color: rgba(255, 255, 255, 0.8);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.func-btn:hover {
-  transform: scale(1.1);
-  color: #ff6b8b;
-}
-
 /* 显示对话框按钮（当对话框隐藏时） */
 .show-dialogue-btn {
   position: absolute;

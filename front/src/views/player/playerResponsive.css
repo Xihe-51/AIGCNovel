@@ -36,18 +36,6 @@
     right: 100px;
   }
   
-  /* 触控目标不小于 40px */
-  .func-btn {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-
-  .function-buttons {
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
   .player-settings-btn {
     top: 10px;
     right: 10px;

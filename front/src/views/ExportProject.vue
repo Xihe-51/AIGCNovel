@@ -460,146 +460,47 @@
 							</button>
 						</div>
 						
-						<!-- 功能按钮区 -->
-						<div class="function-buttons">
-							<el-tooltip :content="t('tooltip.history')" placement="top">
-								<el-icon @click.stop="toggleHistoryDialogue" class="func-btn">
-									<Search />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.hideBox')" placement="top">
-								<el-icon @click.stop="toggleDialogueBox" class="func-btn">
-									<Hide />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.skip')" placement="top">
-								<el-icon @click.stop="skipToNextScene" class="func-btn">
-									<DArrowRight />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="autoPlay ? t('tooltip.autoOff') : t('tooltip.autoOn')" placement="top">
-								<el-icon @click.stop="toggleAutoPlay" class="func-btn">
-									<VideoPlay />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.restart')" placement="top">
-								<el-icon @click.stop="restartGame" class="func-btn">
-									<SwitchButton />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.saveProgress')" placement="top">
-								<el-icon @click.stop="openSaveDialog" class="func-btn save-func-btn">
-									<DocumentAdd />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.exitGame')" placement="top">
-								<el-icon @click.stop="exitGame" class="func-btn">
-									<CloseBold />
-								</el-icon>
-							</el-tooltip>
-						</div>
+						<PlayerFunctionButtons
+							:language="playerSettings.language"
+							:auto-play="autoPlay"
+							@history="toggleHistoryDialogue"
+							@toggle-box="toggleDialogueBox"
+							@skip="skipToNextScene"
+							@toggle-auto="toggleAutoPlay"
+							@restart="restartGame"
+							@save="openSaveDialog"
+							@exit="exitGame"
+						/>
 					</div>
 					
 					<!-- 场景对话结束，自动进入下一场景 -->
 					<div v-if="currentDialogueIndex >= currentSceneDialogues.length && currentSceneDialogues.length > 0" class="dialogue-end">
-						<!-- 功能按钮区 -->
-						<div class="function-buttons">
-							<el-tooltip :content="t('tooltip.history')" placement="top">
-								<el-icon @click.stop="toggleHistoryDialogue" class="func-btn">
-									<Search />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.hideBox')" placement="top">
-								<el-icon @click.stop="toggleDialogueBox" class="func-btn">
-									<Hide />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.skip')" placement="top">
-								<el-icon @click.stop="skipToNextScene" class="func-btn">
-									<DArrowRight />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="autoPlay ? t('tooltip.autoOff') : t('tooltip.autoOn')" placement="top">
-								<el-icon @click.stop="toggleAutoPlay" class="func-btn">
-									<VideoPlay />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.restart')" placement="top">
-								<el-icon @click.stop="restartGame" class="func-btn">
-									<SwitchButton />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.saveProgress')" placement="top">
-								<el-icon @click.stop="openSaveDialog" class="func-btn save-func-btn">
-									<DocumentAdd />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.exitGame')" placement="top">
-								<el-icon @click.stop="exitGame" class="func-btn">
-									<CloseBold />
-								</el-icon>
-							</el-tooltip>
-						</div>
+						<PlayerFunctionButtons
+							:language="playerSettings.language"
+							:auto-play="autoPlay"
+							@history="toggleHistoryDialogue"
+							@toggle-box="toggleDialogueBox"
+							@skip="skipToNextScene"
+							@toggle-auto="toggleAutoPlay"
+							@restart="restartGame"
+							@save="openSaveDialog"
+							@exit="exitGame"
+						/>
 					</div>
 					
 					<!-- 场景无对话，自动进入下一场景 -->
 					<div v-if="currentSceneDialogues.length === 0" class="no-dialogues-preview">
-						<!-- 功能按钮区 -->
-						<div class="function-buttons">
-							<el-tooltip :content="t('tooltip.history')" placement="top">
-								<el-icon @click.stop="toggleHistoryDialogue" class="func-btn">
-									<Search />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.hideBox')" placement="top">
-								<el-icon @click.stop="toggleDialogueBox" class="func-btn">
-									<Hide />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.skip')" placement="top">
-								<el-icon @click.stop="skipToNextScene" class="func-btn">
-									<DArrowRight />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="autoPlay ? t('tooltip.autoOff') : t('tooltip.autoOn')" placement="top">
-								<el-icon @click.stop="toggleAutoPlay" class="func-btn">
-									<VideoPlay />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.restart')" placement="top">
-								<el-icon @click.stop="restartGame" class="func-btn">
-									<SwitchButton />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.saveProgress')" placement="top">
-								<el-icon @click.stop="openSaveDialog" class="func-btn save-func-btn">
-									<DocumentAdd />
-								</el-icon>
-							</el-tooltip>
-							
-							<el-tooltip :content="t('tooltip.exitGame')" placement="top">
-								<el-icon @click.stop="exitGame" class="func-btn">
-									<CloseBold />
-								</el-icon>
-							</el-tooltip>
-						</div>
+						<PlayerFunctionButtons
+							:language="playerSettings.language"
+							:auto-play="autoPlay"
+							@history="toggleHistoryDialogue"
+							@toggle-box="toggleDialogueBox"
+							@skip="skipToNextScene"
+							@toggle-auto="toggleAutoPlay"
+							@restart="restartGame"
+							@save="openSaveDialog"
+							@exit="exitGame"
+						/>
 					</div>
 				</div>
 				
@@ -742,6 +643,7 @@ import PlayerEndingDialog from '@/components/player/PlayerEndingDialog.vue'
 import PlayerStatusDialog from '@/components/player/PlayerStatusDialog.vue'
 import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
+import PlayerFunctionButtons from '@/components/player/PlayerFunctionButtons.vue'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
@@ -749,13 +651,7 @@ import {
 import { 
   WarningFilled,
   View,
-  Hide,
-  DArrowRight,
-  VideoPlay,
-  DocumentAdd,
   CloseBold,
-  SwitchButton,
-  Search,  // 新增引入搜索图标
   Setting,
   DataLine,
   Picture,
