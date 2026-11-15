@@ -257,6 +257,7 @@ import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerPositionEffects } from '@/composables/player/usePlayerPositionEffects'
 import { usePlayerOwnership } from '@/composables/player/usePlayerOwnership'
 import { usePlayerChangelog } from '@/composables/player/usePlayerChangelog'
+import { usePlayerDevProbe } from '@/composables/player/usePlayerDevProbe'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
@@ -777,33 +778,26 @@ const {
 	skipReadEnabled: () => !!playerSettings.value.skipRead,
 });
 
-// 调试探针（仅开发环境，便于无头浏览器排查）
-if (import.meta.env.DEV && typeof window !== 'undefined') {
-	window.__aigcPlayerDebug = () => ({
-		readCount: readSet.value.size,
-		readIds: [...readSet.value],
-		skipRead: playerSettings.value.skipRead,
-		currentId: currentDialogue.value?.content_id,
-		shouldSkip: shouldSkipCurrent(),
-		isTyping: isTyping.value,
-		endingsCount: endings.value.length,
-		endingVisible: endingDialogVisible.value,
-		triggered: [...triggeredEndings.value],
-		variables: variableValues.value,
-		coverage: {
-			...coverageStats.value,
-			visitedNodes: [...visitedContents.value],
-			visitedEdges: [...visitedEdges.value],
-		},
-		perform: {
-			currentUserId,
-			projectOwnerId: projectOwnerId.value,
-			canPerform: canPerform.value,
-			performMode: performMode.value,
-			queryEdit: route.query.edit,
-		},
-	});
-}
+// 调试探针（仅开发环境，便于无头浏览器排查）：挂载与快照结构由 usePlayerDevProbe 自管
+usePlayerDevProbe({
+	getReadSet: () => readSet.value,
+	getSkipRead: () => playerSettings.value.skipRead,
+	getCurrentContentId: () => currentDialogue.value?.content_id,
+	shouldSkipCurrent: () => shouldSkipCurrent(),
+	getIsTyping: () => isTyping.value,
+	getEndingsCount: () => endings.value.length,
+	getEndingVisible: () => endingDialogVisible.value,
+	getTriggeredEndings: () => triggeredEndings.value,
+	getVariableValues: () => variableValues.value,
+	getCoverageStats: () => coverageStats.value,
+	getVisitedNodes: () => visitedContents.value,
+	getVisitedEdges: () => visitedEdges.value,
+	getCurrentUserId: () => currentUserId,
+	getProjectOwnerId: () => projectOwnerId.value,
+	getCanPerform: () => canPerform.value,
+	getPerformMode: () => performMode.value,
+	getQueryEdit: () => route.query.edit,
+});
 
 // ==================== 项目变量 ====================
 // 变量定义/取值/持久化/行为变量在 usePlayerVariables 内，
