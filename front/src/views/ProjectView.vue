@@ -540,10 +540,7 @@
                 <el-table-column prop="title" label="标题" min-width="130" />
                 <el-table-column label="解锁条件" min-width="180">
                   <template #default="{ row }">
-                    <span v-if="row.unlock_ending_id">
-                      达成结局「{{ row.unlock_ending_title || ('#' + row.unlock_ending_id) }}」
-                    </span>
-                    <span v-else>初始可见</span>
+                    <span>{{ describeCgUnlock(row) }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="description" label="说明" min-width="150" />
@@ -611,7 +608,6 @@ import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
 import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
 import { getScenes } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
-import { listCGs, createCG, updateCG, deleteCG } from '@/api/cg'
 import { BASE_URL } from '@/utils/request'
 import defaultAvatarImg from '@/assets/default.jpg'
 import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
@@ -625,6 +621,7 @@ import ProjectLayerDialog from '@/components/project/ProjectLayerDialog.vue'
 import { useProjectCutout } from '@/composables/project/useProjectCutout'
 import { useProjectVariables } from '@/composables/project/useProjectVariables'
 import { useProjectEndings } from '@/composables/project/useProjectEndings'
+import { useProjectCgs } from '@/composables/project/useProjectCgs'
 
 // 接口定义保持不变
 interface Project {
@@ -774,13 +771,24 @@ export default defineComponent({
       formatEndingConditions,
     } = useProjectEndings({ projectId: () => Number(props.projectId) })
 
-    // CG 图鉴
-    const cgs = ref<any[]>([])
-    const cgDialogVisible = ref(false)
-    const editingCGId = ref<number | null>(null)
-    const cgSaving = ref(false)
-    // 交给 CG 弹窗的初始行；null 表示新建
-    const cgInitial = ref<any | null>(null)
+    // CG 图鉴：列表读写、弹窗编排与解锁文案都在 useProjectCgs 内
+    const {
+      cgs,
+      cgDialogVisible,
+      editingCGId,
+      cgSaving,
+      cgInitial,
+      describeCgUnlock,
+      fetchCGs,
+      openCreateCG,
+      openEditCG,
+      handleSaveCG,
+      removeCG,
+    } = useProjectCgs({
+      projectId: () => Number(props.projectId),
+      // CG 弹窗的「解锁条件」下拉复用结局列表
+      ensureEndings: fetchEndings,
+    })
     const characterDrawerVisible = ref(false)
     const currentCharacter = ref<Character | null>(null)
     // 角色名译文：{ 'zh-TW': '…', en: '…', ja: '…' }
@@ -1144,65 +1152,6 @@ export default defineComponent({
       audio.play().catch(error => console.error("播放失败:", error))
     }
 
-    // ==================== CG 图鉴 ====================
-    const fetchCGs = async () => {
-      try {
-        cgs.value = await listCGs(Number(props.projectId))
-      } catch (e) {
-        console.warn('读取 CG 失败:', e)
-        cgs.value = []
-      }
-    }
-
-    const openCreateCG = async () => {
-      editingCGId.value = null
-      cgInitial.value = null
-      await fetchEndings()
-      cgDialogVisible.value = true
-    }
-
-    const openEditCG = async (row: any) => {
-      editingCGId.value = row.cg_id
-      await fetchEndings()
-      cgInitial.value = row
-      cgDialogVisible.value = true
-    }
-
-    // CG 弹窗自己处理上传与市场选图，这里只负责落库与刷新
-    const handleSaveCG = async ({ cgId, payload }: { cgId: number | null; payload: any }) => {
-      cgSaving.value = true
-      try {
-        if (cgId) {
-          await updateCG(Number(props.projectId), cgId, payload)
-          ElMessage.success('CG 已更新')
-        } else {
-          await createCG(Number(props.projectId), payload)
-          ElMessage.success('CG 已添加')
-        }
-        cgDialogVisible.value = false
-        await fetchCGs()
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.message || e?.message || '保存 CG 失败')
-      } finally {
-        cgSaving.value = false
-      }
-    }
-
-    const removeCG = async (row: any) => {
-      try {
-        await ElMessageBox.confirm(`删除 CG「${row.title}」？`, '删除 CG', {
-          confirmButtonText: '删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        })
-        await deleteCG(Number(props.projectId), row.cg_id)
-        ElMessage.success('CG 已删除')
-        await fetchCGs()
-      } catch (e) {
-        // 取消
-      }
-    }
-
     // ==================== 生命周期 ====================
     onUnmounted(() => {
       if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
@@ -1215,6 +1164,7 @@ export default defineComponent({
       totalDialogues.value = res?.length ?? 0
       await fetchVariables()
       await fetchEndings()
+      await fetchCGs()
     })
 
     return {
@@ -1226,7 +1176,7 @@ export default defineComponent({
       endings, endingDialogVisible, editingEndingId, endingSaving, endingInitial, nodeOptions,
       fetchEndings, openCreateEnding, openEditEnding, handleSaveEnding, removeEnding, nodeLabel, formatEndingConditions,
       cgs, cgDialogVisible, editingCGId, cgSaving, cgInitial,
-      fetchCGs, openCreateCG, openEditCG, handleSaveCG, removeCG,
+      fetchCGs, openCreateCG, openEditCG, handleSaveCG, removeCG, describeCgUnlock,
       characterDrawerVisible, currentCharacter, characterNameTranslations,
       TRANSLATION_LANGUAGES, avatarDialogVisible, newAvatar,
       selectedAvatar, cutoutLoadingId, cutoutBatchRunning,

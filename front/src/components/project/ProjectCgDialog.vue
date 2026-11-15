@@ -14,10 +14,16 @@
 					<img v-if="form.image_url" :src="BASE_URL + form.image_url" class="cg-thumb-lg" alt="CG 预览" />
 					<div v-else class="cg-thumb-lg cg-thumb-empty">未选择图片</div>
 					<div class="cg-image-actions">
-						<input ref="fileInput" type="file" accept="image/*" style="display: none" @change="onFileChange" />
-						<button type="button" class="action-btn" @click="pickFile" :disabled="uploading">
+						<label class="action-btn cg-upload-btn" :class="{ 'is-busy': uploading }">
 							{{ uploading ? '上传中…' : '上传本地图片' }}
-						</button>
+							<input
+								type="file"
+								accept="image/*"
+								class="cg-file-input"
+								:disabled="uploading"
+								@change="onFileChange"
+							/>
+						</label>
 						<button type="button" class="action-btn" @click="openMarket">从市场选 CG</button>
 					</div>
 				</div>
@@ -66,19 +72,21 @@ import { ElMessage } from 'element-plus'
 import { uploadSceneFile } from '@/api/scenes'
 import { searchResources, getResourceDetail } from '@/api/market'
 import { BASE_URL } from '@/utils/request'
+import type { CGPayload, ProjectCG } from '@/api/cg'
+import type { Ending } from '@/api/ending'
 
 const props = defineProps<{
 	visible: boolean
 	saving: boolean
 	editingId: number | null
-	initial: any | null
+	initial: ProjectCG | null
 	projectId: number
-	endings: any[]
+	endings: Ending[]
 }>()
 
 const emit = defineEmits<{
 	(e: 'update:visible', value: boolean): void
-	(e: 'save', payload: { cgId: number | null; payload: Record<string, any> }): void
+	(e: 'save', payload: { cgId: number | null; payload: CGPayload }): void
 }>()
 
 const visibleModel = computed({
@@ -86,9 +94,24 @@ const visibleModel = computed({
 	set: (value: boolean) => emit('update:visible', value),
 })
 
-const form = ref<any>({ title: '', description: '', image_url: '', resource_id: null, unlock_ending_id: null })
+interface CgForm {
+	title: string
+	description: string
+	image_url: string
+	resource_id: number | null
+	unlock_ending_id: number | null
+}
+
+const emptyForm = (): CgForm => ({
+	title: '',
+	description: '',
+	image_url: '',
+	resource_id: null,
+	unlock_ending_id: null,
+})
+
+const form = ref<CgForm>(emptyForm())
 const uploading = ref(false)
-const fileInput = ref<HTMLInputElement | null>(null)
 
 // 市场素材选择
 const marketVisible = ref(false)
@@ -109,13 +132,9 @@ watch(
 				resource_id: row.resource_id ?? null,
 				unlock_ending_id: row.unlock_ending_id ?? null
 			}
-			: { title: '', description: '', image_url: '', resource_id: null, unlock_ending_id: null }
+			: emptyForm()
 	}
 )
-
-const pickFile = () => {
-	fileInput.value?.click()
-}
 
 const onFileChange = async (event: Event) => {
 	const input = event.target as HTMLInputElement

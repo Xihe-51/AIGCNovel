@@ -203,6 +203,30 @@
   gap: 8px;
 }
 
+/* 上传按钮用 label 承载文件输入：输入铺满按钮保留真实点击区域与键盘可达性 */
+.cg-upload-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.cg-upload-btn.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.cg-file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* 近乎全透明：原生控件不可见，但仍留在可访问性树中，可被键盘与自动化命中 */
+  opacity: 0.01;
+  cursor: pointer;
+}
+
 /* 空态与提示 */
 .variables-tip {
   margin: 0;
