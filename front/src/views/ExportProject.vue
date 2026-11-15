@@ -724,6 +724,7 @@ import { usePlayerEnding } from '@/composables/player/usePlayerEnding'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
 import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import { usePlayerStage } from '@/composables/player/usePlayerStage'
+import { usePlayerStageFx } from '@/composables/player/usePlayerStageFx'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
 import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
@@ -1549,6 +1550,20 @@ watch([currentSceneIndex, currentDialogueIndex], () => {
 	}, 1500);
 });
 
+// ==================== 演出时序 ====================
+// 画面效果与「停顿」的定时器由 usePlayerStageFx 自管
+const {
+	activeEffect,
+	isWaiting,
+	triggerEffect,
+	clearEffect,
+	clearWait,
+	scheduleWait,
+	disposeStageFx,
+} = usePlayerStageFx({
+	scheduleAutoAdvance: () => scheduleAutoAdvance(),
+});
+
 /* ===== 节点演出指令（任意图层 / 背景切换 / 音效）===== */
 const {
 	stageAvatars,
@@ -1580,56 +1595,6 @@ const {
 		clearEffect();
 	},
 });
-
-/* ===== 画面效果（effect）===== */
-const activeEffect = ref(null);
-let effectTimer = null;
-
-const clearEffect = () => {
-	if (effectTimer) {
-		clearTimeout(effectTimer);
-		effectTimer = null;
-	}
-	activeEffect.value = null;
-};
-
-const triggerEffect = (p) => {
-	clearEffect();
-	if (!p) return;
-	const duration = Math.max(100, Number(p.duration_ms) || (p.effect === 'weather' ? 3000 : 400));
-	nextTick(() => {
-		activeEffect.value = { ...p, duration_ms: duration, key: Date.now() };
-		effectTimer = setTimeout(() => {
-			effectTimer = null;
-			activeEffect.value = null;
-		}, duration);
-	});
-};
-
-/* ===== 演出「停顿」（wait）===== */
-const isWaiting = ref(false);
-let waitTimer = null;
-
-const clearWait = () => {
-	if (waitTimer) {
-		clearTimeout(waitTimer);
-		waitTimer = null;
-	}
-	isWaiting.value = false;
-};
-
-/** 按毫秒数阻塞推进：停顿期间点击/自动播放都不生效，结束后恢复自动节奏 */
-const scheduleWait = (ms) => {
-	clearWait();
-	const delay = Math.max(0, Number(ms) || 0);
-	if (!delay) return;
-	isWaiting.value = true;
-	waitTimer = setTimeout(() => {
-		waitTimer = null;
-		isWaiting.value = false;
-		scheduleAutoAdvance();
-	}, delay);
-};
 
 // ==================== 演出指令应用 ====================
 // 指令解析以及舞台 / 音频副作用由 usePlayerDirectives 托管
@@ -1944,7 +1909,7 @@ onUnmounted(() => {
 		clearTimeout(autoSaveTimer);
 		autoSaveTimer = null;
 	}
-	clearEffect();
+	disposeStageFx();
 	clearStageTransitions();
 	stopBackgroundMusic();
 	stopGamepad();
