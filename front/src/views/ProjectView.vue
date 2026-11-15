@@ -611,8 +611,6 @@ import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
 import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
 import { getScenes } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
-import { getStoryGraph } from '@/api/branch'
-import { listEndings, createEnding, updateEnding, deleteEnding } from '@/api/ending'
 import { listCGs, createCG, updateCG, deleteCG } from '@/api/cg'
 import { BASE_URL } from '@/utils/request'
 import defaultAvatarImg from '@/assets/default.jpg'
@@ -626,6 +624,7 @@ import ProjectAssetDialog from '@/components/project/ProjectAssetDialog.vue'
 import ProjectLayerDialog from '@/components/project/ProjectLayerDialog.vue'
 import { useProjectCutout } from '@/composables/project/useProjectCutout'
 import { useProjectVariables } from '@/composables/project/useProjectVariables'
+import { useProjectEndings } from '@/composables/project/useProjectEndings'
 
 // 接口定义保持不变
 interface Project {
@@ -758,14 +757,22 @@ export default defineComponent({
       return characters.value.find(c => c.character_id === id)?.name || `#${id}`
     }
 
-    // 结局
-    const endings = ref<any[]>([])
-    const endingDialogVisible = ref(false)
-    const editingEndingId = ref<number | null>(null)
-    const endingSaving = ref(false)
-    const storyNodes = ref<any[]>([])
-    // 交给结局弹窗的初始行；null 表示新建
-    const endingInitial = ref<any | null>(null)
+    // 结局：列表读写、触发节点下拉与弹窗编排都在 useProjectEndings 内
+    const {
+      endings,
+      endingDialogVisible,
+      editingEndingId,
+      endingSaving,
+      endingInitial,
+      nodeOptions,
+      fetchEndings,
+      openCreateEnding,
+      openEditEnding,
+      handleSaveEnding,
+      removeEnding,
+      nodeLabel,
+      formatEndingConditions,
+    } = useProjectEndings({ projectId: () => Number(props.projectId) })
 
     // CG 图鉴
     const cgs = ref<any[]>([])
@@ -1135,92 +1142,6 @@ export default defineComponent({
     const startVoice = (voice_url: string) => {
       const audio = new Audio(BASE_URL + voice_url)
       audio.play().catch(error => console.error("播放失败:", error))
-    }
-
-    // ==================== 结局 ====================
-    const fetchEndings = async () => {
-      try {
-        endings.value = await listEndings(Number(props.projectId))
-      } catch (e) {
-        console.warn('读取结局失败:', e)
-        endings.value = []
-      }
-    }
-
-    const loadStoryNodes = async () => {
-      try {
-        const graph: any = await getStoryGraph(Number(props.projectId), false)
-        storyNodes.value = graph?.nodes || []
-      } catch (e) {
-        storyNodes.value = []
-      }
-    }
-
-    const nodeLabel = (contentId: number) => {
-      const node = storyNodes.value.find(n => n.content_id === contentId)
-      if (!node) return `#${contentId}`
-      const text = (node.content_text || '').replace(/\s+/g, ' ').slice(0, 16)
-      return `${node.scene_title || ''} · #${node.order_num} ${text}`
-    }
-
-    const formatEndingConditions = (conds: any[]) => {
-      if (!conds || !conds.length) return '无条件'
-      return conds.map(c => `${c.variable} ${c.op} ${c.value}`).join(' 且 ')
-    }
-
-    // 结局弹窗的触发节点下拉：节点 id → 可读标签
-    const nodeOptions = computed(() => storyNodes.value.map(n => ({
-      content_id: n.content_id,
-      label: nodeLabel(n.content_id),
-    })))
-
-    const openCreateEnding = async () => {
-      editingEndingId.value = null
-      endingInitial.value = null
-      await loadStoryNodes()
-      endingDialogVisible.value = true
-    }
-
-    const openEditEnding = async (row: any) => {
-      editingEndingId.value = row.ending_id
-      endingInitial.value = row
-      await loadStoryNodes()
-      endingDialogVisible.value = true
-    }
-
-    // 结局弹窗已完成校验，这里只负责落库与刷新
-    const handleSaveEnding = async ({ endingId, payload }: { endingId: number | null; payload: any }) => {
-      endingSaving.value = true
-      try {
-        if (endingId) {
-          await updateEnding(Number(props.projectId), endingId, payload)
-          ElMessage.success('结局已更新')
-        } else {
-          await createEnding(Number(props.projectId), payload)
-          ElMessage.success('结局已创建')
-        }
-        endingDialogVisible.value = false
-        await fetchEndings()
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.message || e?.message || '保存结局失败')
-      } finally {
-        endingSaving.value = false
-      }
-    }
-
-    const removeEnding = async (row: any) => {
-      try {
-        await ElMessageBox.confirm(`删除结局「${row.title}」？`, '删除结局', {
-          confirmButtonText: '删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        })
-        await deleteEnding(Number(props.projectId), row.ending_id)
-        ElMessage.success('结局已删除')
-        await fetchEndings()
-      } catch (e) {
-        // 取消
-      }
     }
 
     // ==================== CG 图鉴 ====================

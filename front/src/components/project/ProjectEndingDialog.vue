@@ -53,6 +53,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { EndingPayload } from '@/api/ending'
 
 interface NodeOption {
 	content_id: number
@@ -70,7 +71,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	(e: 'update:visible', value: boolean): void
-	(e: 'save', payload: { endingId: number | null; payload: Record<string, any> }): void
+	(e: 'save', payload: { endingId: number | null; payload: EndingPayload }): void
 }>()
 
 const visibleModel = computed({
