@@ -738,6 +738,7 @@ import { usePlayerVariables } from '@/composables/player/usePlayerVariables'
 import { usePlayerStage } from '@/composables/player/usePlayerStage'
 import { usePlayerDirectives } from '@/composables/player/usePlayerDirectives'
 import { usePlayerPreview } from '@/composables/player/usePlayerPreview'
+import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -907,8 +908,6 @@ const isPlaying = ref(true); // 默认自动播放
 const autoPlay = ref(false); // 始终自动播放
 const defaultBackground = ''; // 默认背景图
 const backgroundMusic = ref(null);
-// 自动播放定时器（组件卸载时必须清理，否则会操作已销毁的组件）
-let autoTimer = null;
 const showDialogueBox = ref(true); // 控制对话框显示/隐藏
 const showHistoryDialogue = ref(false); // 控制历史对话显示/隐藏
 const historyDialogues = ref([]); // 存储历史对话记录
@@ -1137,9 +1136,7 @@ const {
 	onSettingsChange: () => applyVolumes(),
 	onReset: () => startTyping(),
 });
-const displayedText = ref('');
 const dialogueVoice = ref(null);
-const isTyping = ref(false);
 
 // ==================== 界面文案与多语言 ====================
 // 文案挑选与译文回退由 usePlayerLocale 托管
@@ -1164,8 +1161,6 @@ const {
 // 对白富文本：纯文本用于逐字显示，HTML 用于渲染颜色/加粗/注音
 const richContent = computed(() => parseRichText(localizedText(currentDialogue.value)));
 const displayedHtml = computed(() => renderRichHtml(richContent.value, displayedText.value.length));
-let typingTimer = null;
-let typeIndex = 0;
 
 // 当前预览状态
 const currentSceneIndex = ref(0);
@@ -1240,12 +1235,7 @@ const {
 	bumpBehaviorReview: () => bumpBehaviorReview(),
 	clearWait: () => clearWait(),
 	clearTyping: () => clearTyping(),
-	resetAutoTimer: () => {
-		if (autoTimer) {
-			clearTimeout(autoTimer);
-			autoTimer = null;
-		}
-	},
+	resetAutoTimer: () => clearAutoTimer(),
 	markSkipRestoredLine: () => markSkipRestoredLine(),
 	startTyping: () => startTyping(),
 	applyVolumes: () => applyVolumes(),
@@ -1476,34 +1466,32 @@ const {
 })
 
 // ==================== 阅读设置 ====================
-// 逐字显示
+// 逐字显示屏、补全与自动前进排期由 usePlayerTypewriter 托管
 const fullText = () => localizedText(currentDialogue.value) || '';
 
-const clearTyping = () => {
-	if (typingTimer) {
-		clearInterval(typingTimer);
-		typingTimer = null;
-	}
-};
-
-const scheduleAutoAdvance = () => {
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
-	if (!autoPlay.value || !isPlaying.value || isTyping.value || isWaiting.value || currentChoices.value.length) return;
-	autoTimer = setTimeout(() => {
-		autoTimer = null;
-		nextDialogue();
-	}, Math.max(500, Number(playerSettings.value.autoDelay) * 1000));
-};
-
-const finishTyping = () => {
-	clearTyping();
-	displayedText.value = fullText();
-	isTyping.value = false;
-	scheduleAutoAdvance();
-};
+const {
+	displayedText,
+	isTyping,
+	clearTyping,
+	finishTyping,
+	typeOut,
+	scheduleAutoAdvance,
+	scheduleAutoAdvanceAfter,
+	clearAutoTimer,
+	disposeTypewriter,
+} = usePlayerTypewriter({
+	getFullText: () => fullText(),
+	getSpeed: () => Number(playerSettings.value.textSpeed),
+	canAutoAdvance: () => (
+		!!autoPlay.value
+		&& isPlaying.value
+		&& !isTyping.value
+		&& !isWaiting.value
+		&& !currentChoices.value.length
+	),
+	getAutoDelay: () => Number(playerSettings.value.autoDelay),
+	onAdvance: () => nextDialogue(),
+});
 
 // ==================== 已读记录 ====================
 const {
@@ -1636,10 +1624,7 @@ const debugJump = () => {
 		const di = list.findIndex(d => Number(d.content_id) === id);
 		if (di >= 0) {
 			clearWait();
-			if (autoTimer) {
-				clearTimeout(autoTimer);
-				autoTimer = null;
-			}
+			clearAutoTimer();
 			// 调试跳转是瞬移，清空旧的「上一句」快照
 			clearLineSnapshots();
 			currentSceneIndex.value = si;
@@ -1723,10 +1708,7 @@ const triggerEnding = async (ending) => {
 	currentEnding.value = ending;
 	endingDialogVisible.value = true;
 	clearTyping();
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
+	clearAutoTimer();
 	try {
 		await unlockEnding(Number(props.projectId), ending.ending_id);
 	} catch (e) {
@@ -1751,10 +1733,7 @@ const resetGame = () => {
 // 二周目：从头播放，但保留上一周目结束时的变量值
 const startNextPlaythrough = () => {
 	stopBackgroundMusic();
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
+	clearAutoTimer();
 	endingDialogVisible.value = false;
 	currentSceneIndex.value = 0;
 	currentDialogueIndex.value = 0;
@@ -1783,10 +1762,7 @@ const startTyping = () => {
 	// 到达结局节点且条件成立：弹结局页，不再继续打字
 	if (checkEndingForCurrent()) return;
 	clearTyping();
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
+	clearAutoTimer();
 
 	// 跳过已读：连续跳过已读节点，直到未读或遇到选择
 	if (!forceShowRestored && shouldSkipCurrent()) {
@@ -1805,26 +1781,7 @@ const startTyping = () => {
 		markHesitationStart(currentDialogue.value.content_id);
 	}
 
-	const full = fullText();
-	const speed = Number(playerSettings.value.textSpeed);
-	if (!full || speed === 0) {
-		displayedText.value = full;
-		isTyping.value = false;
-		scheduleAutoAdvance();
-		return;
-	}
-
-	const interval = speed === 1 ? 15 : speed === 2 ? 30 : 60;
-	displayedText.value = '';
-	isTyping.value = true;
-	typeIndex = 0;
-	typingTimer = setInterval(() => {
-		typeIndex += 1;
-		displayedText.value = full.slice(0, typeIndex);
-		if (typeIndex >= full.length) {
-			finishTyping();
-		}
-	}, interval);
+	typeOut();
 };
 
 // 文字速度变化时，当前句按新速度重新显示
@@ -2071,10 +2028,7 @@ const selectBranch = (branch) => {
 	// 活叙事：记录玩家在这个选择节点上犹豫的秒数
 	commitHesitation();
 	clearWait();
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
+	clearAutoTimer();
 	// 先取回退点，等确认分支可跳转后再入栈
 	const lineSnapshot = captureLineSnapshot();
 
@@ -2159,8 +2113,7 @@ const nextScene = () => {
 				
 				// 自动播放，继续自动前进
 				if (autoPlay.value) {
-					if (autoTimer) clearTimeout(autoTimer);
-					autoTimer = setTimeout(() => { autoTimer = null; autoAdvanceDialogue(); }, 1000);
+					scheduleAutoAdvanceAfter(1000);
 				}
 			}
 		});
@@ -2403,16 +2356,12 @@ onMounted(() => {
 
 // 组件卸载时清理定时器、音频与全局事件，避免内存泄漏与操作已销毁组件
 onUnmounted(() => {
-	clearTyping();
+	disposeTypewriter();
 	clearVariableNotices();
 	disposeReads();
 	if (autoSaveTimer) {
 		clearTimeout(autoSaveTimer);
 		autoSaveTimer = null;
-	}
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
 	}
 	clearEffect();
 	clearStageTransitions();
@@ -2426,10 +2375,7 @@ onUnmounted(() => {
 });
 
 const backToHome = () => {
-	if (autoTimer) {
-		clearTimeout(autoTimer);
-		autoTimer = null;
-	}
+	clearAutoTimer();
 	proxy?.$router?.push('/home');
 };
 </script>
