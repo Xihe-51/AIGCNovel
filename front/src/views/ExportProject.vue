@@ -386,8 +386,7 @@ const {
 	t: (key, params) => t(key, params),
 });
 
-const debugJumpId = ref('')
-// 条件调试器：变量变化历史 / 条件断点 / 状态快照 由 usePlayerDebugger 自管
+// 条件调试器：变量变化历史 / 条件断点 / 状态快照 / 热改与跳转 由 usePlayerDebugger 自管
 // 分支覆盖率：本轮试玩走过的节点/分支（仅调试模式记录）由 usePlayerCoverage 自管
 const {
 	storyGraph,
@@ -406,18 +405,22 @@ const {
 	getCurrentDialogue: () => currentDialogue.value,
 });
 
-// ===== 条件调试器：变量历史 / 条件断点 / 状态快照 =====
+// ===== 条件调试器：变量历史 / 条件断点 / 状态快照 / 热改与跳转 =====
 const {
 	variableHistory,
 	debugBreakpoint,
 	debugBreakpointHit,
 	debugSnapshots,
+	debugJumpId,
 	pushVariableHistory,
 	checkDebugBreakpoint,
 	loadDebugSnapshots,
 	saveDebugSnapshot,
 	restoreDebugSnapshot,
 	deleteDebugSnapshot,
+	setDebugVar,
+	debugJump,
+	debugJumpTo,
 } = usePlayerDebugger({
 	projectId: () => Number(props.projectId),
 	debugMode: () => debugMode.value,
@@ -427,15 +430,23 @@ const {
 	getSceneIndex: () => currentSceneIndex.value,
 	getDialogueIndex: () => currentDialogueIndex.value,
 	getVisited: () => [...visitedContents.value],
+	getScenes: () => scenes.value,
+	getDialogues: () => allDialogues.value,
 	evalSingleCondition: (condition) => evalSingleCondition(condition),
 	restoreVisited,
 	clearLineSnapshots: () => clearLineSnapshots(),
+	clearWait: () => clearWait(),
+	clearAutoTimer: () => clearAutoTimer(),
+	clampVariable: (v, value) => clampVariable(v, value),
+	syncProjectMeta: () => syncProjectMeta(),
 	startTyping: () => startTyping(),
 	setAutoPlay: (value) => { autoPlay.value = value },
 	setPanelVisible: (value) => { debugPanelVisible.value = value },
+	setDialogueBoxVisible: (value) => { showDialogueBox.value = value },
 	setSceneIndex: (value) => { currentSceneIndex.value = value },
 	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
 	setVariableValues: (value) => { variableValues.value = value },
+	t: (key, params) => t(key, params),
 });
 
 // ===== 试玩埋点（调试模式不记录，避免作者自己测试污染数据）=====
@@ -887,45 +898,6 @@ const { applyEffectsForCurrent, resetVariables } = usePlayerVariableEffects({
 	checkDebugBreakpoint: () => checkDebugBreakpoint(),
 	scheduleAchievementCheck: () => scheduleAchievementCheck(),
 });
-
-/* ===== 调试器：变量热改 / 任意节点跳转 ===== */
-const setDebugVar = (v, raw) => {
-	const next = Number(raw);
-	if (!Number.isFinite(next)) return;
-	const before = Number(variableValues.value[v.name] ?? v.initial_value);
-	const after = clampVariable(v, next);
-	variableValues.value = { ...variableValues.value, [v.name]: after };
-	if (before !== after) pushVariableHistory(v.label || v.name, before, after, '手动调试');
-	if (v.persist) syncProjectMeta();
-	checkDebugBreakpoint();
-};
-
-const debugJump = () => {
-	const id = Number(debugJumpId.value);
-	if (!id) return;
-	for (let si = 0; si < scenes.value.length; si++) {
-		const list = allDialogues.value[scenes.value[si].scene_id] || [];
-		const di = list.findIndex(d => Number(d.content_id) === id);
-		if (di >= 0) {
-			clearWait();
-			clearAutoTimer();
-			// 调试跳转是瞬移，清空旧的「上一句」快照
-			clearLineSnapshots();
-			currentSceneIndex.value = si;
-			currentDialogueIndex.value = di;
-			showDialogueBox.value = true;
-			nextTick(() => startTyping());
-			return;
-		}
-	}
-	ElMessage.warning(t('toast.nodeMissing', { id }));
-};
-
-// 覆盖率列表点节点：直接跳过去，顺便把它标记为已走
-const debugJumpTo = (contentId) => {
-	debugJumpId.value = String(contentId);
-	debugJump();
-};
 
 // ==================== 成就 ====================
 const {

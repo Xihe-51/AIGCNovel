@@ -15,17 +15,26 @@ function createDebugger(overrides: Partial<Parameters<typeof usePlayerDebugger>[
   const state = {
     debug: true,
     dialogue: { content_id: 10 } as any,
-    variables: [{ name: 'hp', label: '生命', initial_value: 100 }],
+    variables: [{ name: 'hp', label: '生命', initial_value: 100, max: 100 }],
     values: { hp: 80 } as Record<string, any>,
     sceneIndex: 1,
     dialogueIndex: 2,
     visited: [10, 11],
     conditionHit: true,
+    scenes: [{ scene_id: 1 }, { scene_id: 2 }],
+    dialogues: {
+      1: [{ content_id: 10 }, { content_id: 11 }],
+      2: [{ content_id: 20 }],
+    } as Record<string | number, any[]>,
     clearLineSnapshots: vi.fn(),
+    clearWait: vi.fn(),
+    clearAutoTimer: vi.fn(),
+    syncProjectMeta: vi.fn(),
     startTyping: vi.fn(),
     restoreVisited: vi.fn(),
     autoPlay: true,
     panelVisible: false,
+    dialogueBoxVisible: false,
   }
 
   const dbg = usePlayerDebugger({
@@ -37,15 +46,23 @@ function createDebugger(overrides: Partial<Parameters<typeof usePlayerDebugger>[
     getSceneIndex: () => state.sceneIndex,
     getDialogueIndex: () => state.dialogueIndex,
     getVisited: () => [...state.visited],
+    getScenes: () => state.scenes,
+    getDialogues: () => state.dialogues,
     evalSingleCondition: () => state.conditionHit,
     restoreVisited: (ids) => state.restoreVisited(ids),
     clearLineSnapshots: () => state.clearLineSnapshots(),
+    clearWait: () => state.clearWait(),
+    clearAutoTimer: () => state.clearAutoTimer(),
+    clampVariable: (variable, value) => Math.min(Number(variable.max ?? Infinity), Math.max(0, value)),
+    syncProjectMeta: () => state.syncProjectMeta(),
     startTyping: () => state.startTyping(),
     setAutoPlay: (value) => { state.autoPlay = value },
     setPanelVisible: (value) => { state.panelVisible = value },
+    setDialogueBoxVisible: (value) => { state.dialogueBoxVisible = value },
     setSceneIndex: (value) => { state.sceneIndex = value },
     setDialogueIndex: (value) => { state.dialogueIndex = value },
     setVariableValues: (value) => { state.values = value },
+    t: (key, params) => (params?.id ? `${key}:${params.id}` : key),
     ...overrides,
   })
 
@@ -211,5 +228,87 @@ describe('usePlayerDebugger', () => {
 
     expect(dbg.debugSnapshots.value).toEqual([])
     expect(JSON.parse(localStorage.getItem('aigc:debugSnapshots:7') || '[]')).toEqual([])
+  })
+
+  it('变量热改按定义截断并记录历史', () => {
+    const dbg = createDebugger()
+
+    dbg.setDebugVar(dbg.state.variables[0], '150')
+
+    expect(dbg.state.values.hp).toBe(100)
+    expect(dbg.variableHistory.value[0]).toMatchObject({
+      label: '生命',
+      from: 80,
+      to: 100,
+      reason: '手动调试',
+    })
+    expect(dbg.state.syncProjectMeta).not.toHaveBeenCalled()
+  })
+
+  it('变量热改忽略非数字输入', () => {
+    const dbg = createDebugger()
+
+    dbg.setDebugVar(dbg.state.variables[0], 'abc')
+
+    expect(dbg.state.values.hp).toBe(80)
+    expect(dbg.variableHistory.value).toEqual([])
+  })
+
+  it('落库变量热改后回写跨周目存档并检查断点', () => {
+    const dbg = createDebugger()
+    dbg.debugBreakpoint.value = { enabled: true, variable: 'hp', op: '<=', value: 60 }
+
+    dbg.setDebugVar({ ...dbg.state.variables[0], persist: true }, 40)
+
+    expect(dbg.state.values.hp).toBe(40)
+    expect(dbg.state.syncProjectMeta).toHaveBeenCalled()
+    expect(dbg.debugBreakpointHit.value).toBe('#10 生命 <= 60（当前 40）')
+    expect(ElMessage.warning).toHaveBeenCalledWith('条件断点命中：#10 生命 <= 60（当前 40）')
+  })
+
+  it('跳转到目标节点会清定时器与行快照并重开打字', async () => {
+    const dbg = createDebugger()
+    dbg.debugJumpId.value = '11'
+
+    dbg.debugJump()
+    await nextTick()
+
+    expect(dbg.state.clearWait).toHaveBeenCalled()
+    expect(dbg.state.clearAutoTimer).toHaveBeenCalled()
+    expect(dbg.state.clearLineSnapshots).toHaveBeenCalled()
+    expect(dbg.state.sceneIndex).toBe(0)
+    expect(dbg.state.dialogueIndex).toBe(1)
+    expect(dbg.state.dialogueBoxVisible).toBe(true)
+    expect(dbg.state.startTyping).toHaveBeenCalled()
+  })
+
+  it('跳转到不存在的节点会提示节点缺失且不改动位置', () => {
+    const dbg = createDebugger()
+    dbg.debugJumpId.value = '999'
+
+    dbg.debugJump()
+
+    expect(ElMessage.warning).toHaveBeenCalledWith('toast.nodeMissing:999')
+    expect(dbg.state.sceneIndex).toBe(1)
+    expect(dbg.state.startTyping).not.toHaveBeenCalled()
+  })
+
+  it('未填写节点 id 时不跳转也不提示', () => {
+    const dbg = createDebugger()
+
+    dbg.debugJump()
+
+    expect(dbg.state.startTyping).not.toHaveBeenCalled()
+    expect(ElMessage.warning).not.toHaveBeenCalled()
+  })
+
+  it('覆盖率点节点会写入 id 并立即跳转', () => {
+    const dbg = createDebugger()
+
+    dbg.debugJumpTo(20)
+
+    expect(dbg.debugJumpId.value).toBe('20')
+    expect(dbg.state.sceneIndex).toBe(1)
+    expect(dbg.state.dialogueIndex).toBe(0)
   })
 })

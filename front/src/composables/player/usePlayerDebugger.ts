@@ -1,5 +1,5 @@
 /**
- * 播放器条件调试器：变量变化历史、条件断点、状态快照。
+ * 播放器条件调试器：变量变化历史、条件断点、状态快照、变量热改与任意节点跳转。
  *
  * 所有播放器状态通过 getter/setter 适配器注入，composable 只负责调试数据的
  * 记录、持久化与快照恢复，不直接持有播放位置或变量系统。
@@ -19,15 +19,23 @@ export interface PlayerDebuggerContext {
   getSceneIndex: () => number
   getDialogueIndex: () => number
   getVisited: () => number[]
+  getScenes: () => any[]
+  getDialogues: () => Record<string | number, any[]>
   evalSingleCondition: (condition: any) => boolean
   restoreVisited: (ids: any[] | null | undefined) => void
   clearLineSnapshots: () => void
+  clearWait: () => void
+  clearAutoTimer: () => void
+  clampVariable: (variable: any, value: number) => number
+  syncProjectMeta: () => void
   startTyping: () => void
   setAutoPlay: (value: boolean) => void
   setPanelVisible: (value: boolean) => void
+  setDialogueBoxVisible: (value: boolean) => void
   setSceneIndex: (value: number) => void
   setDialogueIndex: (value: number) => void
   setVariableValues: (value: Record<string, any>) => void
+  t: (key: string, params?: Record<string, any>) => string
 }
 
 export function usePlayerDebugger(ctx: PlayerDebuggerContext) {
@@ -35,6 +43,7 @@ export function usePlayerDebugger(ctx: PlayerDebuggerContext) {
   const debugBreakpoint = ref<any>({ enabled: false, variable: '', op: '>=', value: 0 })
   const debugBreakpointHit = ref('')
   const debugSnapshots = ref<any[]>([])
+  const debugJumpId = ref('')
 
   const pushVariableHistory = (label: string, from: any, to: any, reason: string) => {
     if (!ctx.debugMode()) return
@@ -116,16 +125,62 @@ export function usePlayerDebugger(ctx: PlayerDebuggerContext) {
     persistDebugSnapshots()
   }
 
+  // 变量热改：越界值按定义截断，落库变量立即回写跨周目存档
+  const setDebugVar = (variable: any, raw: any) => {
+    const next = Number(raw)
+    if (!Number.isFinite(next)) return
+    const before = Number(ctx.getVariableValues()[variable.name] ?? variable.initial_value)
+    const after = ctx.clampVariable(variable, next)
+    ctx.setVariableValues({ ...ctx.getVariableValues(), [variable.name]: after })
+    if (before !== after) pushVariableHistory(variable.label || variable.name, before, after, '手动调试')
+    if (variable.persist) ctx.syncProjectMeta()
+    checkDebugBreakpoint()
+  }
+
+  // 任意节点跳转：按 content_id 在全部场景里定位，找不到时提示节点缺失
+  const debugJump = () => {
+    const id = Number(debugJumpId.value)
+    if (!id) return
+    const scenes = ctx.getScenes()
+    const dialogues = ctx.getDialogues()
+    for (let si = 0; si < scenes.length; si += 1) {
+      const list = dialogues[scenes[si].scene_id] || []
+      const di = list.findIndex((node: any) => Number(node.content_id) === id)
+      if (di >= 0) {
+        ctx.clearWait()
+        ctx.clearAutoTimer()
+        // 调试跳转是瞬移，清空旧的「上一句」快照
+        ctx.clearLineSnapshots()
+        ctx.setSceneIndex(si)
+        ctx.setDialogueIndex(di)
+        ctx.setDialogueBoxVisible(true)
+        nextTick(() => ctx.startTyping())
+        return
+      }
+    }
+    ElMessage.warning(ctx.t('toast.nodeMissing', { id }))
+  }
+
+  // 覆盖率列表点节点：直接跳过去
+  const debugJumpTo = (contentId: any) => {
+    debugJumpId.value = String(contentId)
+    debugJump()
+  }
+
   return {
     variableHistory,
     debugBreakpoint,
     debugBreakpointHit,
     debugSnapshots,
+    debugJumpId,
     pushVariableHistory,
     checkDebugBreakpoint,
     loadDebugSnapshots,
     saveDebugSnapshot,
     restoreDebugSnapshot,
     deleteDebugSnapshot,
+    setDebugVar,
+    debugJump,
+    debugJumpTo,
   }
 }
