@@ -60,147 +60,31 @@
 		<button v-if="debugMode && !loading && !error" class="player-debug-btn" @click="debugPanelVisible = !debugPanelVisible" title="调试器">
 			调试
 		</button>
-		<div v-if="debugMode && debugPanelVisible && !loading && !error" class="debug-panel">
-			<div class="debug-panel-head">
-				<span>调试器</span>
-				<button class="debug-close" @click="debugPanelVisible = false">×</button>
-			</div>
-			<div class="debug-pos">
-				场景 {{ currentSceneIndex + 1 }}/{{ scenes.length }} · 节点 #{{ currentDialogue?.content_id || '-' }}
-			</div>
-			<div class="debug-jump">
-				<input v-model="debugJumpId" type="number" placeholder="跳转到 content_id" />
-				<button @click="debugJump">跳转</button>
-			</div>
-			<div class="debug-vars">
-				<div v-for="v in projectVariables" :key="v.variable_id" class="debug-var">
-					<span class="debug-var-label">{{ v.label }}</span>
-					<span class="debug-var-key">{{ v.name }}</span>
-					<input
-						class="debug-var-input"
-						type="number"
-						:value="variableValues[v.name] ?? v.initial_value"
-						@change="setDebugVar(v, $event)"
-					/>
-				</div>
-				<div v-if="!projectVariables.length" class="debug-empty">项目还没有变量</div>
-			</div>
-
-			<!-- 条件断点 -->
-			<div class="debug-section">
-				<div class="debug-section-head">
-					<span>条件断点</span>
-					<button
-						type="button"
-						class="debug-mini-btn"
-						:class="{ 'is-on': debugBreakpoint.enabled }"
-						@click="debugBreakpoint = { ...debugBreakpoint, enabled: !debugBreakpoint.enabled }"
-					>
-						{{ debugBreakpoint.enabled ? '已开启' : '未开启' }}
-					</button>
-				</div>
-				<div class="debug-break-row">
-					<select v-model="debugBreakpoint.variable" class="debug-break-var">
-						<option value="">选择变量</option>
-						<option v-for="v in projectVariables" :key="v.variable_id" :value="v.name">{{ v.label }}</option>
-					</select>
-					<select v-model="debugBreakpoint.op" class="debug-break-op">
-						<option value=">">&gt;</option>
-						<option value=">=">≥</option>
-						<option value="<">&lt;</option>
-						<option value="<=">≤</option>
-						<option value="==">=</option>
-						<option value="!=">≠</option>
-					</select>
-					<input v-model.number="debugBreakpoint.value" type="number" class="debug-break-value" />
-				</div>
-				<div v-if="debugBreakpointHit" class="debug-break-hit">上次命中：{{ debugBreakpointHit }}</div>
-			</div>
-
-			<!-- 变量历史 -->
-			<div class="debug-section">
-				<div class="debug-section-head">
-					<span>变量历史</span>
-					<button type="button" class="debug-mini-btn" @click="variableHistory = []">清空</button>
-				</div>
-				<div class="debug-history">
-					<div v-for="h in variableHistory.slice(0, 12)" :key="h.id" class="debug-history-item">
-						<span class="debug-history-time">{{ h.at }}</span>
-						<span class="debug-history-text">{{ h.label }} {{ h.from }}→{{ h.to }}</span>
-						<span class="debug-history-reason">{{ h.reason }}</span>
-					</div>
-					<div v-if="!variableHistory.length" class="debug-empty">还没有变量变化</div>
-				</div>
-			</div>
-
-			<!-- 状态快照 -->
-			<div class="debug-section">
-				<div class="debug-section-head">
-					<span>状态快照</span>
-					<button type="button" class="debug-mini-btn" @click="saveDebugSnapshot">保存快照</button>
-				</div>
-				<div class="debug-snapshots">
-					<div v-for="s in debugSnapshots" :key="s.id" class="debug-snapshot-item">
-						<span class="debug-snapshot-title">{{ s.time }} · #{{ s.node || '-' }}</span>
-						<button type="button" class="debug-mini-btn" @click="restoreDebugSnapshot(s)">恢复</button>
-						<button type="button" class="debug-mini-btn danger" @click="deleteDebugSnapshot(s.id)">删</button>
-					</div>
-					<div v-if="!debugSnapshots.length" class="debug-empty">最多保存 5 个快照</div>
-				</div>
-			</div>
-
-			<!-- 覆盖率：本轮试玩走过的节点 / 分支 -->
-			<div class="debug-coverage">
-				<div class="debug-coverage-head">
-					<span>覆盖率</span>
-					<button type="button" class="debug-coverage-reset" @click="resetCoverage">重置</button>
-				</div>
-				<div class="debug-coverage-row">
-					<span>节点</span>
-					<span>{{ coverageStats.nodeVisited }} / {{ coverageStats.nodeTotal }}（{{ coverageStats.nodePct }}%）</span>
-				</div>
-				<div class="debug-bar">
-					<div class="debug-bar-fill nodes" :style="{ width: coverageStats.nodePct + '%' }"></div>
-				</div>
-				<div class="debug-coverage-row">
-					<span>分支</span>
-					<span>{{ coverageStats.edgeVisited }} / {{ coverageStats.edgeTotal }}（{{ coverageStats.edgePct }}%）</span>
-				</div>
-				<div class="debug-bar">
-					<div class="debug-bar-fill edges" :style="{ width: coverageStats.edgePct + '%' }"></div>
-				</div>
-
-				<div class="debug-uncovered">
-					<div class="debug-uncovered-title">未走到节点（{{ uncoveredNodes.length }}）</div>
-					<div class="debug-uncovered-list">
-						<div
-							v-for="n in uncoveredNodes.slice(0, 40)"
-							:key="n.content_id"
-							class="debug-uncovered-item"
-							@click="debugJumpTo(n.content_id)"
-						>
-							<span class="debug-uncovered-id">#{{ n.content_id }}</span>
-							<span class="debug-uncovered-scene">{{ n.scene_title }}</span>
-							<span class="debug-uncovered-text">{{ n.content_text }}</span>
-						</div>
-						<div v-if="!uncoveredNodes.length" class="debug-empty">全部节点已走到</div>
-					</div>
-				</div>
-
-				<div v-if="uncoveredEdges.length" class="debug-uncovered">
-					<div class="debug-uncovered-title">未走分支（{{ uncoveredEdges.length }}）</div>
-					<div class="debug-uncovered-list">
-						<div v-for="e in uncoveredEdges.slice(0, 30)" :key="e.path_id" class="debug-uncovered-item">
-							<span class="debug-uncovered-id">#{{ e.source_content_id }}</span>
-							<span class="debug-uncovered-text">
-								{{ e.choice_text ? '「' + e.choice_text + '」' : '自动跳转' }}
-								→ #{{ e.target_content_id }}
-							</span>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
+		<PlayerDebugPanel
+			v-if="debugMode && debugPanelVisible && !loading && !error"
+			v-model:jump-id="debugJumpId"
+			v-model:breakpoint="debugBreakpoint"
+			:scene-index="currentSceneIndex"
+			:scene-count="scenes.length"
+			:node-id="currentDialogue?.content_id || '-'"
+			:variables="projectVariables"
+			:variable-values="variableValues"
+			:breakpoint-hit="debugBreakpointHit"
+			:history="variableHistory"
+			:snapshots="debugSnapshots"
+			:coverage="coverageStats"
+			:uncovered-nodes="uncoveredNodes"
+			:uncovered-edges="uncoveredEdges"
+			@jump="debugJump"
+			@set-var="setDebugVar"
+			@clear-history="variableHistory = []"
+			@save-snapshot="saveDebugSnapshot"
+			@restore-snapshot="restoreDebugSnapshot"
+			@delete-snapshot="deleteDebugSnapshot"
+			@reset-coverage="resetCoverage"
+			@jump-to="debugJumpTo"
+			@close="debugPanelVisible = false"
+		/>
 
 		<!-- 竖屏提示 -->
 		<div v-if="showRotateHint && !loading && !error" class="rotate-hint">
@@ -610,6 +494,7 @@ import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
 import PlayerFunctionButtons from '@/components/player/PlayerFunctionButtons.vue'
 import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
+import PlayerDebugPanel from '@/components/player/PlayerDebugPanel.vue'
 import { parseRichText, renderRichHtml } from '@/utils/richText'
 import {
 	BASE_URL
@@ -1198,11 +1083,11 @@ const { applyEffectsForCurrent, resetVariables } = usePlayerVariableEffects({
 });
 
 /* ===== 调试器：变量热改 / 任意节点跳转 ===== */
-const setDebugVar = (v, e) => {
-	const raw = Number(e?.target?.value);
-	if (!Number.isFinite(raw)) return;
+const setDebugVar = (v, raw) => {
+	const next = Number(raw);
+	if (!Number.isFinite(next)) return;
 	const before = Number(variableValues.value[v.name] ?? v.initial_value);
-	const after = clampVariable(v, raw);
+	const after = clampVariable(v, next);
 	variableValues.value = { ...variableValues.value, [v.name]: after };
 	if (before !== after) pushVariableHistory(v.label || v.name, before, after, '手动调试');
 	if (v.persist) syncProjectMeta();
