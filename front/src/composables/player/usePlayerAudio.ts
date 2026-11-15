@@ -110,9 +110,8 @@ export function usePlayerAudio(ctx: PlayerAudioContext) {
       if (bgm.paused) bgm.volume = bgmTargetVolume()
       else fadeBgmTo(bgmTargetVolume(), 200)
     }
-    document.querySelectorAll('.dialogue-display audio').forEach((audio: any) => {
-      audio.volume = ctx.playerSettings.value.voiceVolume / 100
-    })
+    const voice = ctx.dialogueVoice.value
+    if (voice) voice.volume = ctx.playerSettings.value.voiceVolume / 100
   }
 
   // 重播本句语音（语音总开关关闭时按钮不显示）

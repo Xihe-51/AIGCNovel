@@ -78,6 +78,19 @@
 				loop
 				class="hidden-audio"
 			>你的浏览器不支持音频播放</audio>
+
+			<!-- 角色语音播放器（隐藏，仅承载播放与闪避状态） -->
+			<audio
+				v-if="currentDialogue?.voice_url && playerSettings.voiceEnabled"
+				ref="dialogueVoice"
+				:src="BASE_URL + currentDialogue.voice_url"
+				controls
+				autoplay
+				class="hidden-audio"
+				@play="onVoicePlay"
+				@ended="onVoiceEnded"
+				@pause="onVoiceEnded"
+			>你的浏览器不支持音频播放</audio>
 			
 			<!-- 预览容器 -->
 			<div
@@ -228,117 +241,36 @@
 					</div>
 				</div>
 				
-				<!-- 对话显示区域（位于最上层） -->
-				<div v-if="!loading && !error && showDialogueBox && stageLayerVisible.dialogue !== false" class="dialogue-display">
-					<!-- 当前对话 -->
-					<div 
-						v-if="currentDialogueIndex < currentSceneDialogues.length"
-						:class="['dialogue-box', `box-${currentDialogue?.content_type}`, `style-${playerSettings.boxStyle || 'classic'}`]"
-						@click="onDialogueClick"
-					>
-						<img
-							v-if="playerSettings.boxStyle === 'bubble' && currentDialogue?.content_type === '对话' && previewAvatarSrc"
-							class="bubble-avatar"
-							:src="previewAvatarSrc"
-							alt=""
-							@error="hideBrokenImage"
-						/>
-						<span class="character-name">{{ getCharacterName(currentDialogue.character_id) }}</span>
-						<button
-							v-if="currentDialogue?.voice_url && playerSettings.voiceEnabled"
-							type="button"
-							class="voice-replay-btn"
-							:title="t('player.voiceReplay')"
-							@click.stop="replayVoice"
-						>{{ t('player.voiceBtn') }}</button>
-						<div
-							class="dialogue-text"
-							:style="{ fontSize: playerSettings.fontSize + 'px', lineHeight: playerSettings.lineHeight }"
-							v-html="displayedHtml"
-						></div>
-						<!-- 语音播放 -->
-						<div v-if="currentDialogue?.voice_url && playerSettings.voiceEnabled" class="dialogue-audio">
-							<audio ref="dialogueVoice" :src="BASE_URL + currentDialogue.voice_url" controls autoplay
-								@play="onVoicePlay" @ended="onVoiceEnded" @pause="onVoiceEnded">你的浏览器不支持音频播放
-							</audio>
-						</div>
-
-						<!-- 分支选项：选择后跳到目标节点，而不是线性继续 -->
-						<div v-if="currentChoices.length" class="choice-panel" @click.stop>
-							<button
-								v-for="choice in currentChoices"
-								:key="choice.path_id"
-								:class="['choice-option', { 'has-image': !!choice.image_url, 'is-locked': choice.locked }]"
-								:disabled="choice.locked"
-								:title="choice.locked ? t('choice.conditionNotMet', { cond: conditionText(choice.conditions) }) : ''"
-								@click.stop="selectBranch(choice)"
-							>
-								<img
-									v-if="choice.image_url"
-									:src="BASE_URL + choice.image_url"
-									class="choice-image"
-									alt=""
-									loading="lazy"
-								/>
-								<span class="choice-label">{{ localizedChoice(choice) || t('choice.continue') }}</span>
-								<span v-if="choice.locked" class="choice-lock-hint">
-									{{ t('choice.locked', { cond: conditionText(choice.conditions) }) }}
-								</span>
-							</button>
-						</div>
-						
-						<PlayerFunctionButtons
-							:language="playerSettings.language"
-							:auto-play="autoPlay"
-							@history="toggleHistoryDialogue"
-							@toggle-box="toggleDialogueBox"
-							@skip="skipToNextScene"
-							@toggle-auto="toggleAutoPlay"
-							@restart="restartGame"
-							@save="openSaveDialog"
-							@exit="exitGame"
-						/>
-					</div>
-					
-					<!-- 场景对话结束，自动进入下一场景 -->
-					<div v-if="currentDialogueIndex >= currentSceneDialogues.length && currentSceneDialogues.length > 0" class="dialogue-end">
-						<PlayerFunctionButtons
-							:language="playerSettings.language"
-							:auto-play="autoPlay"
-							@history="toggleHistoryDialogue"
-							@toggle-box="toggleDialogueBox"
-							@skip="skipToNextScene"
-							@toggle-auto="toggleAutoPlay"
-							@restart="restartGame"
-							@save="openSaveDialog"
-							@exit="exitGame"
-						/>
-					</div>
-					
-					<!-- 场景无对话，自动进入下一场景 -->
-					<div v-if="currentSceneDialogues.length === 0" class="no-dialogues-preview">
-						<PlayerFunctionButtons
-							:language="playerSettings.language"
-							:auto-play="autoPlay"
-							@history="toggleHistoryDialogue"
-							@toggle-box="toggleDialogueBox"
-							@skip="skipToNextScene"
-							@toggle-auto="toggleAutoPlay"
-							@restart="restartGame"
-							@save="openSaveDialog"
-							@exit="exitGame"
-						/>
-					</div>
-				</div>
-				
-				<!-- 对话框隐藏时显示的显示按钮 -->
-				<div v-if="!loading && !error && !showDialogueBox && stageLayerVisible.dialogue !== false" class="show-dialogue-btn" @click="toggleDialogueBox">
-					<el-tooltip :content="t('tooltip.showBox')" placement="top">
-						<el-icon size="30">
-							<View />
-						</el-icon>
-					</el-tooltip>
-				</div>
+				<!-- 对话显示区域（含选项与功能键） -->
+				<PlayerDialogueBox
+					:language="playerSettings.language"
+					:visible="!loading && !error && showDialogueBox && stageLayerVisible.dialogue !== false"
+					:has-line="currentDialogueIndex < currentSceneDialogues.length"
+					:scene-ended="currentDialogueIndex >= currentSceneDialogues.length && currentSceneDialogues.length > 0"
+					:no-dialogues="currentSceneDialogues.length === 0"
+					:content-type="currentDialogue?.content_type || ''"
+					:box-style="playerSettings.boxStyle || 'classic'"
+					:font-size="playerSettings.fontSize"
+					:line-height="playerSettings.lineHeight"
+					:character-name="getCharacterName(currentDialogue?.character_id)"
+					:text-html="displayedHtml"
+					:avatar-src="previewAvatarSrc"
+					:show-voice-button="!!(currentDialogue?.voice_url && playerSettings.voiceEnabled)"
+					:auto-play="autoPlay"
+					:show-reveal-button="!loading && !error && !showDialogueBox && stageLayerVisible.dialogue !== false"
+					:choices="dialogueChoiceViews"
+					@advance="onDialogueClick"
+					@replay-voice="replayVoice"
+					@select-choice="handleChoiceSelect"
+					@history="toggleHistoryDialogue"
+					@toggle-box="toggleDialogueBox"
+					@skip="skipToNextScene"
+					@toggle-auto="toggleAutoPlay"
+					@restart="restartGame"
+					@save="openSaveDialog"
+					@exit="exitGame"
+					@reveal-box="toggleDialogueBox"
+				/>
 			</div>
 		</div>
 
@@ -434,6 +366,7 @@ import { updateScene } from '@/api/scenes'
 import { listPublicReleases } from '@/api/release'
 import { unlockMusic } from '@/api/gallery'
 import { themeClass } from '@/utils/uiThemes'
+import { hideBrokenImage } from '@/utils/dom'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
 import { usePlayerAudio } from '@/composables/player/usePlayerAudio'
@@ -470,7 +403,7 @@ import PlayerEndingDialog from '@/components/player/PlayerEndingDialog.vue'
 import PlayerStatusDialog from '@/components/player/PlayerStatusDialog.vue'
 import PlayerSaveDialog from '@/components/player/PlayerSaveDialog.vue'
 import PlayerGalleryDialog from '@/components/player/PlayerGalleryDialog.vue'
-import PlayerFunctionButtons from '@/components/player/PlayerFunctionButtons.vue'
+import PlayerDialogueBox from '@/components/player/PlayerDialogueBox.vue'
 import PlayerEntryBar from '@/components/player/PlayerEntryBar.vue'
 import PlayerPerformPanel from '@/components/player/PlayerPerformPanel.vue'
 import PlayerDebugPanel from '@/components/player/PlayerDebugPanel.vue'
@@ -480,7 +413,6 @@ import {
 } from '@/utils/request'
 import { 
   WarningFilled,
-  View,
   CloseBold
 } from '@element-plus/icons-vue'
 import { ElMessage, ElLoading, ElIcon } from 'element-plus'
@@ -1035,6 +967,18 @@ const {
 	conditionText,
 } = usePlayerConditions({ projectVariables, variableValues, sceneLocks, allDialogues });
 
+// 分支选项的展示模型：文案 / 图片地址 / 锁定提示在这里一次性算好，
+// PlayerDialogueBox 只负责按数组渲染，不再回调任何业务函数。
+const dialogueChoiceViews = computed(() => currentChoices.value.map((choice) => ({
+	id: choice.path_id,
+	label: localizedChoice(choice) || t('choice.continue'),
+	imageUrl: choice.image_url ? BASE_URL + choice.image_url : '',
+	locked: !!choice.locked,
+	lockText: choice.locked ? t('choice.locked', { cond: conditionText(choice.conditions) }) : '',
+	title: choice.locked ? t('choice.conditionNotMet', { cond: conditionText(choice.conditions) }) : '',
+})));
+
+
 // 按台词应用变量效果 / 周目重置由 usePlayerVariableEffects 编排；
 // lastEffectKey 仍留在视图，作为「同节点只结算一次」的共享标记（存档也要读它）。
 const { applyEffectsForCurrent, resetVariables } = usePlayerVariableEffects({
@@ -1427,14 +1371,16 @@ const handleWheel = (e) => {
 	}
 };
 
+// 选项点击：按 path_id 找回原始分支对象，再交给流程层处理锁定/跳转
+const handleChoiceSelect = (pathId) => {
+	const branch = currentChoices.value.find((choice) => choice.path_id === pathId);
+	if (branch) selectBranch(branch);
+};
+
 // 获取角色名称（按当前阅读语言显示译名）
 const getCharacterName = (characterId) => {
 	const char = characters.value.find(c => c.character_id === characterId);
 	return char ? localizedCharacterName(char) : '';
-};
-// 素材文件丢失时不显示裂图
-const hideBrokenImage = (e) => {
-	if (e && e.target) e.target.style.visibility = 'hidden';
 };
 
 // ==================== 键盘快捷键 ====================
