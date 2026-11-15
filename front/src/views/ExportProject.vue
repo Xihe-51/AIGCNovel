@@ -730,6 +730,7 @@ import { usePlayerCoverage } from '@/composables/player/usePlayerCoverage'
 import { usePlayerDebugger } from '@/composables/player/usePlayerDebugger'
 import { usePlayerTouch } from '@/composables/player/usePlayerTouch'
 import { usePlayerGamepad } from '@/composables/player/usePlayerGamepad'
+import { usePlayerKeyboard } from '@/composables/player/usePlayerKeyboard'
 import { usePlayerPerform } from '@/composables/player/usePlayerPerform'
 import { usePlayerAchievements } from '@/composables/player/usePlayerAchievements'
 import { usePlayerConditions } from '@/composables/player/usePlayerConditions'
@@ -2438,77 +2439,31 @@ const hideBrokenImage = (e) => {
 	if (e && e.target) e.target.style.visibility = 'hidden';
 };
 
-// 键盘事件处理
-const isEditableTarget = (target) => {
-	const tag = target && target.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
-		|| !!(target && target.isContentEditable);
-};
-
-// Esc 关闭已打开的播放器面板，返回是否关闭了某个面板
-const closePlayerPanels = () => {
-	if (settingsVisible.value) { settingsVisible.value = false; return true; }
-	if (galleryDialogVisible.value) { galleryDialogVisible.value = false; return true; }
-	if (saveDialogVisible.value) { saveDialogVisible.value = false; return true; }
-	if (statusDialogVisible.value) { statusDialogVisible.value = false; return true; }
-	if (chaptersVisible.value) { chaptersVisible.value = false; return true; }
-	if (showHistoryDialogue.value) { showHistoryDialogue.value = false; return true; }
-	if (debugPanelVisible.value) { debugPanelVisible.value = false; return true; }
-	return false;
-};
-
-const isPanelOpen = () => settingsVisible.value || galleryDialogVisible.value
-	|| saveDialogVisible.value || statusDialogVisible.value
-	|| chaptersVisible.value
-	|| showHistoryDialogue.value || debugPanelVisible.value
-	|| endingDialogVisible.value || changelogVisible.value;
-
-const handleKeydown = (e) => {
-	if (e.key === 'Escape') {
-		if (closePlayerPanels()) e.preventDefault();
-		return;
-	}
-
-	// 调试器输入框等可编辑区域不拦截其他按键
-	if (isEditableTarget(e.target)) return;
-
-	// ← 回到上一句
-	if (e.key === 'ArrowLeft') {
-		if (isPanelOpen()) return;
-		e.preventDefault();
-		rollbackOneLine();
-		return;
-	}
-
-	// 空格 / 回车 / → 继续对话
-	if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight') {
-		if (isPanelOpen()) return;
-		e.preventDefault(); // 防止空格滚动页面
-		nextDialogue();
-		return;
-	}
-
-	const key = e.key.toLowerCase();
-	// H 键切换历史对话显示
-	if (key === 'h') {
-		e.preventDefault();
-		toggleHistoryDialogue();
-		return;
-	}
-	// S 切换跳过已读（设置类操作，弹窗打开时也生效）
-	if (key === 's') {
-		e.preventDefault();
+// ==================== 键盘快捷键 ====================
+// 按键判定与面板关闭优先级由 usePlayerKeyboard 托管
+const ESC_PANELS = [
+	settingsVisible,
+	galleryDialogVisible,
+	saveDialogVisible,
+	statusDialogVisible,
+	chaptersVisible,
+	showHistoryDialogue,
+	debugPanelVisible,
+];
+const ACTIVE_PANELS = [...ESC_PANELS, endingDialogVisible, changelogVisible];
+const { isPanelOpen, handleKeydown } = usePlayerKeyboard({
+	getEscPanels: () => ESC_PANELS,
+	getActivePanels: () => ACTIVE_PANELS,
+	rollbackOneLine: () => rollbackOneLine(),
+	nextDialogue: () => nextDialogue(),
+	toggleHistoryDialogue: () => toggleHistoryDialogue(),
+	toggleAutoPlay: () => toggleAutoPlay(),
+	toggleSkipRead: () => {
 		playerSettings.value.skipRead = !playerSettings.value.skipRead;
-		ElMessage.info(playerSettings.value.skipRead ? t('toast.skipOn') : t('toast.skipOff'));
-		return;
-	}
-	if (isPanelOpen()) return;
-	// A 切换自动播放
-	if (key === 'a') {
-		e.preventDefault();
-		toggleAutoPlay();
-	}
-};
+		return playerSettings.value.skipRead;
+	},
+	t: (key) => t(key),
+});
 
 // ==================== 手柄操作（标准按键映射） ====================
 // A(0) 继续对话 / B(1) 回想 / X(2) 自动播放；轮询与边沿判定由 usePlayerGamepad 自管
