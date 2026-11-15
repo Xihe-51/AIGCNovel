@@ -701,21 +701,11 @@ import {
 } from 'vue'
 import { useRoute } from 'vue-router'
 import { jwtDecode } from 'jwt-decode'
-import {
-	getDialoguesBySceneId,
-	getCharactersByProjectId,
-	getCharacterAvatars as getCharacterAvatarsApi,
-	saveDialogues,
-} from '@/api/dialogue'
-import {
-	getScenes as getProjectScenes,
-	updateScene,
-} from '@/api/scenes'
-import { listBranches } from '@/api/branch'
+import { saveDialogues } from '@/api/dialogue'
+import { updateScene } from '@/api/scenes'
 import { listPublicReleases } from '@/api/release'
 import { listEndings, unlockEnding } from '@/api/ending'
 import { unlockMusic } from '@/api/gallery'
-import { getProject } from '@/api/project'
 import { themeClass } from '@/utils/uiThemes'
 import { usePlayerSettings } from '@/composables/player/usePlayerSettings'
 import { usePlayerTelemetry } from '@/composables/player/usePlayerTelemetry'
@@ -740,6 +730,7 @@ import { usePlayerTypewriter } from '@/composables/player/usePlayerTypewriter'
 import { usePlayerFlow } from '@/composables/player/usePlayerFlow'
 import { usePlayerChapters } from '@/composables/player/usePlayerChapters'
 import { usePlayerCollections } from '@/composables/player/usePlayerCollections'
+import { usePlayerBootstrap, buildHistoryDialogues } from '@/composables/player/usePlayerBootstrap'
 import PlayerChangelogDialog from '@/components/player/PlayerChangelogDialog.vue'
 import PlayerChaptersDialog from '@/components/player/PlayerChaptersDialog.vue'
 import PlayerSettingsDialog from '@/components/player/PlayerSettingsDialog.vue'
@@ -819,6 +810,49 @@ const canPerform = computed(() =>
 )
 // 演出模式表单与保存编排在 usePlayerPerform 内（见下方演出模式段落）
 
+// ==================== 开局装载：作品 / 场景 / 台词 / 分支 / 角色 ====================
+const {
+	scenes,
+	allDialogues,
+	characters,
+	branches,
+	loading,
+	error,
+	historyDialogues,
+	playTheme,
+	projectCoverUrl,
+	fetchProjectData,
+} = usePlayerBootstrap({
+	projectId: () => Number(props.projectId),
+	releaseView: () => releaseView.value,
+	debugRequested: () => debugRequested,
+	isOwner: () => isOwner.value,
+	canPerform: () => canPerform.value,
+	startQuery: () => route.query.start,
+	setDebugMode: (value) => { debugMode.value = value },
+	setPerformMode: (value) => { performMode.value = value },
+	setProjectOwnerId: (value) => { projectOwnerId.value = value },
+	setSceneIndex: (value) => { currentSceneIndex.value = value },
+	setDialogueIndex: (value) => { currentDialogueIndex.value = value },
+	loadProgress: () => loadProgress(),
+	loadStoryGraph: (projectId) => loadStoryGraph(projectId),
+	loadReads: () => loadReads(),
+	loadChapterData: () => loadChapterData(),
+	loadDebugSnapshots: () => loadDebugSnapshots(),
+	loadVariableSystem: () => loadVariableSystem(),
+	loadEndings: () => loadEndings(),
+	loadPlayerAchievements: () => loadPlayerAchievements(),
+	loadPublicReleases: () => loadPublicReleases(),
+	onLoaded: () => {
+		startPreview();
+		initHistoryDialogues();
+		logStartOnce();
+		nextTick(() => logCurrentScene());
+		scheduleAchievementCheck();
+	},
+	t: (key, params) => t(key, params),
+});
+
 const debugJumpId = ref('')
 // 条件调试器：变量变化历史 / 条件断点 / 状态快照 由 usePlayerDebugger 自管
 // 分支覆盖率：本轮试玩走过的节点/分支（仅调试模式记录）由 usePlayerCoverage 自管
@@ -894,25 +928,13 @@ try {
 	if (Number.isFinite(stored) && stored > 0) playthrough.value = Math.floor(stored)
 } catch (_) { /* ignore */ }
 
-// 作品 UI 皮肤（作者在创作页「外观」里选择）
-const playTheme = ref('classic')
-// 作品封面：存档缩略图兜底，同时用于作者预览的演出模式归属判断
-const projectCoverUrl = ref('')
-
-// 状态管理
-const scenes = ref([]); // 所有场景
-const allDialogues = ref({}); // 按场景ID存储的所有对话 {sceneId: [dialogues]}
-const characters = ref([]); // 所有角色
-const loading = ref(true);
-const error = ref('');
+// 状态管理（场景 / 台词 / 角色 / 分支 / 加载态 / 历史回想 / 皮肤封面由 usePlayerBootstrap 自持）
 const isPlaying = ref(true); // 默认自动播放
 const autoPlay = ref(false); // 始终自动播放
 const defaultBackground = ''; // 默认背景图
 const backgroundMusic = ref(null);
 const showDialogueBox = ref(true); // 控制对话框显示/隐藏
 const showHistoryDialogue = ref(false); // 控制历史对话显示/隐藏
-const historyDialogues = ref([]); // 存储历史对话记录
-const branches = ref([]); // 剧情分支（branch_paths）
 // 空场景（没有台词/选项节点）直接跳过，避免试玩停在只有背景的画面上
 const sceneHasDialogues = (sceneId) => (allDialogues.value[sceneId] || []).length > 0;
 
@@ -1154,162 +1176,14 @@ const filteredHistoryDialogues = computed(() => {
 	return historyDialogues.value;
 });
 
-// 获取项目数据
-const fetchProjectData = async () => {
-	try {
-		loading.value = true;
-		const projectIdNum = Number(props.projectId);
-
-		if (isNaN(projectIdNum)) {
-			throw new Error('无效的项目ID');
-		}
-
-		// 尝试从本地存储加载进度
-		loadProgress();
-
-		// 作品皮肤：作者可在创作页「外观」里切换
-		try {
-			const projectInfo = await getProject(projectIdNum);
-			playTheme.value = projectInfo.ui_theme || 'classic';
-			projectCoverUrl.value = projectInfo.cover_url || '';
-			projectOwnerId.value = Number(projectInfo.user_id) || 0;
-		} catch (e) {
-			playTheme.value = 'classic';
-			projectOwnerId.value = 0;
-		}
-
-		// 发布版只保留玩家能力：调试器 / 演出入口 / 节点跳转均需作者身份
-		debugMode.value = debugRequested && isOwner.value && !releaseView.value;
-		performMode.value = canPerform.value;
-
-		// 获取项目下的所有场景（按顺序排列）
-		const scenesData = await getProjectScenes(projectIdNum);
-		scenes.value = scenesData.sort((a, b) => a.order_num - b.order_num);
-		
-		if (scenes.value.length === 0) {
-			throw new Error('该项目下没有场景数据');
-		}
-
-		// 获取所有场景的对话
-		for (const scene of scenes.value) {
-			const dialoguesData = await getDialoguesBySceneId(scene.scene_id);
-			// 为每个对话添加场景ID，方便后续过滤
-			const dialoguesWithSceneId = dialoguesData.map(d => ({
-				...d,
-				scene_id: scene.scene_id
-			}));
-			allDialogues.value[scene.scene_id] = dialoguesWithSceneId.sort((a, b) => a.order_num - b.order_num);
-		}
-
-		// 剧情分支：播放器要按 branch_paths 跳转，而不是永远线性往下走
-		try {
-			branches.value = await listBranches(projectIdNum);
-		} catch (e) {
-			console.warn('读取剧情分支失败，按线性剧情播放:', e);
-			branches.value = [];
-		}
-
-		// 调试模式：读取完整拓扑，用于面板里的覆盖率统计
-		if (debugMode.value) {
-			await loadStoryGraph(projectIdNum)
-		}
-
-		// 已读记录：跳过已读功能依赖它
-		await loadReads();
-
-		// 章节（章节快捷跳转 / 路线图鉴）
-		await loadChapterData();
-
-		// 调试状态快照（仅调试模式）
-		if (debugMode.value) loadDebugSnapshots();
-
-		// 项目变量与节点数值变化
-		await loadVariableSystem();
-
-		// 结局定义
-		await loadEndings();
-
-		// 成就定义与本人解锁状态
-		await loadPlayerAchievements();
-
-		// 更新记录（公开作品）
-		await loadPublicReleases();
-
-		// 调试：从 ?start=<content_id> 指定节点开始
-		const startId = debugMode.value ? Number(route.query.start || 0) : 0;
-		if (startId) {
-			let found = false;
-			for (let si = 0; si < scenes.value.length; si++) {
-				const list = allDialogues.value[scenes.value[si].scene_id] || [];
-				const di = list.findIndex(d => Number(d.content_id) === startId);
-				if (di >= 0) {
-					currentSceneIndex.value = si;
-					currentDialogueIndex.value = di;
-					found = true;
-					break;
-				}
-			}
-			if (!found) ElMessage.warning(t('toast.startNodeMissing', { id: startId }));
-		}
-		
-		// 获取角色列表及对应的头像
-		const chars = await getCharactersByProjectId(projectIdNum);
-		
-		// 为每个角色查询并关联自己的头像
-		const charactersWithAvatars = await Promise.all(
-			chars.map(async (char) => {
-				const avatars = await getCharacterAvatarsApi(char.character_id);
-				return {
-					...char,
-					avatars: avatars || []
-				};
-			})
-		);
-		
-		characters.value = charactersWithAvatars;
-
-	} catch (err) {
-		console.error('获取项目数据失败:', err);
-		error.value = err.message || '获取数据失败，请稍后重试';
-		ElMessage.error(error.value);
-	} finally {
-		loading.value = false;
-		// 数据加载完成后自动开始播放
-		if (!error.value) {
-			startPreview();
-			// 初始化历史对话
-			initHistoryDialogues();
-			// 试玩数据：记录开局与首个到达场景（调试模式自动跳过）
-			logStartOnce();
-			nextTick(() => logCurrentScene());
-			scheduleAchievementCheck();
-		}
-	}
-}
-
 // 初始化历史对话（根据当前进度）
 const initHistoryDialogues = () => {
-	historyDialogues.value = [];
-	
-	// 添加之前场景的所有对话
-	for (let i = 0; i < currentSceneIndex.value; i++) {
-		const sceneId = scenes.value[i].scene_id;
-		const sceneTitle = scenes.value[i].title || '';
-		if (allDialogues.value[sceneId]) {
-			historyDialogues.value.push(
-				...allDialogues.value[sceneId].map(d => ({ ...d, scene_title: sceneTitle }))
-			);
-		}
-	}
-	
-	// 添加当前场景的历史对话（不包含当前对话）
-	if (currentScene.value.scene_id && allDialogues.value[currentScene.value.scene_id]) {
-		historyDialogues.value.push(
-			...allDialogues.value[currentScene.value.scene_id]
-				.slice(0, currentDialogueIndex.value)
-				.map(d => ({ ...d, scene_title: currentScene.value.title || '' }))
-		);
-	}
+	historyDialogues.value = buildHistoryDialogues(
+		scenes.value,
+		allDialogues.value,
+		currentSceneIndex.value,
+		currentDialogueIndex.value,
+	);
 };
 
 // 开始预览
