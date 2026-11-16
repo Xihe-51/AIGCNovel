@@ -25,6 +25,40 @@
   color: #c81f4a;
 }
 
+/* 场景标题 / 描述译文 */
+.dlg-translation-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.dlg-translation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff8fab;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.dlg-translation-tag {
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: #fff0f5;
+  border: 1px solid #ffd3e0;
+  color: #c2185b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* 场景播放条件（剧情锁） */
 .scene-lock {
   border: 1px dashed #f0d6df;
@@ -59,6 +93,14 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.condition-var { flex: 1 1 160px; min-width: 130px; }
+
+.condition-op { flex: 0 0 76px; }
+
+.condition-value { flex: 0 0 110px; }
+
+.condition-tip { font-size: 12px; color: #94a3b8; }
 
 /* 输入框统一成卡片风格 */
 .scene-form :deep(.el-input__wrapper),
@@ -295,5 +337,3 @@
 .scene-save-state.is-dirty {
   color: #b4446a;
 }
-
-.hidden-audio { display: none; }

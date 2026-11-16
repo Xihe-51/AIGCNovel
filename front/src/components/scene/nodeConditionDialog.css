@@ -18,7 +18,7 @@
 }
 
 /*
- * 下面三组与 sceneSettings.css / sceneDialogue.css 中的同名规则保持一致：
+ * 下面三组与 sceneSettingsPanel.css / sceneDialogue.css 中的同名规则保持一致：
  * 弹窗内容由子组件渲染，拿不到父组件的 scoped 作用域，只能自带一份。
  */
 .scene-lock-mode {

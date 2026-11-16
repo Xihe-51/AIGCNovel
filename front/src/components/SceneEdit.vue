@@ -24,217 +24,45 @@
 			<!-- 场景设置部分 -->
 			<div v-show="panelTab === 'settings'" class="panel-section">
 				<h3 class="section-title">场景设置</h3>
-				
-				<el-form :model="scene" size="small" class="scene-form">
-					<div class="field-block">
-						<div class="field-label">场景标题</div>
-						<el-input v-model="scene.title" placeholder="例如：雨夜相遇" />
-					</div>
-					
-					<div class="field-block">
-						<div class="field-label">场景描述</div>
-						<el-input
-							v-model="scene.description"
-							type="textarea"
-							placeholder="一句话说明这个场景要发生什么"
-							:rows="3"
-							resize="none"
-						/>
-					</div>
-
-					<div class="field-block">
-						<div class="field-label">场景标题 / 描述译文</div>
-						<div class="dlg-translation-bar">
-							<el-button
-								size="small"
-								plain
-								:disabled="!scene.scene_id"
-								title="翻译场景标题与描述"
-								@click="openSceneTranslationDialog"
-							>
-								场景译文
-								<span v-if="sceneTranslationCount" class="dlg-translation-count">{{ sceneTranslationCount }}</span>
-							</el-button>
-							<span
-								v-for="lang in translatedSceneLanguages"
-								:key="lang.code"
-								class="dlg-translation-tag"
-							>{{ lang.label }}</span>
-						</div>
-					</div>
-
-					<div class="field-block">
-						<div class="field-label">播放条件（剧情锁）</div>
-						<div class="scene-lock">
-							<div v-if="sceneLockItems.length > 1" class="scene-lock-mode">
-								<span class="scene-lock-mode-label">条件关系</span>
-								<el-radio-group v-model="sceneLockMode" size="small">
-									<el-radio-button value="and">全部满足</el-radio-button>
-									<el-radio-button value="or">任一满足</el-radio-button>
-								</el-radio-group>
-							</div>
-							<div
-								v-for="(c, ci) in sceneLockItems"
-								:key="ci"
-								class="scene-lock-row"
-							>
-								<el-select
-									v-model="c.variable"
-									size="small"
-									clearable
-									placeholder="变量"
-									class="condition-var"
-								>
-									<el-option
-										v-for="v in variables"
-										:key="v.variable_id"
-										:label="v.label"
-										:value="v.name"
-									></el-option>
-								</el-select>
-								<el-select
-									v-model="c.op"
-									size="small"
-									class="condition-op"
-									:disabled="!c.variable"
-								>
-									<el-option label="≥" value=">=" />
-									<el-option label=">" value=">" />
-									<el-option label="≤" value="<=" />
-									<el-option label="<" value="<" />
-									<el-option label="=" value="==" />
-									<el-option label="≠" value="!=" />
-								</el-select>
-								<el-input-number
-									v-model="c.value"
-									size="small"
-									:step="1"
-									:disabled="!c.variable"
-									class="condition-value"
-								/>
-								<el-button
-									size="small"
-									type="danger"
-									plain
-									icon="Delete"
-									@click="removeSceneLockCondition(ci)"
-								/>
-							</div>
-							<div class="scene-lock-actions">
-								<el-button size="small" icon="Plus" @click="addSceneLockCondition">添加条件</el-button>
-								<span class="condition-tip">条件不满足时，顺序播放会跳过该场景</span>
-							</div>
-						</div>
-					</div>
-					
-					<div class="field-block">
-						<div class="field-label">
-							背景图片
-							<button type="button" class="field-asset-btn" @click="openAssetPicker('image')">素材库</button>
-						</div>
-						<div
-							class="scene-drop-zone"
-							:class="{ 'is-drop-over': dragOverBg }"
-							@dragover.prevent="dragOverBg = true"
-							@dragleave="dragOverBg = false"
-							@drop.prevent="onBackgroundDrop"
-						>
-						<div v-if="scene.background_url" class="bg-card">
-							<img v-if="!settingsBgFailed" :src="BASE_URL + scene.background_url" alt="背景预览" @error="settingsBgFailed = true" />
-							<div v-else class="bg-card-missing">图片文件已丢失</div>
-							<el-upload
-								class="bg-card-upload"
-								action="#"
-								:http-request="handleBackgroundUpload"
-								accept="image/*"
-								:show-file-list="false">
-								<button type="button" class="bg-card-btn">更换</button>
-							</el-upload>
-						</div>
-						<el-upload
-							v-else
-							class="bg-empty-upload"
-							action="#"
-							:http-request="handleBackgroundUpload"
-							accept="image/*"
-							:show-file-list="false">
-							<button type="button" class="bg-empty">
-								<span class="bg-empty-icon">＋</span>
-								<span>上传背景图</span>
-							</button>
-						</el-upload>
-						</div>
-						</div>
-						
-						<div class="field-block">
-							<div class="field-label">
-								背景音乐
-								<button type="button" class="field-asset-btn" @click="openAssetPicker('audio')">素材库</button>
-							</div>
-							<div
-								class="scene-drop-zone"
-								:class="{ 'is-drop-over': dragOverMusic }"
-								@dragover.prevent="dragOverMusic = true"
-								@dragleave="dragOverMusic = false"
-								@drop.prevent="onMusicDrop"
-							>
-							<div v-if="scene.music_url" class="music-card">
-							<button type="button" class="music-play" @click="toggleMusic">
-								{{ musicPlaying ? '❚❚' : '▶' }}
-							</button>
-							<div class="music-main">
-								<input
-									class="music-progress"
-									type="range"
-									min="0"
-									:max="musicDuration || 0"
-									step="0.1"
-									:value="musicProgress"
-									@input="seekMusic"
-								/>
-								<div class="music-time">{{ fmtTime(musicProgress) }} / {{ fmtTime(musicDuration) }}</div>
-							</div>
-							<el-upload
-								class="music-replace"
-								action="#"
-								:http-request="handleMusicUpload"
-								accept="audio/*"
-								:show-file-list="false">
-								<button type="button" class="music-link">更换</button>
-							</el-upload>
-							<audio
-								ref="settingsAudio"
-								:src="BASE_URL + scene.music_url"
-								loop
-								@timeupdate="onMusicTime"
-								@loadedmetadata="onMusicMeta"
-								@ended="musicPlaying = false">
-							</audio>
-						</div>
-						<el-upload
-							v-else
-							class="bg-empty-upload"
-							action="#"
-							:http-request="handleMusicUpload"
-							accept="audio/*"
-							:show-file-list="false">
-							<button type="button" class="bg-empty">
-								<span class="bg-empty-icon">♪</span>
-								<span>上传背景音乐</span>
-							</button>
-						</el-upload>
-						</div>
-					</div>
-					
-					<button type="button" class="save-scene-btn" :disabled="sceneSaving || !sceneReady" @click="saveSceneSettings">
-						{{ sceneSaving ? '保存中…' : '保存场景设置' }}
-					</button>
-					<div :class="['scene-save-state', { 'is-dirty': sceneDirty }]">
-						{{ !sceneReady ? '场景设置加载中…' : (sceneSaving ? '正在保存场景设置…' : (sceneDirty ? '场景设置有未保存改动，离开会自动保存' : '场景设置已保存')) }}
-					</div>
-				</el-form>
+				<SceneSettingsPanel
+					ref="settingsPanelRef"
+					:scene="scene"
+					:variables="variables"
+					:base-url="BASE_URL"
+					:scene-lock-mode="sceneLockMode"
+					:scene-lock-items="sceneLockItems"
+					:scene-translation-count="sceneTranslationCount"
+					:translated-scene-languages="translatedSceneLanguages"
+					:drag-over-bg="dragOverBg"
+					:drag-over-music="dragOverMusic"
+					:settings-bg-failed="settingsBgFailed"
+					:music-playing="musicPlaying"
+					:music-progress="musicProgress"
+					:music-duration="musicDuration"
+					:scene-saving="sceneSaving"
+					:scene-ready="sceneReady"
+					:scene-dirty="sceneDirty"
+					@update:scene-lock-mode="sceneLockMode = $event"
+					@update:drag-over-bg="dragOverBg = $event"
+					@update:drag-over-music="dragOverMusic = $event"
+					@update:settings-bg-failed="settingsBgFailed = $event"
+					@open-scene-translation="openSceneTranslationDialog"
+					@add-lock-condition="addSceneLockCondition"
+					@remove-lock-condition="removeSceneLockCondition"
+					@open-asset-picker="openAssetPicker"
+					@background-drop="onBackgroundDrop"
+					@music-drop="onMusicDrop"
+					@background-upload="handleBackgroundUpload"
+					@music-upload="handleMusicUpload"
+					@toggle-music="toggleMusic"
+					@seek-music="seekMusic"
+					@music-time="onMusicTime"
+					@music-meta="onMusicMeta"
+					@music-ended="musicPlaying = false"
+					@save="saveSceneSettings"
+				/>
 			</div>
-			
+						
 			<!-- 对话编辑部分 -->
 			<div v-show="panelTab === 'script'" class="panel-section">
 				<h3 class="section-title">对话编辑</h3>
@@ -542,6 +370,7 @@ import AiAssistDialog from '@/components/scene/AiAssistDialog.vue';
 import NodeConditionDialog from '@/components/scene/NodeConditionDialog.vue';
 import AssetPickerDialog from '@/components/scene/AssetPickerDialog.vue';
 import DialogueEditorCard from '@/components/scene/DialogueEditorCard.vue';
+import SceneSettingsPanel from '@/components/scene/SceneSettingsPanel.vue';
 import { MAX_AVATAR_LAYERS } from '@/composables/scene/useDirectiveEditor';
 import { useSceneStagePreview } from '@/composables/scene/useSceneStagePreview';
 import { useSceneStageActions } from '@/composables/scene/useSceneStageActions';
@@ -797,8 +626,9 @@ const {
 const currentDialogueIndex = ref(0);
 const defaultBackground = '';
 
-// 场景设置里的背景音乐迷你播放器
-const settingsAudio = ref(null);
+// 场景设置面板里的试听 <audio> 由子组件持有并 defineExpose，音频控制仍统一在父级
+const settingsPanelRef = ref(null);
+const settingsAudio = computed(() => settingsPanelRef.value?.settingsAudio || null);
 const backgroundMusic = ref(null);
 
 /* ===== 音频：场景设置试听 + 舞台 BGM（见 useSceneAudio） ===== */
@@ -807,7 +637,6 @@ const {
 	musicProgress,
 	musicDuration,
 	bgmMuted,
-	formatClock: fmtTime,
 	toggleMusic,
 	onMusicTime,
 	onMusicMeta,
@@ -1185,7 +1014,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped src="./scene/sceneShell.css"></style>
-<style scoped src="./scene/sceneSettings.css"></style>
 <style scoped src="./scene/sceneDialogue.css"></style>
 <style scoped src="./scene/sceneResponsive.css"></style>
 <style scoped src="./scene/sceneDialogs.css"></style>
