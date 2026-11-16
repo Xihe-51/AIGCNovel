@@ -43,7 +43,15 @@ function createPerform() {
     getDialogue: () => dialogue.value,
     getScene: () => scene.value,
     getDialogues: () => state.dialogues,
-    setDialogues: (value) => { state.dialogues = value },
+    setDialogues: (value) => {
+      state.dialogues = value
+      const current = dialogue.value
+      if (!current) return
+      const next = (value[String(scene.value?.scene_id)] || []).find(
+        (item) => Number(item.content_id) === Number(current.content_id)
+      )
+      if (next) dialogue.value = { ...next }
+    },
     getHistory: () => state.history,
     setHistory: (value) => { state.history = value },
     getDirectives: () => state.directives,
@@ -132,13 +140,14 @@ describe('usePlayerPerform', () => {
     expect(ElMessage.warning).toHaveBeenCalledWith('台词不能为空')
   })
 
-  it('保存成功后热更新台词表、回想与状态', async () => {
+  it('保存成功后热更新台词表、回想与状态，且表单同步不会清空保存状态', async () => {
     const { togglePerformMode, savePerformEdit, performText, performAvatarId, performStatus, state } = createPerform()
     togglePerformMode()
     performText.value = '新台词'
     performAvatarId.value = '9'
 
     await savePerformEdit()
+    await nextTick()
 
     expect(state.saveDialogues).toHaveBeenCalledTimes(1)
     expect(state.saveDialogues.mock.calls[0][0]).toMatchObject({
@@ -150,6 +159,7 @@ describe('usePlayerPerform', () => {
     expect(state.dialogues[5][0].content_text).toBe('新台词')
     expect(state.history[0].content_text).toBe('新台词')
     expect(performStatus.value.startsWith('已保存 · ')).toBe(true)
+    expect(performText.value).toBe('新台词')
     expect(state.markSkipRestoredLine).toHaveBeenCalledTimes(1)
     expect(state.startTyping).toHaveBeenCalledTimes(1)
     expect(ElMessage.success).toHaveBeenCalledWith('已保存并热更新当前画面')

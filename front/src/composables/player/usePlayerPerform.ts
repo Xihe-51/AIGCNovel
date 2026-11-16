@@ -152,8 +152,10 @@ export function usePlayerPerform(ctx: PlayerPerformContext) {
   }
 
   // 面板打开时跟随场景/节点切换同步表单
+  // 用「多个 getter」而非「返回数组的 getter」：后者每次求值都会生成新数组，
+  // 保存时 setDialogues 引发的任意依赖变化都会误触发，把刚写入的保存状态清空。
   watch(
-    () => [ctx.getDialogue()?.content_id, ctx.getScene()?.scene_id],
+    [() => ctx.getDialogue()?.content_id, () => ctx.getScene()?.scene_id],
     () => {
       if (performMode.value && ctx.canPerform()) syncPerformForm()
     }
