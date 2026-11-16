@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatDownloadCount, formatMarketDate, getFileType, getTypeColor } from '../market'
+import {
+  formatDownloadCount,
+  formatMarketDate,
+  getAudioMimeType,
+  getFileType,
+  getTypeColor
+} from '../market'
 
 describe('getFileType', () => {
   it('returns 3 when url is missing', () => {
@@ -22,6 +28,29 @@ describe('getFileType', () => {
   it('falls back to 3 for unsupported extensions', () => {
     expect(getFileType('https://cdn.example.com/a.zip')).toBe(3)
     expect(getFileType('https://cdn.example.com/a')).toBe(3)
+  })
+})
+
+describe('getAudioMimeType', () => {
+  it('maps each supported audio extension to its MIME type', () => {
+    expect(getAudioMimeType('/static/a.mp3')).toBe('audio/mpeg')
+    expect(getAudioMimeType('/static/a.wav')).toBe('audio/wav')
+    expect(getAudioMimeType('/static/a.ogg')).toBe('audio/ogg')
+    expect(getAudioMimeType('/static/a.aac')).toBe('audio/aac')
+    expect(getAudioMimeType('/static/a.flac')).toBe('audio/flac')
+  })
+
+  it('detects the extension case-insensitively', () => {
+    expect(getAudioMimeType('/static/resources/1/2.WAV')).toBe('audio/wav')
+    expect(getAudioMimeType('/static/resources/1/2.Wav')).toBe('audio/wav')
+  })
+
+  it('returns undefined so the attribute is omitted for unknown input', () => {
+    expect(getAudioMimeType()).toBeUndefined()
+    expect(getAudioMimeType('')).toBeUndefined()
+    expect(getAudioMimeType(null)).toBeUndefined()
+    expect(getAudioMimeType('/static/a.png')).toBeUndefined()
+    expect(getAudioMimeType('https://example.com/a.zip')).toBeUndefined()
   })
 })
 

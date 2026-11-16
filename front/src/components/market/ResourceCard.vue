@@ -12,8 +12,8 @@
         <div class="audio-icon">
           <el-icon><Headset /></el-icon>
         </div>
-        <audio controls class="audio-player">
-          <source :src="`${BASE_URL}${resource.file_url}`" type="audio/mpeg">
+        <audio controls preload="none" class="audio-player">
+          <source :src="`${BASE_URL}${resource.file_url}`" :type="audioMimeType">
         </audio>
       </div>
 
@@ -88,7 +88,7 @@ import { computed } from 'vue'
 import { Coin, Delete, Download, Edit, Headset, Link, Present, User } from '@element-plus/icons-vue'
 import type { Resource } from '@/api/market'
 import { BASE_URL } from '@/utils/request'
-import { formatDownloadCount, getFileType, getTypeColor } from '@/utils/market'
+import { formatDownloadCount, getAudioMimeType, getFileType, getTypeColor } from '@/utils/market'
 
 const props = defineProps<{
   resource: Resource
@@ -104,6 +104,7 @@ const emit = defineEmits<{
 
 const delay = Math.random() * 0.3 + 's'
 const fileType = computed(() => getFileType(props.resource.file_url))
+const audioMimeType = computed(() => getAudioMimeType(props.resource.file_url))
 const isOwner = computed(() => Boolean(props.userId) && props.resource.uploader_id === props.userId)
 </script>
 

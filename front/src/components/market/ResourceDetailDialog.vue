@@ -23,7 +23,7 @@
             <div class="bar" v-for="i in 8" :key="i" :style="{ '--i': i }"></div>
           </div>
           <audio controls class="audio-element">
-            <source :src="`${BASE_URL}${resource.file_url}`" type="audio/mpeg">
+            <source :src="`${BASE_URL}${resource.file_url}`" :type="audioMimeType">
           </audio>
         </div>
       </div>
@@ -128,7 +128,7 @@ import { computed } from 'vue'
 import { Calendar, Document, Download, Edit, FolderAdd, Link, User } from '@element-plus/icons-vue'
 import type { Resource } from '@/api/market'
 import { BASE_URL } from '@/utils/request'
-import { formatMarketDate, getFileType, getTypeColor } from '@/utils/market'
+import { formatMarketDate, getAudioMimeType, getFileType, getTypeColor } from '@/utils/market'
 
 const props = defineProps<{
   visible: boolean
@@ -150,6 +150,7 @@ const visibleModel = computed({
 })
 
 const fileType = computed(() => getFileType(props.resource.file_url))
+const audioMimeType = computed(() => getAudioMimeType(props.resource.file_url))
 const isLoggedIn = computed(() => Boolean(props.userId))
 const isOwner = computed(() => Boolean(props.userId) && props.resource.uploader_id === props.userId)
 </script>
