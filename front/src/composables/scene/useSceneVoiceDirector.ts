@@ -152,7 +152,7 @@ export function useSceneVoiceDirector(ctx: SceneVoiceDirectorContext) {
     }
     ctx.pushHistory(before)
     ctx.markDirty()
-    ElMessage.success(`已应用 ${changed} 条情绪标注，记得保存`)
+    ElMessage.success(`已应用 ${changed} 条情绪标注，点「保存全部」后生效`)
   }
 
   return {

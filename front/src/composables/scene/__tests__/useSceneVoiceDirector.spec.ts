@@ -261,7 +261,7 @@ describe('useSceneVoiceDirector / 应用标注', () => {
     expect(d.snapshot).toHaveBeenCalled()
     expect(d.pushHistory).toHaveBeenCalledWith(beforeSnapshot)
     expect(d.markDirty).toHaveBeenCalled()
-    expect(ElMessage.success).toHaveBeenCalledWith('已应用 2 条情绪标注，记得保存')
+    expect(ElMessage.success).toHaveBeenCalledWith('已应用 2 条情绪标注，点「保存全部」后生效')
   })
 
   it('下标越界时跳过而不是抛错', () => {

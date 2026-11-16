@@ -3,6 +3,7 @@
 		ref="backgroundMusic"
 		:src="musicUrl ? baseUrl + musicUrl : ''"
 		loop
+		preload="none"
 		class="hidden-audio"
 	>你的浏览器不支持音频播放</audio>
 
