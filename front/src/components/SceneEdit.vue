@@ -177,7 +177,7 @@
 	/>
 	</template>
 
-<script setup>
+<script setup lang="ts">
 // 薄壳组件：状态、跨域联动与全部副作用都在 useSceneEditorController，
 // 这里只负责把控制器暴露的数据与领域事件接到模板上。
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
