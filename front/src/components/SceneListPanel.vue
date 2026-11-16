@@ -258,23 +258,14 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, computed, onMounted, watch } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
-	import { getScenes, createScene, updateScene, deleteScene, duplicateScene } from '@/api/scenes'
+	import { computed, onMounted, watch } from 'vue'
 	import type { Scene } from '@/api/scenes'
-	import { getProjectOutline } from '@/api/outline'
 	import { BASE_URL } from '@/utils/request'
-	import {
-		buildSceneGroups,
-		moveSceneInList,
-		renumberScenes,
-		searchResultTypeLabel,
-		sortScenesByOrder,
-		splitHighlightParts,
-	} from '@/utils/sceneList'
+	import { buildSceneGroups, searchResultTypeLabel, splitHighlightParts } from '@/utils/sceneList'
 	import { useSceneProjectSearch } from '@/composables/scene/useSceneProjectSearch'
 	import { useSceneChapters } from '@/composables/scene/useSceneChapters'
 	import { useSceneBatchOps } from '@/composables/scene/useSceneBatchOps'
+	import { useSceneListPanel } from '@/composables/scene/useSceneListPanel'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -289,10 +280,39 @@
 		(e: 'data-changed'): void
 	}>()
 
-	const scenes = ref<Scene[]>([])
-	const loading = ref(false)
-	const creating = ref(false)
-	const error = ref<string | null>(null)
+	// ---- 场景列表主体（加载 / 增删改 / 拖拽排序 / 初始场景）----
+	const {
+		scenes,
+		loading,
+		creating,
+		duplicating,
+		error,
+		sortedScenes,
+		savingOrder,
+		isActive,
+		brokenThumbs,
+		markThumbBroken,
+		dragId,
+		dragOverId,
+		dropAfter,
+		clearDragState,
+		onDragStart,
+		onDragOver,
+		onDragLeave,
+		onDrop,
+		fetchScenes,
+		handleAdd,
+		handleDuplicate,
+		handleDelete,
+	} = useSceneListPanel({
+		projectId: computed(() => props.projectId),
+		activeSceneId: () => props.activeSceneId,
+		batchMode: () => batchMode.value,
+		reloadChapters: () => fetchChapters(),
+		onSelect: id => emit('select', id),
+		onCreated: id => emit('created', id),
+		onDeleted: id => emit('deleted', id),
+	})
 
 	// ---- 全项目搜索 / 替换 ----
 	const {
@@ -338,13 +358,6 @@
 	const onAssignChange = (s: Scene, e: Event) => assignSceneChapter(s.scene_id, e)
 
 	// ---- 批量操作 ----
-	const sortedScenes = computed(() => sortScenesByOrder(scenes.value))
-
-	const isActive = (id: number) => String(id) === String(props.activeSceneId ?? '')
-
-	// 序号持久化与拖拽态由本组件持有，批量删除后的重排要复用
-	const savingOrder = ref(false)
-
 	const {
 		batchMode,
 		selectedIds,
@@ -382,220 +395,7 @@
 
 	const onItemClick = (s: Scene) => {
 		if (batchMode.value) toggleSelect(s.scene_id)
-		else onSelect(s.scene_id)
-	}
-
-
-	// 背景图文件丢失时记录 scene_id，缩略图退回序号占位，避免裂图
-	const brokenThumbs = ref<number[]>([])
-	const markThumbBroken = (id: number) => {
-		if (!brokenThumbs.value.includes(id)) brokenThumbs.value.push(id)
-	}
-
-	// ---- 拖拽排序 ----
-	const dragId = ref<number | null>(null)
-	const dragOverId = ref<number | null>(null)
-	const dropAfter = ref(false)
-
-	const clearDragState = () => {
-		dragId.value = null
-		dragOverId.value = null
-		dropAfter.value = false
-	}
-
-	const onDragStart = (s: Scene, e: DragEvent) => {
-		if (batchMode.value) return
-		dragId.value = s.scene_id
-		if (e.dataTransfer) {
-			e.dataTransfer.effectAllowed = 'move'
-			// Firefox 必须 setData 才会真正开始拖拽
-			e.dataTransfer.setData('text/plain', String(s.scene_id))
-		}
-	}
-
-	const onDragOver = (s: Scene, e: DragEvent) => {
-		if (dragId.value === null || dragId.value === s.scene_id) return
-		e.preventDefault()
-		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-		// 鼠标在目标上半区 → 插到它前面；下半区 → 插到它后面
-		const el = e.currentTarget as HTMLElement | null
-		const rect = el ? el.getBoundingClientRect() : null
-		dropAfter.value = rect ? e.clientY > rect.top + rect.height / 2 : false
-		dragOverId.value = s.scene_id
-	}
-
-	const onDragLeave = (s: Scene) => {
-		if (dragOverId.value === s.scene_id) {
-			dragOverId.value = null
-			dropAfter.value = false
-		}
-	}
-
-	const onDrop = async (target: Scene) => {
-		if (batchMode.value) return
-		const fromId = dragId.value
-		const after = dropAfter.value
-		clearDragState()
-		if (fromId === null) return
-
-		// 先把新顺序落到本地，界面立即生效；再逐条持久化
-		const list = moveSceneInList(sortedScenes.value, fromId, target.scene_id, after)
-		if (!list) return
-		scenes.value = list
-
-		savingOrder.value = true
-		try {
-			await Promise.all(list.map(s => updateScene(s.scene_id, { order_num: s.order_num })))
-		} catch (e) {
-			console.error('保存场景顺序失败:', e)
-			ElMessage.error('保存场景顺序失败，已恢复原顺序')
-			await fetchScenes()
-		} finally {
-			savingOrder.value = false
-		}
-	}
-
-	const LAST_SCENE_PREFIX = 'aigc:create:lastScene:'
-	const readLastSceneId = () => {
-		try {
-			return localStorage.getItem(`${LAST_SCENE_PREFIX}${props.projectId}`) || ''
-		} catch (e) {
-			return ''
-		}
-	}
-
-	// 初始场景：优先上次编辑的场景；没有历史时跳过空场景，避免一打开就是空白剧本
-	const pickInitialScene = async () => {
-		const list = sortedScenes.value
-		if (!list.length) return null
-		const lastId = readLastSceneId()
-		const last = lastId ? list.find(s => String(s.scene_id) === lastId) : null
-		if (last) return last
-		try {
-			const outline = await getProjectOutline(Number(props.projectId))
-			const rows = [
-				...(outline.chapters || []).flatMap(ch => ch.scenes || []),
-				...(outline.ungrouped || []),
-			]
-			const counts = new Map(rows.map(r => [Number(r.scene_id), Number(r.node_count) || 0]))
-			const withNodes = list.find(s => (counts.get(Number(s.scene_id)) || 0) > 0)
-			if (withNodes) return withNodes
-		} catch (e) {
-			console.warn('读取大纲选择初始场景失败:', e)
-		}
-		return list[0]
-	}
-
-	const fetchScenes = async () => {
-		if (!props.projectId) {
-			error.value = '缺少项目ID，无法获取场景'
-			return
-		}
-		loading.value = true
-		error.value = null
-		try {
-			scenes.value = await getScenes(Number(props.projectId))
-			// 章节归属随场景一起刷新（新建/复制/删除后分组保持正确）
-			await fetchChapters()
-			// 重新拉取后重置缺图标记，文件补回来后缩略图能自动恢复
-			brokenThumbs.value = []
-			// 没有任何选中项时：上次场景 → 第一个有内容的场景 → 第一个场景
-			if (!props.activeSceneId && sortedScenes.value.length) {
-				const initial = await pickInitialScene()
-				if (initial) emit('select', String(initial.scene_id))
-			}
-		} catch (e) {
-			console.error('获取场景失败:', e)
-			error.value = '场景加载失败'
-			scenes.value = []
-		} finally {
-			loading.value = false
-		}
-	}
-
-	const onSelect = (sceneId: number) => emit('select', String(sceneId))
-
-	const handleAdd = async () => {
-		if (creating.value) return
-		creating.value = true
-		try {
-			const maxOrder = scenes.value.length
-				? Math.max(...scenes.value.map(s => s.order_num))
-				: 0
-			const created = await createScene({
-				project_id: Number(props.projectId),
-				title: `新场景 ${maxOrder + 1}`,
-				description: '',
-				background_url: '',
-				music_url: '',
-				order_num: maxOrder + 1
-			})
-			scenes.value.push(created)
-			emit('created', String(created.scene_id))
-			emit('select', String(created.scene_id))
-		} catch (e) {
-			console.error('新建场景失败:', e)
-			ElMessage.error('新建场景失败')
-		} finally {
-			creating.value = false
-		}
-	}
-
-	const duplicating = ref(false)
-
-	const handleDuplicate = async (s: Scene) => {
-		if (duplicating.value) return
-		duplicating.value = true
-		try {
-			const created = await duplicateScene(s.scene_id)
-			await fetchScenes()
-			emit('created', String(created.scene_id))
-			emit('select', String(created.scene_id))
-			ElMessage.success('场景已复制（含对话、分支、演出）')
-		} catch (e) {
-			console.error('复制场景失败:', e)
-			ElMessage.error('复制场景失败')
-		} finally {
-			duplicating.value = false
-		}
-	}
-
-	const handleDelete = async (s: Scene) => {
-		try {
-			await ElMessageBox.confirm(
-				`删除场景「${s.title || '未命名场景'}」？场景里的对话和分支会一起删除。`,
-				'删除场景',
-				{ type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
-			)
-		} catch {
-			return
-		}
-
-		try {
-			await deleteScene(s.scene_id)
-		} catch (e) {
-			console.error('删除场景失败:', e)
-			ElMessage.error('删除场景失败')
-			return
-		}
-
-		const wasActive = isActive(s.scene_id)
-		scenes.value = scenes.value.filter(x => x.scene_id !== s.scene_id)
-		emit('deleted', String(s.scene_id))
-
-		// 剩下的场景重新连续编号，避免左栏出现 #2、#4 这种断档
-		const { list: rest, changed } = renumberScenes(sortedScenes.value)
-		if (changed.length) {
-			savingOrder.value = true
-			Promise.all(changed.map(x => updateScene(x.scene_id, { order_num: x.order_num })))
-				.catch(e => console.error('重排场景序号失败:', e))
-				.finally(() => { savingOrder.value = false })
-		}
-
-		if (wasActive) {
-			emit('select', rest.length ? String(rest[0].scene_id) : '')
-		}
-		ElMessage.success('场景已删除')
+		else emit('select', String(s.scene_id))
 	}
 
 	onMounted(fetchScenes)
