@@ -12,6 +12,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:cov": "vitest run --coverage",
+    "size": "node scripts/survey-size.mjs",
     "verify": "run-p type-check test:run"
   },
   "dependencies": {
