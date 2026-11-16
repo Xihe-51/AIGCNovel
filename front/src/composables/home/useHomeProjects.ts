@@ -1,5 +1,7 @@
 import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
+import { extractErrorMessage } from '@/utils/errorMessage'
 import * as projectApi from '@/api/project'
 import type { Project } from '@/api/project'
 
@@ -27,23 +29,19 @@ export function useHomeProjects() {
     fetchProjects()
   }
 
-  const confirmDelete = (projectId: number) => {
-    ElMessageBox.confirm('确定要删除这个项目吗?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-      customClass: 'delete-confirm'
+  const confirmDelete = async (projectId: number) => {
+    const confirmed = await confirmAction('确定要删除这个项目吗?', {
+      title: '提示',
+      customClass: 'delete-confirm',
     })
-      .then(async () => {
-        try {
-          await projectApi.deleteProject(projectId)
-          projects.value = projects.value.filter(p => p.project_id !== projectId)
-          ElMessage.success('项目已删除')
-        } catch (error) {
-          ElMessage.error('删除项目失败')
-        }
-      })
-      .catch(() => {})
+    if (!confirmed) return
+    try {
+      await projectApi.deleteProject(projectId)
+      projects.value = projects.value.filter(p => p.project_id !== projectId)
+      ElMessage.success('项目已删除')
+    } catch (error) {
+      ElMessage.error(extractErrorMessage(error, '删除项目失败'))
+    }
   }
 
   const handleImportClick = () => {

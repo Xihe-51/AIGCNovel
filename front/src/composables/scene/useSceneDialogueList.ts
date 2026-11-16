@@ -5,7 +5,8 @@
  * 脏标记、草稿清理的先后顺序，删除已落库台词时清空撤销栈（服务端级联删除
  * 无法回滚），以及保存后用服务端返回值回填并保留本地的分支 / 数值变化。
  */
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import type { Ref } from 'vue'
 import { formatErrorMessage } from '@/utils/errorMessage'
 
@@ -150,20 +151,11 @@ export function useSceneDialogueList(ctx: SceneDialogueListContext) {
     // 已落库的台词：服务端删除会级联清理分支/数值/演出/结局/已读，
     // 前端撤销无法把它们一起恢复，所以必须先确认，并清空本地撤销栈。
     if (dialogue.content_id) {
-      try {
-        await ElMessageBox.confirm(
-          '删除这条台词会同时删除它的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？',
-          '删除台词',
-          {
-            type: 'warning',
-            confirmButtonText: '删除',
-            cancelButtonText: '取消',
-            confirmButtonClass: 'el-button--danger'
-          }
-        )
-      } catch (e) {
-        return
-      }
+      const confirmed = await confirmAction(
+        '删除这条台词会同时删除它的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？',
+        { title: '删除台词', confirmButtonClass: 'el-button--danger' },
+      )
+      if (!confirmed) return
       const hadUnsaved = dirty.value
       try {
         await ctx.deleteDialogueApi(dialogue.content_id)

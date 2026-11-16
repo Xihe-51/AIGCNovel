@@ -183,7 +183,8 @@
 
 <script setup lang="ts">
 	import { computed, ref, watch } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
+	import { ElMessage } from 'element-plus'
+	import { confirmAction } from '@/utils/confirm'
 	import {
 		applyStoryCompile,
 		getCompileSource,
@@ -323,15 +324,15 @@
 			ElMessage.warning('请先解析预览，确认结构后再写入')
 			return
 		}
+		const confirmed = await confirmAction(
+			`将向项目追加 ${stats.scene_count} 个场景、${stats.node_count} 条内容` +
+			(createCharacters.value && stats.character_unknown ? `，并创建 ${stats.character_unknown} 个角色占位` : '') +
+			'。写入后可在创作页继续编辑。',
+			{ title: '写入项目', confirmButtonText: '写入' }
+		)
+		if (!confirmed) return
 		applying.value = true
 		try {
-			await ElMessageBox.confirm(
-				`将向项目追加 ${stats.scene_count} 个场景、${stats.node_count} 条内容` +
-				(createCharacters.value && stats.character_unknown ? `，并创建 ${stats.character_unknown} 个角色占位` : '') +
-				'。写入后可在创作页继续编辑。',
-				'写入项目',
-				{ type: 'warning', confirmButtonText: '写入', cancelButtonText: '取消' }
-			)
 			const result = await applyStoryCompile(Number(props.projectId), buildPayload())
 			// 即使弹窗在写入期间被关闭，也要通知父级刷新场景列表
 			emit('applied', {

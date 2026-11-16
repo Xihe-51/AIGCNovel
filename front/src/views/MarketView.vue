@@ -172,7 +172,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import { Search, Upload } from '@element-plus/icons-vue'
 import { jwtDecode } from 'jwt-decode'
 import {
@@ -377,22 +378,20 @@ const editResource = (resource: Resource) => {
   uploadDialogVisible.value = true
 }
 
-const confirmDelete = (resource: Resource) => {
-  ElMessageBox.confirm(`确定要删除"${resource.title}"吗？`, '删除确认', {
+const confirmDelete = async (resource: Resource) => {
+  const confirmed = await confirmAction(`确定要删除"${resource.title}"吗？`, {
+    title: '删除确认',
     confirmButtonText: '删除',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    try {
-      await deleteResource(resource.resource_id)
-      ElMessage.success('删除成功')
-      fetchResources()
-    } catch (error: any) {
-      // 后端会说明「仍被 N 处引用」，这里原样展示，别吞成笼统的「删除失败」
-      const msg = extractErrorMessage(error, '删除失败')
-      ElMessage.error(msg)
-    }
-  }).catch(() => {})
+  })
+  if (!confirmed) return
+  try {
+    await deleteResource(resource.resource_id)
+    ElMessage.success('删除成功')
+    fetchResources()
+  } catch (error: any) {
+    // 后端会说明「仍被 N 处引用」，这里原样展示，别吞成笼统的「删除失败」
+    ElMessage.error(extractErrorMessage(error, '删除失败'))
+  }
 }
 
 onMounted(() => {

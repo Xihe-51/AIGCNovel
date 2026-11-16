@@ -5,7 +5,8 @@
  * 不直接持有剧情数据，也不直接操作路由。
  */
 import { nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import { useSaveSlots } from '@/composables/player/useSaveSlots'
 
 export interface PlayerProgressContext {
@@ -155,23 +156,18 @@ export function usePlayerProgress(ctx: PlayerProgressContext) {
     }
   }
 
-  const exitGame = () => {
-    ElMessageBox.confirm(
-      ctx.t('toast.exitConfirm'),
-      ctx.t('toast.exitTitle'),
-      {
-        confirmButtonText: ctx.t('toast.exitBtn'),
-        cancelButtonText: ctx.t('common.cancel'),
-        type: 'warning',
-      }
-    )
-      .then(() => {
-        ctx.stopBackgroundMusic()
-        ctx.exitToHome()
-      })
-      .catch(() => {
-        ElMessage.info(ctx.t('toast.exitCancelled'))
-      })
+  const exitGame = async () => {
+    const confirmed = await confirmAction(ctx.t('toast.exitConfirm'), {
+      title: ctx.t('toast.exitTitle'),
+      confirmButtonText: ctx.t('toast.exitBtn'),
+      cancelButtonText: ctx.t('common.cancel'),
+    })
+    if (!confirmed) {
+      ElMessage.info(ctx.t('toast.exitCancelled'))
+      return
+    }
+    ctx.stopBackgroundMusic()
+    ctx.exitToHome()
   }
 
   return {

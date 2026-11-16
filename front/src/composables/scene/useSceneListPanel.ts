@@ -7,7 +7,8 @@
  */
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import { getScenes, createScene, updateScene, deleteScene, duplicateScene } from '@/api/scenes'
 import type { Scene } from '@/api/scenes'
 import { getProjectOutline } from '@/api/outline'
@@ -231,15 +232,11 @@ export function useSceneListPanel(ctx: SceneListPanelContext) {
   }
 
   const handleDelete = async (s: Scene) => {
-    try {
-      await ElMessageBox.confirm(
-        `删除场景「${s.title || '未命名场景'}」？场景里的对话和分支会一起删除。`,
-        '删除场景',
-        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
-      )
-    } catch {
-      return
-    }
+    const confirmed = await confirmDanger(
+      `删除场景「${s.title || '未命名场景'}」？场景里的对话和分支会一起删除。`,
+      { title: '删除场景' },
+    )
+    if (!confirmed) return
 
     try {
       await deleteScene(s.scene_id)

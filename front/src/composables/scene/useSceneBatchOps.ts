@@ -6,7 +6,8 @@
  */
 import { ref } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import {
   updateScene,
   deleteScene,
@@ -171,15 +172,11 @@ export function useSceneBatchOps(ctx: SceneBatchOpsContext) {
   const remove = async () => {
     if (!selectedIds.value.length || batchBusy.value) return
     const ids = selectedIds.value.slice()
-    try {
-      await ElMessageBox.confirm(
-        `删除选中的 ${ids.length} 个场景？场景里的对话和分支会一起删除，无法撤销。`,
-        '批量删除场景',
-        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
-      )
-    } catch {
-      return
-    }
+    const confirmed = await confirmDanger(
+      `删除选中的 ${ids.length} 个场景？场景里的对话和分支会一起删除，无法撤销。`,
+      { title: '批量删除场景' },
+    )
+    if (!confirmed) return
     batchBusy.value = true
     const wasActive = ids.some(id => ctx.isActive(id))
     try {

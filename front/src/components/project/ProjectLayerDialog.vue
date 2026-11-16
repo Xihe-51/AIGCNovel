@@ -71,7 +71,9 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
+import { formatErrorMessage } from '@/utils/errorMessage'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
 	uploadCharacterAvatarLayer,
@@ -174,12 +176,15 @@ const saveAvatarLayer = async (layer: CharacterAvatarLayer) => {
 }
 
 const removeAvatarLayer = async (layer: CharacterAvatarLayer) => {
+	const confirmed = await confirmAction('确定要删除这个差分层吗？', { title: '警告' })
+	if (!confirmed) return
 	try {
-		await ElMessageBox.confirm('确定要删除这个差分层吗？', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
 		await deleteCharacterAvatarLayer(layer.layer_id)
 		emit('changed')
 		ElMessage.success('差分层已删除')
-	} catch {}
+	} catch (e) {
+		ElMessage.error(formatErrorMessage('删除差分层失败', e))
+	}
 }
 </script>
 

@@ -1,5 +1,6 @@
 import { getCurrentInstance, onBeforeUnmount, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import type { FormInstance, FormRules, UploadProps } from 'element-plus'
 import type { ECharts } from 'echarts'
 import {
@@ -250,19 +251,15 @@ export function useIndividualView() {
   }
 
   const removeModel = async (modelId: number) => {
+    const confirmed = await confirmAction('确定要删除这个模型吗？', { title: '警告' })
+    if (!confirmed) return
     try {
-      await ElMessageBox.confirm('确定要删除这个模型吗？', '警告', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
       const res = await deleteAIModel(modelId)
       if (res.data.code === 200) {
         ElMessage.success('模型删除成功')
         await loadModels()
       }
     } catch (e: any) {
-      if (e === 'cancel' || e === 'close') return
       ElMessage.error(formatErrorMessage('删除失败', e))
     }
   }

@@ -6,7 +6,8 @@
  */
 import { ref } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import { deleteDialogue as apiDeleteDialogue } from '@/api/dialogue'
 
 export interface SceneSelectionContext {
@@ -39,20 +40,11 @@ export function useSceneSelection(ctx: SceneSelectionContext) {
   const batchDelete = async () => {
     const indexes = [...selectedIndexes.value].sort((a, b) => b - a)
     if (!indexes.length) return
-    try {
-      await ElMessageBox.confirm(
-        `删除选中的 ${indexes.length} 条台词会同时删除它们的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？`,
-        '批量删除',
-        {
-          type: 'warning',
-          confirmButtonText: '删除',
-          cancelButtonText: '取消',
-          confirmButtonClass: 'el-button--danger'
-        }
-      )
-    } catch (e) {
-      return
-    }
+    const confirmed = await confirmDanger(
+      `删除选中的 ${indexes.length} 条台词会同时删除它们的分支、数值变化、演出指令、结局与已读记录，且无法撤销。确定删除？`,
+      { title: '批量删除', confirmButtonClass: 'el-button--danger' },
+    )
+    if (!confirmed) return
     const hadUnsaved = ctx.getDirty()
     for (const i of indexes) {
       const d = ctx.dialogues.value[i]

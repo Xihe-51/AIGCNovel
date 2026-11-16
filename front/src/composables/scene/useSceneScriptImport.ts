@@ -5,7 +5,8 @@
  */
 import { ref } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 
 export interface ScriptEntry {
   name?: string
@@ -35,13 +36,11 @@ export function useSceneScriptImport(ctx: SceneScriptImportContext) {
       return
     }
     if (mode === 'replace' && ctx.dialogues.value.length) {
-      try {
-        await ElMessageBox.confirm('会清空当前场景的全部对话（仅本地，保存后生效），确定替换？', '替换全部对话', {
-          type: 'warning', confirmButtonText: '替换', cancelButtonText: '取消'
-        })
-      } catch (e) {
-        return
-      }
+      const confirmed = await confirmAction(
+        '会清空当前场景的全部对话（仅本地，保存后生效），确定替换？',
+        { title: '替换全部对话', confirmButtonText: '替换' },
+      )
+      if (!confirmed) return
     }
     ctx.pushHistory()
     if (mode === 'replace') ctx.dialogues.value = []

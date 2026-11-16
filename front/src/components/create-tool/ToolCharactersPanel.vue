@@ -135,7 +135,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import type { UploadFile } from 'element-plus'
 import {
 	getCharacters,
@@ -259,22 +260,15 @@ const setDefaultAvatar = async (a: CharacterAvatar) => {
 }
 
 const removeAvatar = async (a: CharacterAvatar) => {
-	try {
-		await ElMessageBox.confirm('引用这张立绘的对话会失去图片，确定删除？', '删除立绘', {
-			type: 'warning',
-			confirmButtonText: '删除',
-			cancelButtonText: '取消'
-		})
-	} catch {
-		return
-	}
+	const confirmed = await confirmDanger('引用这张立绘的对话会失去图片，确定删除？', { title: '删除立绘' })
+	if (!confirmed) return
 	try {
 		await deleteCharacterAvatar(a.avatar_id)
 		avatars.value = avatars.value.filter(x => x.avatar_id !== a.avatar_id)
 		ElMessage.success('已删除')
 	} catch (e) {
 		console.error('删除立绘失败:', e)
-		ElMessage.error('删除失败')
+		ElMessage.error(formatErrorMessage('删除失败', e))
 	}
 }
 

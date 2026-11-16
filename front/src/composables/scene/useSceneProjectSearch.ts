@@ -7,7 +7,8 @@
  */
 import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import { searchProject, replaceProjectText } from '@/api/scenes'
 import type { ProjectSearchItem } from '@/api/scenes'
 import { formatErrorMessage } from '@/utils/errorMessage'
@@ -70,15 +71,11 @@ export function useSceneProjectSearch(ctx: SceneProjectSearchContext) {
       if (dry.choices) parts.push(`选项 ${dry.choices} 条`)
       if (dry.scenes) parts.push(`场景 ${dry.scenes} 个`)
       const extra = replaceQuery.value ? '' : '替换内容为空，这些文字将被删除。'
-      try {
-        await ElMessageBox.confirm(
-          `将替换 ${parts.join('，')}。${extra}是否继续？`,
-          '批量替换',
-          { type: 'warning', confirmButtonText: '全部替换', cancelButtonText: '取消' }
-        )
-      } catch {
-        return
-      }
+      const confirmed = await confirmAction(
+        `将替换 ${parts.join('，')}。${extra}是否继续？`,
+        { title: '批量替换', confirmButtonText: '全部替换' },
+      )
+      if (!confirmed) return
       const res = await replaceProjectText(Number(ctx.projectId.value), q, replaceQuery.value, false)
       ElMessage.success(`已替换 ${res.occurrences} 处`)
       await runSearch()

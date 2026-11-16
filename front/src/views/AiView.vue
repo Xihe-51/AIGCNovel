@@ -138,7 +138,9 @@ import TextGenerator from '@/components/TextGenerator.vue'
 import ImageGenerator from '@/components/ImageGenerator.vue'
 import VoiceGenerator from '@/components/VoiceGenerator.vue'
 import VoiceSynthesizer from '@/components/VoiceSynthesizer.vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
+import { extractErrorMessage } from '@/utils/errorMessage'
 import {
   getAIGenerationsByUser, getModels, generateText,
   deleteAIGenerationById, generateImage, generateMusic, generateVoice,
@@ -366,19 +368,16 @@ const handleVoiceGenerate = async (text, options) => {
   }
 }
 
-const removeHistory = (index) => {
-  ElMessageBox.confirm('确定删除该条记录吗？', '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(() => {
-    deleteAIGenerationById(index).then(() => {
-      loadHistory()
-      ElMessage.success('删除成功')
-    }).catch(() => {
-      ElMessage.error('删除失败')
-    })
-  }).catch(() => {})
+const removeHistory = async (index) => {
+  const confirmed = await confirmAction('确定删除该条记录吗？', { title: '删除确认' })
+  if (!confirmed) return
+  try {
+    await deleteAIGenerationById(index)
+    loadHistory()
+    ElMessage.success('删除成功')
+  } catch (e) {
+    ElMessage.error(extractErrorMessage(e, '删除失败'))
+  }
 }
 
 const editWithPhotopea = (item) => {

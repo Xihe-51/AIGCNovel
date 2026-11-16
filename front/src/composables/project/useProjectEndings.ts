@@ -1,10 +1,11 @@
 import { computed, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { getStoryGraph } from '@/api/branch'
 import type { StoryNode } from '@/api/branch'
 import { createEnding, deleteEnding, listEndings, updateEnding } from '@/api/ending'
 import type { Ending, EndingCondition, EndingPayload } from '@/api/ending'
-import { extractErrorMessage } from '@/utils/errorMessage'
+import { extractErrorMessage, formatErrorMessage } from '@/utils/errorMessage'
+import { confirmDanger } from '@/utils/confirm'
 
 export interface StoryNodeOption {
   content_id: number
@@ -106,17 +107,14 @@ export function useProjectEndings(ctx: ProjectEndingsContext) {
   }
 
   const removeEnding = async (row: Ending) => {
+    const confirmed = await confirmDanger(`删除结局「${row.title}」？`, { title: '删除结局' })
+    if (!confirmed) return
     try {
-      await ElMessageBox.confirm(`删除结局「${row.title}」？`, '删除结局', {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      })
       await deleteEnding(ctx.projectId(), row.ending_id)
       ElMessage.success('结局已删除')
       await fetchEndings()
     } catch (e) {
-      /* 取消 */
+      ElMessage.error(formatErrorMessage('删除结局失败', e))
     }
   }
 

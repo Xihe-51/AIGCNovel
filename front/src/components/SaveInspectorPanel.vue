@@ -129,7 +129,8 @@
 
 <script setup lang="ts">
 	import { computed, onMounted, ref } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
+	import { ElMessage } from 'element-plus'
+	import { confirmAction } from '@/utils/confirm'
 	import {
 		deleteProjectSave,
 		getProjectSave,
@@ -230,12 +231,12 @@
 	}
 
 	const remove = async (item: ProjectSaveItem) => {
+		const confirmed = await confirmAction(
+			`确定删除「${item.username} · ${item.slot_label}」的存档吗？删除后玩家无法恢复。`,
+			{ title: '删除玩家存档', confirmButtonText: '删除' }
+		)
+		if (!confirmed) return
 		try {
-			await ElMessageBox.confirm(
-				`确定删除「${item.username} · ${item.slot_label}」的存档吗？删除后玩家无法恢复。`,
-				'删除玩家存档',
-				{ confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-			)
 			await deleteProjectSave(Number(props.projectId), item.user_id, item.slot)
 			items.value = items.value.filter(it => !(it.user_id === item.user_id && it.slot === item.slot))
 			total.value = Math.max(0, total.value - 1)
@@ -243,7 +244,6 @@
 			detailVisible.value = false
 			ElMessage.success('存档已删除')
 		} catch (e: any) {
-			if (e === 'cancel' || e === 'close') return
 			console.warn('删除玩家存档失败:', e)
 			ElMessage.error(formatErrorMessage('删除失败', e))
 		}

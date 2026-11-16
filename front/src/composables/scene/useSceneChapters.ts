@@ -6,7 +6,8 @@
  */
 import { ref } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import {
   listChapters,
   createChapter,
@@ -101,15 +102,11 @@ export function useSceneChapters(ctx: SceneChaptersContext) {
   }
 
   const removeChapter = async (c: StoryChapter) => {
-    try {
-      await ElMessageBox.confirm(
-        `删除章节「${c.title}」？该章节下的场景会回到「未分组」，场景本身不会删除。`,
-        '删除章节',
-        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-      )
-    } catch {
-      return
-    }
+    const confirmed = await confirmDanger(
+      `删除章节「${c.title}」？该章节下的场景会回到「未分组」，场景本身不会删除。`,
+      { title: '删除章节' },
+    )
+    if (!confirmed) return
     try {
       await deleteChapter(Number(ctx.projectId.value), c.chapter_id)
       await fetchChapters()

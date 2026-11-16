@@ -127,7 +127,8 @@
 
 <script setup lang="ts">
 	import { computed, ref } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
+	import { ElMessage } from 'element-plus'
+	import { confirmAction } from '@/utils/confirm'
 	import { checkProjectPublish, updateProjectPublish } from '@/api/publish'
 	import type { PublishCheck } from '@/api/publish'
 	import { createProjectRelease, listProjectReleases, rollbackProjectRelease } from '@/api/release'
@@ -213,15 +214,11 @@
 		const warn = check.value.ready
 			? ''
 			: `当前还有 ${check.value.error_count} 个错误，发布后玩家可能遇到问题。`
-		try {
-			await ElMessageBox.confirm(
-				`${warn}将保存当前剧本快照并作为新版本发布，是否继续？`,
-				'发布新版本',
-				{ type: 'warning', confirmButtonText: '发布', cancelButtonText: '取消' }
-			)
-		} catch {
-			return
-		}
+		const confirmed = await confirmAction(
+			`${warn}将保存当前剧本快照并作为新版本发布，是否继续？`,
+			{ title: '发布新版本', confirmButtonText: '发布' }
+		)
+		if (!confirmed) return
 		saving.value = true
 		try {
 			const release = await recordRelease(releaseNotes.value)
@@ -236,15 +233,11 @@
 	}
 
 	const rollbackRelease = async (release: ProjectRelease) => {
-		try {
-			await ElMessageBox.confirm(
-				`回滚会用 v${release.release_no} 的剧本快照覆盖当前剧本（${release.stats.scene_count} 场景 / ${release.stats.content_count} 节点），回滚前会自动备份当前版本。是否继续？`,
-				'回滚版本',
-				{ type: 'warning', confirmButtonText: '回滚', cancelButtonText: '取消' }
-			)
-		} catch {
-			return
-		}
+		const confirmed = await confirmAction(
+			`回滚会用 v${release.release_no} 的剧本快照覆盖当前剧本（${release.stats.scene_count} 场景 / ${release.stats.content_count} 节点），回滚前会自动备份当前版本。是否继续？`,
+			{ title: '回滚版本', confirmButtonText: '回滚' }
+		)
+		if (!confirmed) return
 		saving.value = true
 		try {
 			await rollbackProjectRelease(Number(props.projectId), release.release_id)
@@ -262,15 +255,11 @@
 		if (!check.value) return
 		let force = false
 		if (!check.value.ready) {
-			try {
-				await ElMessageBox.confirm(
-					`还有 ${check.value.error_count} 个错误（可能是缺失素材或剧情断点）。强制发布后玩家仍可能遇到问题，是否继续？`,
-					'强制发布',
-					{ type: 'warning', confirmButtonText: '仍然发布', cancelButtonText: '返回修复' }
-				)
-			} catch {
-				return
-			}
+			const confirmed = await confirmAction(
+				`还有 ${check.value.error_count} 个错误（可能是缺失素材或剧情断点）。强制发布后玩家仍可能遇到问题，是否继续？`,
+				{ title: '强制发布', confirmButtonText: '仍然发布', cancelButtonText: '返回修复' }
+			)
+			if (!confirmed) return
 			force = true
 		}
 		saving.value = true
@@ -299,15 +288,12 @@
 	}
 
 	const unpublish = async () => {
-		try {
-			await ElMessageBox.confirm('取消公开后，分享链接将无法访问，作品会从广场下架。', '取消公开', {
-				type: 'warning',
-				confirmButtonText: '取消公开',
-				cancelButtonText: '保持发布',
-			})
-		} catch {
-			return
-		}
+		const confirmed = await confirmAction('取消公开后，分享链接将无法访问，作品会从广场下架。', {
+			title: '取消公开',
+			confirmButtonText: '取消公开',
+			cancelButtonText: '保持发布',
+		})
+		if (!confirmed) return
 		saving.value = true
 		try {
 			await updateProjectPublish(Number(props.projectId), false)

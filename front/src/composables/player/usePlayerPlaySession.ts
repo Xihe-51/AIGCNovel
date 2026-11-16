@@ -10,7 +10,8 @@
  * 起点推演被抽成纯函数，便于脱离播放器状态直接验证「跳到哪个场景/哪句台词」。
  */
 import { nextTick, type Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 
 export interface StartPosition {
   sceneIndex: number
@@ -154,29 +155,22 @@ export function usePlayerPlaySession(ctx: PlayerPlaySessionContext) {
     ElMessage.success(ctx.t('toast.nextPlaythrough', { n: ctx.playthrough.value }))
   }
 
-  const restartGame = () => {
-    ElMessageBox.confirm(
-      ctx.t('toast.restartConfirm'),
-      ctx.t('toast.restartTitle'),
-      {
-        confirmButtonText: ctx.t('common.confirm'),
-        cancelButtonText: ctx.t('common.cancel'),
-        type: 'info',
-      }
-    )
-      .then(() => {
-        ctx.stopBackgroundMusic()
-        rewindToStart()
-        ctx.resetVariables()
-        ctx.clearLineSnapshots()
-        // 新一轮从头开始，重新允许记录本轮埋点
-        ctx.resetTelemetryTracking()
-        nextTick(() => startPreview())
-        ElMessage.success(ctx.t('toast.restarted'))
-      })
-      .catch(() => {
-        // 用户取消重新开始
-      })
+  const restartGame = async () => {
+    const confirmed = await confirmAction(ctx.t('toast.restartConfirm'), {
+      title: ctx.t('toast.restartTitle'),
+      confirmButtonText: ctx.t('common.confirm'),
+      cancelButtonText: ctx.t('common.cancel'),
+      type: 'info',
+    })
+    if (!confirmed) return
+    ctx.stopBackgroundMusic()
+    rewindToStart()
+    ctx.resetVariables()
+    ctx.clearLineSnapshots()
+    // 新一轮从头开始，重新允许记录本轮埋点
+    ctx.resetTelemetryTracking()
+    nextTick(() => startPreview())
+    ElMessage.success(ctx.t('toast.restarted'))
   }
 
   return { startPreview, resetGame, startNextPlaythrough, restartGame }

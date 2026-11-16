@@ -5,7 +5,7 @@
  * 这样快照应用后的清多选、重载预览指令仍由页面决定，不反向依赖编辑器。
  */
 import { computed, nextTick, onUnmounted, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 
 /** 撤销栈上限，超出后丢最早的快照 */
 const MAX_HISTORY = 50
@@ -141,17 +141,18 @@ export function useSceneHistory(ctx: SceneHistoryContext) {
         localStorage.removeItem(draftKey.value)
         return
       }
-      await ElMessageBox.confirm(
+      const confirmed = await confirmAction(
         `发现 ${new Date(draft.at).toLocaleString()} 的未保存草稿，是否恢复？`,
-        '恢复草稿',
-        { confirmButtonText: '恢复', cancelButtonText: '丢弃', type: 'info' }
+        { title: '恢复草稿', confirmButtonText: '恢复', cancelButtonText: '丢弃', type: 'info' },
       )
+      if (!confirmed) {
+        localStorage.removeItem(draftKey.value)
+        return
+      }
       ctx.setDialogues(draft.dialogues)
       dirty.value = true
-    } catch (e: any) {
-      if (e === 'cancel' || e === 'close') {
-        try { localStorage.removeItem(draftKey.value) } catch (err) { /* ignore */ }
-      }
+    } catch {
+      return
     }
   }
 

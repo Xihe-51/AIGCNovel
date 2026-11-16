@@ -75,7 +75,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import {
 	listProjectTerms,
 	createProjectTerm,
@@ -151,13 +152,8 @@ const startEditTerm = (t: ProjectTerm) => {
 const cancelEditTerm = () => resetTermForm()
 
 const removeTerm = async (t: ProjectTerm) => {
-	try {
-		await ElMessageBox.confirm(`删除术语「${t.standard}」？`, '删除术语', {
-			type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
-		})
-	} catch {
-		return
-	}
+	const confirmed = await confirmDanger(`删除术语「${t.standard}」？`, { title: '删除术语' })
+	if (!confirmed) return
 	try {
 		await deleteProjectTerm(Number(props.projectId), t.term_id)
 		if (editingTermId.value === t.term_id) resetTermForm()

@@ -1,8 +1,9 @@
 import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { createCG, deleteCG, listCGs, updateCG } from '@/api/cg'
 import type { CGPayload, ProjectCG } from '@/api/cg'
-import { extractErrorMessage } from '@/utils/errorMessage'
+import { extractErrorMessage, formatErrorMessage } from '@/utils/errorMessage'
+import { confirmDanger } from '@/utils/confirm'
 
 /** 解锁条件文案：绑定结局时写明结局名，否则初始可见 */
 export function describeCgUnlock(
@@ -70,17 +71,14 @@ export function useProjectCgs(ctx: ProjectCgsContext) {
   }
 
   const removeCG = async (row: ProjectCG) => {
+    const confirmed = await confirmDanger(`删除 CG「${row.title}」？`, { title: '删除 CG' })
+    if (!confirmed) return
     try {
-      await ElMessageBox.confirm(`删除 CG「${row.title}」？`, '删除 CG', {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      })
       await deleteCG(ctx.projectId(), row.cg_id)
       ElMessage.success('CG 已删除')
       await fetchCGs()
     } catch (e) {
-      // 取消
+      ElMessage.error(formatErrorMessage('删除 CG 失败', e))
     }
   }
 

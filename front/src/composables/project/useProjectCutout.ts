@@ -6,8 +6,9 @@
  */
 import { onUnmounted, ref } from 'vue'
 import type { Ref } from 'vue'
-import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
+import { ElLoading, ElMessage } from 'element-plus'
 import { cutoutCharacterAvatar } from '@/api/character'
+import { confirmAction } from '@/utils/confirm'
 
 /** 立绘最小字段：页面列表里的 image_url 可能为空，抠图前会自行过滤 */
 interface CutoutAvatar {
@@ -141,15 +142,11 @@ export function useProjectCutout(ctx: ProjectCutoutContext) {
       ElMessage.warning('上一张立绘还在抠图，请稍候')
       return
     }
-    try {
-      await ElMessageBox.confirm(
-        '会自动识别人物并去掉背景，生成透明底立绘。PNG 会直接覆盖原文件，其他格式会另存为 PNG。是否继续？',
-        '角色抠图',
-        { confirmButtonText: '开始抠图', cancelButtonText: '取消', type: 'info' }
-      )
-    } catch {
-      return
-    }
+    const confirmed = await confirmAction(
+      '会自动识别人物并去掉背景，生成透明底立绘。PNG 会直接覆盖原文件，其他格式会另存为 PNG。是否继续？',
+      { title: '角色抠图', confirmButtonText: '开始抠图', type: 'info' },
+    )
+    if (!confirmed) return
     runCutout(avatar)
   }
 
@@ -168,15 +165,11 @@ export function useProjectCutout(ctx: ProjectCutoutContext) {
       ElMessage.warning('这个角色还没有可抠图的本地立绘')
       return
     }
-    try {
-      await ElMessageBox.confirm(
-        `将依次处理 ${list.length} 张立绘：自动去掉背景并生成透明底 PNG，原 PNG 会被覆盖。是否继续？`,
-        '批量抠图',
-        { confirmButtonText: '开始', cancelButtonText: '取消', type: 'info' }
-      )
-    } catch {
-      return
-    }
+    const confirmed = await confirmAction(
+      `将依次处理 ${list.length} 张立绘：自动去掉背景并生成透明底 PNG，原 PNG 会被覆盖。是否继续？`,
+      { title: '批量抠图', confirmButtonText: '开始', type: 'info' },
+    )
+    if (!confirmed) return
 
     cutoutBatchRunning.value = true
     const loading = ElLoading.service({

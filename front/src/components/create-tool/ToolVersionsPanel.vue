@@ -96,7 +96,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import {
 	createProjectVersion,
 	getVersionDiff,
@@ -173,15 +174,11 @@ const showDiff = async (v: ProjectVersionMeta) => {
 
 const restoreVersion = async (v: ProjectVersionMeta) => {
 	if (restoringId.value !== null) return
-	try {
-		await ElMessageBox.confirm(
-			`恢复到版本 #${v.version_id}（${formatVersionTime(v.created_at)}）？\n当前剧本会先自动备份，恢复后当前页面会自动刷新。`,
-			'恢复版本',
-			{ type: 'warning', confirmButtonText: '恢复', cancelButtonText: '取消' }
-		)
-	} catch {
-		return
-	}
+	const confirmed = await confirmAction(
+		`恢复到版本 #${v.version_id}（${formatVersionTime(v.created_at)}）？\n当前剧本会先自动备份，恢复后当前页面会自动刷新。`,
+		{ title: '恢复版本', confirmButtonText: '恢复' }
+	)
+	if (!confirmed) return
 	restoringId.value = v.version_id
 	try {
 		const res = await restoreProjectVersion(Number(props.projectId), v.version_id)

@@ -233,10 +233,7 @@ describe('usePlayerPlaySession / restartGame', () => {
     h.sceneIndex.value = 2
     h.dialogueIndex.value = 1
     const { restartGame } = usePlayerPlaySession(h.ctx)
-    restartGame()
-    await Promise.resolve()
-    await nextTick()
-    await nextTick()
+    await restartGame()
     await nextTick()
 
     expect(h.calls[0]).toBe('stopBackgroundMusic')
@@ -256,9 +253,7 @@ describe('usePlayerPlaySession / restartGame', () => {
     const h = makeHarness()
     h.sceneIndex.value = 2
     const { restartGame } = usePlayerPlaySession(h.ctx)
-    restartGame()
-    await Promise.resolve()
-    await nextTick()
+    await restartGame()
     await nextTick()
 
     expect(h.sceneIndex.value).toBe(2)

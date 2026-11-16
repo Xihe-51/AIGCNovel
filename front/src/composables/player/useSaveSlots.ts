@@ -5,7 +5,8 @@
  * 不直接操作页面里的播放进度与舞台状态。
  */
 import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '@/utils/confirm'
 import { listSaves, getSave, putSave, deleteSave } from '@/api/save'
 
 export interface SaveSlotsContext {
@@ -76,20 +77,19 @@ export function useSaveSlots(ctx: SaveSlotsContext) {
   }
 
   const deleteSlot = async (slot: number) => {
+    const confirmed = await confirmAction(ctx.t('save.deleteConfirm'), {
+      title: ctx.t('save.deleteTitle'),
+      confirmButtonText: ctx.t('save.delete'),
+      cancelButtonText: ctx.t('common.cancel'),
+    })
+    if (!confirmed) return
     try {
-      await ElMessageBox.confirm(ctx.t('save.deleteConfirm'), ctx.t('save.deleteTitle'), {
-        confirmButtonText: ctx.t('save.delete'),
-        cancelButtonText: ctx.t('common.cancel'),
-        type: 'warning',
-      })
       await deleteSave(ctx.projectId(), slot)
       saves.value = saves.value.filter(s => s.slot !== slot)
       ElMessage.success(ctx.t('save.deleted'))
     } catch (e) {
-      if (e !== 'cancel' && e !== 'close') {
-        console.warn('删除存档失败:', e)
-        ElMessage.error(ctx.t('save.deleteFailed'))
-      }
+      console.warn('删除存档失败:', e)
+      ElMessage.error(ctx.t('save.deleteFailed'))
     }
   }
 

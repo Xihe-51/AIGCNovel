@@ -5,7 +5,7 @@
  * ProjectLayerDialog 各自负责，这里只提供它们需要的列表引用与刷新入口。
  */
 import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import {
   createCharacter,
@@ -22,6 +22,7 @@ import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/trans
 import { BASE_URL } from '@/utils/request'
 import defaultAvatarImg from '@/assets/default.jpg'
 import { formatErrorMessage } from '@/utils/errorMessage'
+import { confirmAction } from '@/utils/confirm'
 
 /** 立绘表情类型：与后端 avatar_type 取值保持一致 */
 export const avatarTypes: AvatarType[] = ['正常', '高兴', '生气', '悲伤', '惊讶', '其他']
@@ -223,15 +224,11 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
   }
 
   const deleteCharacter = async (characterId: number) => {
-    try {
-      await ElMessageBox.confirm(
-        '确定要删除这个角色吗？所有相关立绘和对话也将被删除。',
-        '警告',
-        { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' },
-      )
-    } catch {
-      return
-    }
+    const confirmed = await confirmAction(
+      '确定要删除这个角色吗？所有相关立绘和对话也将被删除。',
+      { title: '警告' },
+    )
+    if (!confirmed) return
     try {
       await deleteCharacter_by_Id(characterId)
       characters.value = characters.value.filter(item => item.character_id !== characterId)
@@ -313,15 +310,8 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
   }
 
   const deleteAvatar = async (avatarId: number) => {
-    try {
-      await ElMessageBox.confirm('确定要删除这个立绘吗？', '警告', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      })
-    } catch {
-      return
-    }
+    const confirmed = await confirmAction('确定要删除这个立绘吗？', { title: '警告' })
+    if (!confirmed) return
     try {
       await deleteCharacterAvatar(avatarId)
       if (selectedAvatar.value?.avatar_id === avatarId) selectedAvatar.value = null

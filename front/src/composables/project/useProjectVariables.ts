@@ -5,10 +5,11 @@
  * 未被播放器记录前不该出现在项目里，所以这里只创建缺失项、不覆盖已有定义。
  */
 import { computed, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { createVariable, deleteVariable, listVariables, updateVariable } from '@/api/variable'
 import type { ProjectVariable, VariablePayload } from '@/api/variable'
-import { extractErrorMessage } from '@/utils/errorMessage'
+import { extractErrorMessage, formatErrorMessage } from '@/utils/errorMessage'
+import { confirmDanger } from '@/utils/confirm'
 
 export interface BehaviorVariableDefinition {
   name: string
@@ -140,17 +141,17 @@ export function useProjectVariables(ctx: ProjectVariablesContext) {
   }
 
   const removeVariable = async (row: ProjectVariable) => {
+    const confirmed = await confirmDanger(
+      `删除变量「${row.label}」？引用它的节点数值变化也会被清除。`,
+      { title: '删除变量' },
+    )
+    if (!confirmed) return
     try {
-      await ElMessageBox.confirm(
-        `删除变量「${row.label}」？引用它的节点数值变化也会被清除。`,
-        '删除变量',
-        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
-      )
       await deleteVariable(ctx.projectId(), row.variable_id)
       ElMessage.success('变量已删除')
       await fetchVariables()
     } catch (e) {
-      // 取消
+      ElMessage.error(formatErrorMessage('删除变量失败', e))
     }
   }
 

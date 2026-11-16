@@ -66,7 +66,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '@/utils/confirm'
 import {
 	listAchievements,
 	createAchievement,
@@ -212,13 +213,11 @@ const editAchievement = (a: Achievement) => {
 const cancelAchEdit = () => resetAchForm()
 
 const removeAchievement = async (a: Achievement) => {
-	try {
-		await ElMessageBox.confirm(`删除成就「${a.title}」？玩家已解锁记录也会一并删除。`, '删除成就', {
-			type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
-		})
-	} catch {
-		return
-	}
+	const confirmed = await confirmDanger(
+		`删除成就「${a.title}」？玩家已解锁记录也会一并删除。`,
+		{ title: '删除成就' }
+	)
+	if (!confirmed) return
 	try {
 		await deleteAchievement(Number(props.projectId), a.achievement_id)
 		if (editingAchId.value === a.achievement_id) resetAchForm()
