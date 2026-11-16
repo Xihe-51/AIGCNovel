@@ -4,7 +4,7 @@ import request from '@/utils/request';
  * 资源项基础接口
  * 注意：根据实际后端返回字段修改此接口
  */
-interface Resource {
+export interface Resource {
   id?: number;          // 资源ID
   name?: string;        // 资源名称
   type?: string;        // 资源类型

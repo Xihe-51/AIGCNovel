@@ -1,0 +1,122 @@
+@use './marketDialogShared' as *;
+
+// 上传表单
+.upload-form {
+  :deep(.el-form-item__label) {
+    color: $text-secondary;
+    font-weight: 500;
+  }
+  
+  :deep(.el-input__wrapper) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid $border-light;
+    border-radius: 12px;
+    box-shadow: none;
+    
+    &:hover, &.is-focus {
+      border-color: $pink;
+    }
+    
+    .el-input__inner {
+      color: $text-primary;
+      
+      &::placeholder {
+        color: $text-secondary;
+      }
+    }
+  }
+  
+  :deep(.el-textarea__inner) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid $border-light;
+    border-radius: 12px;
+    color: $text-primary;
+    
+    &:hover, &:focus {
+      border-color: $pink;
+    }
+  }
+  
+  :deep(.el-select) {
+    .el-input__wrapper {
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+  
+  :deep(.el-input-number) {
+    .el-input__wrapper {
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+  
+  .type-options {
+    display: flex;
+    gap: 12px;
+    
+    .type-option {
+      flex: 1;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid $border-light;
+      border-radius: 30px;
+      color: $text-secondary;
+      font-size: 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      
+      &:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      
+      &.selected {
+        background: linear-gradient(135deg, $pink, $purple);
+        border-color: transparent;
+        color: white;
+      }
+    }
+  }
+  
+  .price-hint {
+    margin-left: 12px;
+    color: $text-secondary;
+    font-size: 12px;
+  }
+  
+  .custom-upload {
+    :deep(.el-upload-dragger) {
+      background: rgba(255, 255, 255, 0.03);
+      border: 2px dashed $border-light;
+      border-radius: 16px;
+      
+      &:hover {
+        border-color: $pink;
+      }
+    }
+    
+    .upload-area {
+      padding: 30px;
+      
+      .upload-icon {
+        font-size: 40px;
+        color: $pink;
+        margin-bottom: 12px;
+      }
+      
+      p {
+        color: $text-secondary;
+        margin: 8px 0;
+        
+        em {
+          color: $pink;
+          font-style: normal;
+        }
+      }
+      
+      .upload-tip {
+        font-size: 12px;
+        color: $text-secondary;
+      }
+    }
+  }
+}

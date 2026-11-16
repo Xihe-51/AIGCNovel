@@ -1,0 +1,129 @@
+@use './marketDialogShared' as *;
+
+// 支付对话框
+:deep(.el-dialog.orange-dialog.payment-dialog) {
+  .payment-container {
+    padding: 0 10px;
+  }
+
+  .payment-header {
+    text-align: center;
+    margin-bottom: 20px;
+
+    h3 {
+      margin: 0;
+      color: $text-primary;
+      font-size: 16px;
+    }
+
+    .payment-amount {
+      font-size: 32px;
+      font-weight: 700;
+      color: $warm;
+      margin: 10px 0 0;
+    }
+  }
+
+  .payment-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+
+    .tab {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid $border-light;
+      border-radius: 40px;
+      color: $text-secondary;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &.active {
+        background: linear-gradient(135deg, $pink, $purple);
+        border-color: transparent;
+        color: white;
+      }
+
+      &:hover:not(.active) {
+        background: rgba(255, 255, 255, 0.06);
+      }
+    }
+  }
+
+  .qr-code-container {
+    display: flex;
+    justify-content: center;
+
+    .qr-wrapper {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      background: white;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+
+      .qr-code {
+        width: 180px;
+        height: 180px;
+      }
+
+      .qr-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(26, 26, 46, 0.9);
+        backdrop-filter: blur(4px);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+
+        .el-icon {
+          font-size: 40px;
+          margin-bottom: 8px;
+        }
+
+        &.success {
+          background: rgba(168, 230, 207, 0.15);
+
+          .el-icon {
+            color: $mint;
+          }
+        }
+
+        .spinner {
+          animation: rotate 1s linear infinite;
+        }
+      }
+    }
+  }
+
+  .payment-footer {
+    text-align: center;
+    margin-top: 20px;
+
+    .countdown {
+      color: $pink;
+      font-weight: 600;
+    }
+
+    .notice {
+      color: $text-secondary;
+      font-size: 12px;
+    }
+  }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
