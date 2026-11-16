@@ -30,14 +30,16 @@
 import { computed } from 'vue'
 import type { AssetItem } from '@/api/asset'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
 	visible: boolean
 	kind: 'image' | 'audio'
 	loading: boolean
 	items: AssetItem[]
 	baseUrl: string
-	selectedUrl: string
-}>()
+	selectedUrl?: string
+}>(), {
+	selectedUrl: ''
+})
 
 const emit = defineEmits<{
 	(e: 'update:visible', value: boolean): void
