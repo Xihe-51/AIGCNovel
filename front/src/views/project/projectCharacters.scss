@@ -131,6 +131,15 @@
           background: rgba(255, 107, 107, 0.2); 
         }
       }
+
+      &.settings {
+        background: rgba(126, 211, 255, 0.12);
+        color: #5bb8e8;
+
+        &:hover {
+          background: rgba(126, 211, 255, 0.24);
+        }
+      }
     }
   }
 }

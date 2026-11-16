@@ -181,9 +181,10 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="description" label="角色描述" show-overflow-tooltip />
-                <el-table-column label="操作" width="150">
+                <el-table-column label="操作" width="210">
                   <template #default="{ row }">
                     <button class="action-btn edit" @click="editCharacter(row)">编辑</button>
+                    <button class="action-btn settings" @click="showSettingsDialog(row)">参数</button>
                     <button class="action-btn delete" @click="deleteCharacter(row.character_id)">删除</button>
                   </template>
                 </el-table-column>
@@ -391,7 +392,12 @@
               </el-dialog>
 
               <!-- 参数设置对话框 -->
-              <el-dialog v-model="settingsDialogVisible" title="参数设置" width="500px" class="custom-dialog">
+              <el-dialog
+                v-model="settingsDialogVisible"
+                :title="`参数设置${currentCharacter?.name ? ` · ${currentCharacter.name}` : ''}`"
+                width="500px"
+                class="custom-dialog"
+              >
                 <div class="settings-panel">
                   <button class="secondary-btn small" @click="addSetting">
                     <el-icon><Plus /></el-icon>
@@ -400,13 +406,13 @@
                   
                   <el-table :data="settingsArray" class="settings-table">
                     <el-table-column prop="key" label="参数名">
-                      <template #default="{ row }">
-                        <el-input v-model="row.key" @change="updateSettings" />
+                      <template #default="{ row, $index }">
+                        <el-input :model-value="row.key" @change="renameSetting($index, $event)" />
                       </template>
                     </el-table-column>
                     <el-table-column prop="value" label="参数值">
-                      <template #default="{ row }">
-                        <el-input v-model="row.value" @change="updateSettings" />
+                      <template #default="{ row, $index }">
+                        <el-input :model-value="row.value" @change="updateSettingValue($index, $event)" />
                       </template>
                     </el-table-column>
                     <el-table-column label="操作" width="80">
@@ -594,22 +600,20 @@
 </template>
 
 <script lang="ts">
-import { ref, defineComponent, onMounted, computed, onUnmounted, watch } from 'vue'
+import { ref, defineComponent, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { 
   DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture, 
   Film, ChatLineRound, Plus, Search, Sort, Close, Refresh,
   ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { getProject, getDialogueCount } from '@/api/project'
-import { getCharacters, getCharacterAvatarsBatch, createCharacter, updateCharacter, deleteCharacter_by_Id, uploadCharacterAvatar, deleteCharacterAvatar, updateCharacterAvatar } from '@/api/character'
-import type { AvatarType, CharacterAvatarLayer } from '@/api/character'
-import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
+import type { Character, CharacterAvatar } from '@/api/character'
+import { TRANSLATION_LANGUAGES } from '@/api/translation'
 import { getScenes } from '@/api/scenes'
 import { getDialoguesBySceneId } from '@/api/dialogue'
 import { BASE_URL } from '@/utils/request'
-import defaultAvatarImg from '@/assets/default.jpg'
 import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
 import TechNavCircle from '@/components/TechNavCircle.vue'
 import ProjectVariableDialog from '@/components/project/ProjectVariableDialog.vue'
@@ -622,6 +626,7 @@ import { useProjectCutout } from '@/composables/project/useProjectCutout'
 import { useProjectVariables } from '@/composables/project/useProjectVariables'
 import { useProjectEndings } from '@/composables/project/useProjectEndings'
 import { useProjectCgs } from '@/composables/project/useProjectCgs'
+import { useProjectCharacters } from '@/composables/project/useProjectCharacters'
 
 // 接口定义保持不变
 interface Project {
@@ -636,30 +641,6 @@ interface Project {
   is_public?: boolean
   created_at: string
   updated_at: string
-}
-
-interface Character {
-  character_id: number
-  project_id: number
-  name: string
-  name_translations?: Record<string, string>
-  age?: number
-  description?: string
-  settings?: Record<string, any>
-  is_main: boolean
-  created_at: string
-  avatar_url?: string
-}
-
-interface CharacterAvatar {
-  avatar_id: number
-  character_id: number
-  image_url?: string
-  avatar_type: string
-  costume?: string
-  is_default: boolean
-  created_at: string
-  layers?: CharacterAvatarLayer[]
 }
 
 interface Scene {
@@ -696,9 +677,6 @@ interface SceneCharacter {
   currentAvatar?: CharacterAvatar
 }
 
-const avatarTypes = ['正常', '高兴', '生气', '悲伤', '惊讶', '其他']
-const selectedFile = ref<File | null>(null)
-
 export default defineComponent({
   name: 'ProjectView',
   components: {
@@ -719,12 +697,6 @@ export default defineComponent({
     const project = ref<Project | null>(null)
     const editingDescription = ref(false)
     const totalDialogues = ref(0)
-    const isAdd = ref(false)
-    const characters = ref<Character[]>([])
-    const characterAvatars = ref<CharacterAvatar[]>([])
-    const currentCharacterAvatars = ref<CharacterAvatar[]>([])
-    const characterSearch = ref('')
-    const loadingCharacters = ref(false)
     const scenes = ref<Scene[]>([])
     const loadingScenes = ref(false)
     const sceneScriptContents = ref<ScriptContent[]>([])
@@ -789,17 +761,21 @@ export default defineComponent({
       // CG 弹窗的「解锁条件」下拉复用结局列表
       ensureEndings: fetchEndings,
     })
-    const characterDrawerVisible = ref(false)
-    const currentCharacter = ref<Character | null>(null)
-    // 角色名译文：{ 'zh-TW': '…', en: '…', ja: '…' }
-    const characterNameTranslations = ref<Record<string, string>>({})
-    const avatarDialogVisible = ref(false)
-    const newAvatar = ref<Partial<CharacterAvatar>>({ avatar_type: '正常', is_default: false })
-    const selectedAvatar = ref<CharacterAvatar | null>(null)
-    // 立绘分层差分：基础图 + 表情/姿势叠加层（叠加层增删改由 ProjectLayerDialog 自管）
-    const layerDialogVisible = ref(false)
-    const layerTargetAvatar = ref<CharacterAvatar | null>(null)
-    const settingsDialogVisible = ref(false)
+
+    // 角色库：列表与搜索、角色抽屉表单、立绘与参数设置都在 useProjectCharacters 内
+    const {
+      avatarTypes, characters, characterAvatars, currentCharacterAvatars,
+      characterSearch, loadingCharacters, filteredCharacters, totalAvatars,
+      isAdd, characterDrawerVisible, currentCharacter, characterNameTranslations,
+      avatarDialogVisible, newAvatar, selectedFile, previewImageUrl, selectedAvatar,
+      layerDialogVisible, layerTargetAvatar, settingsDialogVisible, settingsArray,
+      fetchCharacters, fetchCharacterAvatars, syncCurrentCharacterAvatars,
+      showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
+      showAddAvatarDialog, handleChange, addAvatar, selectAvatar, setDefaultAvatar,
+      deleteAvatar, openLayerDialog, handleLayerChanged, getAvatarUrl, onAvatarImgError,
+      showSettingsDialog, addSetting, removeSetting, renameSetting, updateSettingValue, updateSettings,
+    } = useProjectCharacters({ projectId: () => Number(props.projectId) })
+
     const showFeaturePreview = ref(false)
     const showNodeEditor = ref(false)
     const assetDialogVisible = ref(false)
@@ -810,7 +786,6 @@ export default defineComponent({
     const draggingCharacter = ref<SceneCharacter | null>(null)
     const dragStartPos = ref({ x: 0, y: 0 })
     const previewMode = ref(false)
-    const previewImageUrl = ref<string>('')
     const currentPreviewScene = ref<Scene | null>(null)
     const currentPreviewContentIndex = ref(0)
     const currentPreviewContent = ref<ScriptContent | null>(null)
@@ -845,16 +820,6 @@ export default defineComponent({
       assetDialogVisible.value = true
     }
 
-    const filteredCharacters = computed(() => {
-      if (!characterSearch.value) return characters.value
-      return characters.value.filter(char =>
-        char.name.includes(characterSearch.value) ||
-        (char.description && char.description.includes(characterSearch.value))
-      )
-    })
-
-    const totalAvatars = computed(() => characterAvatars.value.length)
-
     const getGenreColor = (genre?: string) => {
       const colors: Record<string, string> = {
         '悬疑': '#6c5b7b', '恋爱': '#ff8fab', '科幻': '#5d5fef',
@@ -867,31 +832,9 @@ export default defineComponent({
       try {
         const res = await getProject(projectId)
         project.value = res
-        await Promise.all([fetchCharacters(projectId), fetchScenes(projectId)])
+        await Promise.all([fetchCharacters(), fetchScenes(projectId)])
       } catch (error) {
         ElMessage.error('获取项目详情失败')
-      }
-    }
-
-    const fetchCharacters = async (projectId: number) => {
-      loadingCharacters.value = true
-      try {
-        const res = await getCharacters(projectId)
-        characters.value = res
-        await fetchCharacterAvatars()
-      } finally {
-        loadingCharacters.value = false
-      }
-    }
-
-    const fetchCharacterAvatars = async () => {
-      try {
-        const characterIds = characters.value.map(c => c.character_id)
-        if (characterIds.length > 0) {
-          characterAvatars.value = await getCharacterAvatarsBatch(characterIds)
-        }
-      } catch (error) {
-        console.error('获取角色立绘失败:', error)
       }
     }
 
@@ -928,143 +871,6 @@ export default defineComponent({
       return colors[characterId % colors.length]
     }
 
-    const showAddCharacterDialog = () => {
-      currentCharacter.value = { character_id: 0, project_id: props.projectId, name: '', is_main: false, created_at: new Date().toISOString() }
-      characterNameTranslations.value = {}
-      isAdd.value = true
-      currentCharacterAvatars.value = []
-      characterDrawerVisible.value = true
-    }
-
-    const editCharacter = (character: Character) => {
-      currentCharacter.value = { ...character }
-      characterNameTranslations.value = { ...(character.name_translations || {}) }
-      characterDrawerVisible.value = true
-      isAdd.value = false
-      fetchCharacterAvatarsForCharacter(character.character_id)
-    }
-
-    const fetchCharacterAvatarsForCharacter = (characterId: number) => {
-      currentCharacterAvatars.value = characterAvatars.value.filter(a => a.character_id === characterId)
-    }
-
-    const saveCharacter = async () => {
-      if (!currentCharacter.value) return
-      const character = currentCharacter.value
-      if (character.character_id === 0) {
-        try {
-          const created = await createCharacter(character)
-          characters.value.push(created || character)
-          ElMessage.success('角色添加成功')
-          setTimeout(() => location.reload(), 1200)
-        } catch (e: any) {
-          ElMessage.error('角色添加失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
-        }
-        characterDrawerVisible.value = false
-        return
-      }
-
-      try {
-        const updated = await updateCharacter(character)
-        // 角色名译文：逐语言保存，空值由后端删除
-        const translations: Record<string, string> = {}
-        for (const lang of TRANSLATION_LANGUAGES) {
-          const name = String(characterNameTranslations.value[lang.code] || '').trim()
-          const saved = await saveCharacterNameTranslation(character.character_id, lang.code, name)
-          if (saved?.name) translations[lang.code] = saved.name
-        }
-        const merged: Character = { ...(updated || character), name_translations: translations }
-        const index = characters.value.findIndex(c => c.character_id === character.character_id)
-        if (index !== -1) characters.value[index] = merged
-        ElMessage.success('角色更新成功')
-        characterDrawerVisible.value = false
-      } catch (e: any) {
-        ElMessage.error('角色更新失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
-      }
-    }
-
-    const deleteCharacter = async (characterId: number) => {
-      try {
-        await ElMessageBox.confirm('确定要删除这个角色吗？所有相关立绘和对话也将被删除。', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
-        await deleteCharacter_by_Id(characterId)
-        characters.value = characters.value.filter(c => c.character_id !== characterId)
-        characterAvatars.value = characterAvatars.value.filter(a => a.character_id !== characterId)
-        ElMessage.success('角色删除成功')
-      } catch {}
-    }
-
-    const showAddAvatarDialog = () => {
-      if (!currentCharacter.value) return
-      newAvatar.value = { character_id: currentCharacter.value.character_id, avatar_type: '正常', is_default: false }
-      avatarDialogVisible.value = true
-    }
-
-    const handleChange = (file: any) => {
-      selectedFile.value = file.raw
-      if (previewImageUrl.value) URL.revokeObjectURL(previewImageUrl.value)
-      previewImageUrl.value = URL.createObjectURL(file.raw)
-    }
-
-    const addAvatar = async () => {
-      if (!currentCharacter.value || !selectedFile.value) return
-      if (!newAvatar.value.costume) { ElMessage.warning('请填写服装描述'); return }
-      try {
-        await uploadCharacterAvatar(selectedFile.value, currentCharacter.value.project_id, currentCharacter.value.character_id, (newAvatar.value.avatar_type as AvatarType) || '正常', newAvatar.value.costume, newAvatar.value.is_default ? true : false)
-        if (newAvatar.value.is_default) {
-          characterAvatars.value.forEach(a => { if (a.character_id === currentCharacter.value?.character_id) a.is_default = false })
-        }
-        await fetchProjectDetails(props.projectId)
-        ElMessage.success('立绘添加成功')
-        avatarDialogVisible.value = false
-        characterDrawerVisible.value = false
-        previewImageUrl.value = ''
-        newAvatar.value = { avatar_type: '正常', costume: '', is_default: false }
-        selectedFile.value = null
-      } catch (error) { ElMessage.error('立绘上传失败，请重试') }
-    }
-
-    const selectAvatar = (avatar: CharacterAvatar) => { selectedAvatar.value = avatar }
-    const setDefaultAvatar = (avatar: CharacterAvatar) => {
-      if (avatar.is_default) { ElMessage.warning('已为默认立绘'); return }
-      updateCharacterAvatar({ avatar_id: avatar.avatar_id })
-      characterAvatars.value.forEach(a => { if (a.character_id === avatar.character_id) a.is_default = a.avatar_id === avatar.avatar_id })
-      ElMessage.success('默认立绘设置成功')
-      fetchProjectDetails(props.projectId)
-    }
-
-    const deleteAvatar = async (avatarId: number) => {
-      try {
-        await ElMessageBox.confirm('确定要删除这个立绘吗？', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
-        await deleteCharacterAvatar(avatarId)
-        await fetchCharacterAvatars()
-        characterDrawerVisible.value = false
-        characterAvatars.value = characterAvatars.value.filter(a => a.avatar_id !== avatarId)
-        ElMessage.success('立绘删除成功')
-      } catch {}
-    }
-
-    // ==================== 立绘分层差分 ====================
-    const syncCurrentCharacterAvatars = () => {
-      if (!currentCharacter.value || isAdd.value) return
-      const characterId = currentCharacter.value.character_id
-      currentCharacterAvatars.value = characterAvatars.value.filter(a => a.character_id === characterId)
-      if (layerTargetAvatar.value) {
-        const avatarId = layerTargetAvatar.value.avatar_id
-        layerTargetAvatar.value = currentCharacterAvatars.value.find(a => a.avatar_id === avatarId) || null
-      }
-    }
-
-    const openLayerDialog = (avatar: CharacterAvatar) => {
-      layerTargetAvatar.value = avatar
-      layerDialogVisible.value = true
-    }
-
-    // 差分层增删后重新拉取立绘，并把弹窗目标指到刷新后的对象
-    const handleLayerChanged = async () => {
-      await fetchCharacterAvatars()
-      syncCurrentCharacterAvatars()
-    }
-
     // 抠图状态与流程由 useProjectCutout 自管
     const {
       cutoutLoadingId,
@@ -1081,70 +887,11 @@ export default defineComponent({
       batchCutout,
     } = useProjectCutout({ characters, characterAvatars, currentCharacterAvatars, selectedAvatar })
 
-    const showSettingsDialog = () => { settingsDialogVisible.value = true }
-
-    const settingsArray = computed({
-      get() {
-        if (!currentCharacter.value?.settings) return []
-        return Object.entries(currentCharacter.value.settings).map(([key, value]) => ({ key, value }))
-      },
-      set(value) {
-        if (!currentCharacter.value) return
-        const settings: Record<string, any> = {}
-        value.forEach(item => settings[item.key] = item.value)
-        currentCharacter.value.settings = settings
-      }
-    })
-
-    const addSetting = () => {
-      if (!currentCharacter.value) return
-      if (!currentCharacter.value.settings) currentCharacter.value.settings = {}
-      const newKey = `param_${Object.keys(currentCharacter.value.settings).length + 1}`
-      currentCharacter.value.settings[newKey] = ''
-    }
-
-    const removeSetting = (index: number) => {
-      if (!currentCharacter.value?.settings) return
-      const key = settingsArray.value[index].key
-      delete currentCharacter.value.settings[key]
-    }
-
-    // 参数设置改动后自动落库（此前是空函数，改了参数关掉对话框就丢）
-    let settingsSaveTimer: ReturnType<typeof setTimeout> | null = null
-    const updateSettings = () => {
-      const c = currentCharacter.value
-      if (!c || !c.character_id) return
-      if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
-      settingsSaveTimer = setTimeout(async () => {
-        try {
-          await updateCharacter({ ...c })
-        } catch (e) {
-          console.error('保存角色参数失败:', e)
-          ElMessage.error('参数保存失败，请稍后重试')
-        }
-      }, 600)
-    }
-
     const getNextScene = (currentSceneId: number) => {
       const sortedScenes = [...scenes.value].sort((a, b) => a.order_num - b.order_num)
       const currentIndex = sortedScenes.findIndex(s => s.scene_id === currentSceneId)
       if (currentIndex === -1 || currentIndex >= sortedScenes.length - 1) return null
       return sortedScenes[currentIndex + 1]
-    }
-
-    const getAvatarUrl = (row: any) => {
-      if (row.avatar_url) return BASE_URL + row.avatar_url
-      const defaultAvatar = characterAvatars.value.find(a => a.character_id === row.character_id && a.is_default)
-      if (defaultAvatar) return BASE_URL + defaultAvatar.image_url
-      return defaultAvatarImg
-    }
-
-    // 立绘文件已丢失时退回默认头像，不再显示裂图
-    const onAvatarImgError = (e: Event) => {
-      const el = e.target as HTMLImageElement
-      if (!el || el.dataset.fallbackApplied) return
-      el.dataset.fallbackApplied = '1'
-      el.src = defaultAvatarImg
     }
 
     const startVoice = (voice_url: string) => {
@@ -1153,11 +900,6 @@ export default defineComponent({
     }
 
     // ==================== 生命周期 ====================
-    onUnmounted(() => {
-      if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
-      if (previewImageUrl.value) URL.revokeObjectURL(previewImageUrl.value)
-    })
-
     onMounted(async () => {
       await fetchProjectDetails(props.projectId)
       const res = await getDialogueCount(props.projectId)
@@ -1194,12 +936,12 @@ export default defineComponent({
       showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, cutoutAvatar, deleteAvatar,
       layerDialogVisible, layerTargetAvatar,
       openLayerDialog, handleLayerChanged,
-      showSettingsDialog, addSetting, removeSetting, updateSettings,
+      showSettingsDialog, addSetting, removeSetting, renameSetting, updateSettingValue, updateSettings,
       fetchScenes, getNextScene,
       getAvatarUrl, onAvatarImgError, startVoice,
       openFeaturePreview, openNodeEditor, goCreate, openPlayer, openReleasePreview,
       // 补充原有方法的引用
-      fetchCharacters, fetchProjectDetails, fetchCharacterAvatars
+      fetchProjectDetails
     }
   }
 })
