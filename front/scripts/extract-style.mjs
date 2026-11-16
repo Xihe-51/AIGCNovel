@@ -28,7 +28,7 @@ fs.writeFileSync(scssPath, scss.replace(/\r\n/g, '\n'), 'utf8')
 
 const head = src.slice(0, openIdx)
 const tail = src.slice(closeIdx + '</style>'.length)
-const replacement = `<style scoped lang="scss" src="./${path.basename(scssPath)}"></style>`
+const replacement = openTag.replace(/>$/, ` src="./${path.basename(scssPath)}">`) + '</style>'
 const next = head + replacement + tail
 fs.writeFileSync(vuePath, next, 'utf8')
 
