@@ -383,6 +383,16 @@
 	import { getSyntheticReaders } from '@/api/readers'
 	import type { SyntheticReaders } from '@/api/readers'
 	import type { StoryIssue } from '@/api/branch'
+	import {
+		buildHealthReport,
+		buildNodeSceneMap,
+		findUnreachableEndings,
+		isProjectHealthy,
+		resolveIssueTarget,
+		stopReasonClass,
+		stopReasonLabel,
+	} from '@/utils/projectHealth'
+	import type { MissingAssetLike, UnreachableEnding } from '@/utils/projectHealth'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -392,20 +402,13 @@
 		(e: 'locate', sceneId: number, contentId: number | null): void
 	}>()
 
-	type MissingAsset = {
-		kind_label: string
-		where: string
-		scene_id?: number
-		content_id?: number
-	}
-
 	const loading = ref(false)
 	const error = ref('')
-	const missingAssets = ref<MissingAsset[]>([])
+	const missingAssets = ref<MissingAssetLike[]>([])
 	const errors = ref<StoryIssue[]>([])
 	const warnings = ref<StoryIssue[]>([])
 	const endings = ref<any[]>([])
-	const unreachableEndings = ref<{ title: string; reason: string; sceneId: number }[]>([])
+	const unreachableEndings = ref<UnreachableEnding[]>([])
 	const healthy = ref(false)
 
 	const reachableEndingCount = computed(() => endings.value.length - unreachableEndings.value.length)
@@ -422,30 +425,23 @@
 				listEndings(Number(props.projectId)),
 			])
 
-			missingAssets.value = (assetRes?.missing || []) as MissingAsset[]
+			missingAssets.value = (assetRes?.missing || []) as MissingAssetLike[]
 
 			const validation = graphRes?.validation
 			errors.value = validation?.errors || []
 			warnings.value = validation?.warnings || []
 
-			const sceneMap: Record<number, number> = {}
-			for (const n of graphRes?.nodes || []) sceneMap[n.content_id] = n.scene_id
+			const sceneMap = buildNodeSceneMap(graphRes?.nodes || [])
 			nodeSceneMap.value = sceneMap
 
 			endings.value = endingRows || []
-			const orphans = new Set(validation?.orphans || [])
-			const bad: { title: string; reason: string; sceneId: number }[] = []
-			for (const en of endings.value) {
-				const sceneId = sceneMap[en.content_id] || 0
-				if (!sceneMap[en.content_id]) {
-					bad.push({ title: en.title, reason: `指向的节点 #${en.content_id} 不存在`, sceneId: 0 })
-				} else if (orphans.has(en.content_id)) {
-					bad.push({ title: en.title, reason: '结局节点从主入口不可达', sceneId })
-				}
-			}
-			unreachableEndings.value = bad
+			unreachableEndings.value = findUnreachableEndings(endings.value, sceneMap, validation?.orphans || [])
 
-			healthy.value = !missingAssets.value.length && !errors.value.length && !bad.length
+			healthy.value = isProjectHealthy({
+				missing: missingAssets.value.length,
+				errors: errors.value.length,
+				unreachable: unreachableEndings.value.length,
+			})
 		} catch (e: any) {
 			console.error('项目自检失败:', e)
 			error.value = '自检失败：' + (e?.response?.data?.message || e?.message || '未知错误')
@@ -461,24 +457,15 @@
 
 	// 把当前自检结果导出成 txt，方便存档或发给协作者
 	const exportReport = () => {
-		const lines = [
-			`项目 #${props.projectId} 发布前自检报告`,
-			`生成时间：${new Date().toLocaleString()}`,
-			`结论：${healthy.value ? '通过，可以发布' : '存在问题，建议修复后再发布'}`,
-			'',
-			`缺失素材（${missingAssets.value.length}）`,
-			...missingAssets.value.map(m => `- [${m.kind_label}] ${m.where}`),
-			'',
-			`剧情错误（${errors.value.length}）`,
-			...errors.value.map(e => `- [${e.code}] ${e.message}`),
-			'',
-			`提醒（${warnings.value.length}）`,
-			...warnings.value.map(w => `- [${w.code}] ${w.message}`),
-			'',
-			`不可达结局（${unreachableEndings.value.length}）`,
-			...unreachableEndings.value.map(en => `- ${en.title}：${en.reason}`),
-		]
-		const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+		const text = buildHealthReport({
+			projectId: props.projectId,
+			healthy: healthy.value,
+			missingAssets: missingAssets.value,
+			errors: errors.value,
+			warnings: warnings.value,
+			unreachableEndings: unreachableEndings.value,
+		})
+		const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
 		const url = URL.createObjectURL(blob)
 		const a = document.createElement('a')
 		a.href = url
@@ -491,12 +478,8 @@
 
 	// 从问题详情里尽量找出可定位的节点
 	const locateIssue = (issue: StoryIssue) => {
-		const detail = issue.detail || {}
-		const contentId = detail.content_id
-			|| (Array.isArray(detail.cycle) ? detail.cycle[0] : null)
-			|| detail.source_content_id
-		const sceneId = detail.scene_id || (contentId ? nodeSceneMap.value[contentId] : null)
-		locate(sceneId, contentId ?? null)
+		const target = resolveIssueTarget(issue, nodeSceneMap.value)
+		locate(target.sceneId ?? undefined, target.contentId)
 	}
 
 	// ---- 自动分支巡检 ----
@@ -555,18 +538,8 @@
 	const readersData = ref<SyntheticReaders | null>(null)
 	const readersError = ref('')
 
-	const stopLabel = (reason: string) => {
-		if (reason === 'ending') return '达成结局'
-		if (reason === 'dropoff') return '中途流失'
-		if (reason === 'dead_end') return '走进死路'
-		return '未达结局'
-	}
-
-	const stopClass = (reason: string) => {
-		if (reason === 'ending') return 'is-good'
-		if (reason === 'dead_end') return 'is-bad'
-		return 'is-warn'
-	}
+	const stopLabel = stopReasonLabel
+	const stopClass = stopReasonClass
 
 	const runReaders = async () => {
 		if (!props.projectId || readersLoading.value) return
@@ -590,473 +563,4 @@
 	onMounted(runCheck)
 </script>
 
-<style scoped>
-	.hp-root {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-		overflow-y: auto;
-		padding: 10px 12px 16px;
-		box-sizing: border-box;
-	}
-
-	.hp-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 10px;
-		flex-shrink: 0;
-	}
-
-	.hp-title {
-		font-size: 13px;
-		font-weight: 600;
-		color: #c81f4a;
-	}
-
-	.hp-actions {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.hp-run {
-		border: 1px solid #f0d0dc;
-		background: #fff;
-		color: #c81f4a;
-		font-size: 11px;
-		padding: 4px 10px;
-		border-radius: 7px;
-		cursor: pointer;
-	}
-
-	.hp-run:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.hp-error {
-		font-size: 12px;
-		color: #d33;
-		padding: 8px;
-	}
-
-	.hp-cards {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 6px;
-		flex-shrink: 0;
-	}
-
-	.hp-card {
-		border-radius: 9px;
-		padding: 8px 6px;
-		text-align: center;
-		border: 1px solid #eee;
-		background: #fff;
-	}
-
-	.hp-card-num {
-		font-size: 16px;
-		font-weight: 700;
-		line-height: 1.2;
-	}
-
-	.hp-card-label {
-		font-size: 10px;
-		color: #8a6a76;
-		margin-top: 2px;
-	}
-
-	.hp-card.is-good { border-color: #cdebd8; background: #f4fbf6; }
-	.hp-card.is-good .hp-card-num { color: #1f9d55; }
-	.hp-card.is-warn { border-color: #f7e3b5; background: #fffaf0; }
-	.hp-card.is-warn .hp-card-num { color: #c98a00; }
-	.hp-card.is-bad { border-color: #f6cdd5; background: #fff5f7; }
-	.hp-card.is-bad .hp-card-num { color: #cf2e4e; }
-
-	.hp-note {
-		margin-top: 10px;
-		font-size: 12px;
-		color: #1f9d55;
-		background: #f4fbf6;
-		border: 1px solid #cdebd8;
-		border-radius: 8px;
-		padding: 8px 10px;
-	}
-
-	.hp-section {
-		margin-top: 12px;
-	}
-
-	.hp-section-title {
-		font-size: 12px;
-		margin: 0 0 6px;
-		color: #64748b;
-		font-weight: 600;
-	}
-
-	.hp-item {
-		display: flex;
-		gap: 6px;
-		align-items: flex-start;
-		padding: 7px 8px;
-		border-radius: 7px;
-		margin-bottom: 5px;
-		font-size: 11px;
-		line-height: 1.5;
-		cursor: pointer;
-		border: 1px solid transparent;
-		transition: background 0.15s;
-	}
-
-	.hp-item-bad {
-		background: #fff6f8;
-		border-color: #f8dbe2;
-	}
-
-	.hp-item-warn {
-		background: #fffaf0;
-		border-color: #f5e6c2;
-	}
-
-	.hp-item:hover {
-		background: #fff;
-	}
-
-	.hp-item-tag {
-		flex-shrink: 0;
-		font-size: 10px;
-		color: #b07a8c;
-		background: #fdeef3;
-		padding: 0 5px;
-		border-radius: 5px;
-	}
-
-	.hp-item-text {
-		color: #475569;
-		word-break: break-word;
-	}
-
-	/* ---- 自动巡检弹窗 ---- */
-	.pt-summary {
-		display: flex;
-		gap: 8px;
-		margin-bottom: 10px;
-	}
-
-	.pt-stat {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		padding: 8px 10px;
-		border-radius: 9px;
-		border: 1px solid #f5e4ea;
-		background: #fffafc;
-	}
-
-	.pt-stat.is-good {
-		border-color: #cdeeda;
-		background: #eefaf4;
-	}
-
-	.pt-stat.is-bad {
-		border-color: #f3c9d3;
-		background: #fff5f7;
-	}
-
-	.pt-stat.is-warn {
-		border-color: #f6dfc8;
-		background: #fff8f0;
-	}
-
-	.pt-stat-num {
-		font-size: 18px;
-		font-weight: 600;
-		color: #3d2b32;
-	}
-
-	.pt-stat-label {
-		font-size: 10px;
-		color: #8a6a76;
-	}
-
-	.pt-note {
-		font-size: 11px;
-		color: #a8562a;
-		margin-bottom: 8px;
-	}
-
-	.pt-section-title {
-		font-size: 12px;
-		font-weight: 600;
-		color: #8a6a76;
-		margin: 12px 0 6px;
-	}
-
-	.pt-path-list {
-		max-height: 300px;
-		overflow-y: auto;
-		border: 1px solid #f5e4ea;
-		border-radius: 9px;
-		padding: 6px 8px;
-		background: #fffafc;
-	}
-
-	.pt-path {
-		padding: 6px 0;
-		border-bottom: 1px dashed #f7e3ea;
-	}
-
-	.pt-path:last-child {
-		border-bottom: none;
-	}
-
-	.pt-path-head {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		margin-bottom: 4px;
-	}
-
-	.pt-path-idx {
-		font-size: 10px;
-		color: #b07a8c;
-	}
-
-	.pt-end {
-		font-size: 10px;
-		border-radius: 5px;
-		padding: 1px 6px;
-	}
-
-	.pt-end.ending {
-		color: #1f9d76;
-		background: #eefaf4;
-	}
-
-	.pt-end.dead {
-		color: #c0392b;
-		background: #fff0f2;
-	}
-
-	.pt-end.loop {
-		color: #a8562a;
-		background: #fff6ec;
-	}
-
-	.pt-path-len {
-		margin-left: auto;
-		font-size: 10px;
-		color: #b99aa5;
-	}
-
-	.pt-path-flow {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 3px;
-		font-size: 11px;
-		color: #475569;
-	}
-
-	.pt-path-node {
-		max-width: 130px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		background: #fdf3f7;
-		border-radius: 5px;
-		padding: 1px 5px;
-	}
-
-	.pt-path-arrow {
-		color: #c9a2ae;
-	}
-
-	.pt-path-more {
-		color: #b99aa5;
-	}
-
-	.pt-path-choices {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		margin-top: 4px;
-	}
-
-	.pt-path-choice {
-		font-size: 10px;
-		color: #a84463;
-		background: #fff;
-		border: 1px solid #f6d6e2;
-		border-radius: 5px;
-		padding: 0 5px;
-	}
-
-	.pt-dead {
-		display: flex;
-		align-items: baseline;
-		gap: 7px;
-		padding: 5px 6px;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-
-	.pt-dead:hover {
-		background: #fff5f8;
-	}
-
-	.pt-dead-text {
-		flex: 1;
-		min-width: 0;
-		font-size: 11px;
-		color: #475569;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.pt-dead-count {
-		flex-shrink: 0;
-		font-size: 10px;
-		color: #b07a8c;
-	}
-
-	.pt-cycle {
-		font-size: 11px;
-		color: #a8562a;
-		background: #fff8f0;
-		border: 1px solid #f6dfc8;
-		border-radius: 7px;
-		padding: 6px 8px;
-		margin-bottom: 6px;
-		line-height: 1.6;
-	}
-
-	.sr-grid {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 10px;
-	}
-
-	.sr-card {
-		border: 1px solid #f0d0dc;
-		border-radius: 10px;
-		padding: 9px 10px;
-		background: #fffafc;
-		min-width: 0;
-	}
-
-	.sr-card-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
-	.sr-name {
-		font-size: 13px;
-		font-weight: 700;
-		color: #c81f4a;
-	}
-
-	.sr-stop {
-		font-size: 10px;
-		padding: 1px 6px;
-		border-radius: 4px;
-	}
-
-	.sr-stop.is-good {
-		background: #f0fdf4;
-		color: #15803d;
-	}
-
-	.sr-stop.is-bad {
-		background: #fef2f2;
-		color: #b91c1c;
-	}
-
-	.sr-stop.is-warn {
-		background: #fffbeb;
-		color: #b45309;
-	}
-
-	.sr-desc {
-		font-size: 11px;
-		color: #8b6b78;
-		margin-top: 3px;
-	}
-
-	.sr-stats {
-		font-size: 11px;
-		color: #4b5563;
-		margin-top: 5px;
-	}
-
-	.sr-outcome {
-		font-size: 11px;
-		color: #374151;
-		margin-top: 3px;
-		font-weight: 600;
-	}
-
-	.sr-route {
-		margin-top: 6px;
-		max-height: 150px;
-		overflow-y: auto;
-		border-top: 1px dashed #f0d0dc;
-		padding-top: 5px;
-	}
-
-	.sr-route-node {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		font-size: 11px;
-		line-height: 1.6;
-		cursor: pointer;
-		border-radius: 4px;
-		padding: 1px 3px;
-	}
-
-	.sr-route-node:hover {
-		background: #fff2f6;
-	}
-
-	.sr-route-scene {
-		flex-shrink: 0;
-		font-size: 10px;
-		color: #b07a8c;
-		max-width: 90px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.sr-route-text {
-		color: #4b5563;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.sr-route-more,
-	.sr-note {
-		font-size: 10px;
-		color: #9ca3af;
-		margin-top: 5px;
-		line-height: 1.6;
-	}
-
-	.sr-section {
-		margin-top: 12px;
-	}
-
-	@media (max-width: 760px) {
-		.sr-grid {
-			grid-template-columns: 1fr;
-		}
-	}
-</style>
+<style scoped lang="scss" src="./projectHealthPanel.scss"></style>
