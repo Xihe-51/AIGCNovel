@@ -29,292 +29,10 @@
 
           <!-- 角色管理 -->
           <el-tab-pane label="角色管理" name="characters">
-            <div class="characters-panel">
-              <div class="panel-toolbar">
-                <button class="primary-btn" @click="showAddCharacterDialog">
-                  <el-icon><Plus /></el-icon>
-                  <span>添加角色</span>
-                </button>
-                
-                <div class="search-box">
-                  <el-input 
-                    v-model="characterSearch" 
-                    placeholder="搜索角色..." 
-                    clearable
-                    prefix-icon="Search"
-                  />
-                </div>
-              </div>
-
-              <el-table 
-                :data="filteredCharacters" 
-                class="custom-table"
-                row-key="character_id"
-                v-loading="loadingCharacters"
-              >
-                <el-table-column label="头像" width="80">
-                  <template #default="{ row }">
-                    <div class="avatar-cell">
-                      <img :src="getAvatarUrl(row)" :alt="row.name" loading="lazy" decoding="async" @error="onAvatarImgError" />
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="name" label="姓名" />
-                <el-table-column prop="age" label="年龄" width="80" />
-                <el-table-column label="主角" width="80">
-                  <template #default="{ row }">
-                    <span class="status-badge" :class="{ main: row.is_main }">
-                      {{ row.is_main ? '是' : '否' }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="description" label="角色描述" show-overflow-tooltip />
-                <el-table-column label="操作" width="210">
-                  <template #default="{ row }">
-                    <button class="action-btn edit" @click="editCharacter(row)">编辑</button>
-                    <button class="action-btn settings" @click="showSettingsDialog(row)">参数</button>
-                    <button class="action-btn delete" @click="deleteCharacter(row.character_id)">删除</button>
-                  </template>
-                </el-table-column>
-              </el-table>
-
-               <el-drawer 
-                v-model="characterDrawerVisible" 
-                :title="!isAdd ? '编辑角色' : '添加角色'" 
-                direction="rtl"
-                size="480px"
-                class="custom-drawer"
-              >
-                <div v-if="currentCharacter" class="drawer-content">
-                  <el-form :model="currentCharacter" label-position="top">
-                    <el-form-item label="角色名称">
-                      <el-input v-model="currentCharacter.name" placeholder="请输入角色名称" />
-                    </el-form-item>
-                    <el-form-item label="年龄">
-                      <el-input-number v-model="currentCharacter.age" :min="1" :max="100" controls-position="right" />
-                    </el-form-item>
-                    <el-form-item label="主角">
-                      <el-switch v-model="currentCharacter.is_main" />
-                    </el-form-item>
-                    <el-form-item label="角色描述">
-                      <el-input 
-                        v-model="currentCharacter.description" 
-                        type="textarea" 
-                        :rows="3" 
-                        placeholder="请输入角色描述" 
-                      />
-                    </el-form-item>
-                    <el-form-item label="角色名译文" v-if="!isAdd">
-                      <div class="character-name-translations">
-                        <div
-                          v-for="lang in TRANSLATION_LANGUAGES"
-                          :key="lang.code"
-                          class="character-name-translation-row"
-                        >
-                          <span class="character-name-translation-label">{{ lang.label }}</span>
-                          <el-input
-                            v-model="characterNameTranslations[lang.code]"
-                            :placeholder="`留空则使用「${currentCharacter.name}」`"
-                          />
-                        </div>
-                        <div class="character-name-translation-tip">
-                          播放器、导出包与静态网页包会按阅读语言显示对应译名，缺失时回退简体中文。
-                        </div>
-                      </div>
-                    </el-form-item>
-                  </el-form>
-
-                  <div v-if="!isAdd" class="avatar-section-head">
-                    <span class="avatar-section-title">角色立绘</span>
-                    <button
-                      class="avatar-btn cutout"
-                      :disabled="cutoutLoadingId !== null || cutoutBatchRunning"
-                      @click="batchCutout"
-                    >
-                      {{ cutoutBatchRunning ? '批量抠图中…' : '全部抠图' }}
-                    </button>
-                  </div>
-
-                  <div class="avatar-grid" v-if="!isAdd">
-                    <div 
-                      v-for="avatar in currentCharacterAvatars" 
-                      :key="avatar.avatar_id"
-                      class="avatar-card"
-                      :class="{ selected: selectedAvatar?.avatar_id === avatar.avatar_id }"
-                      @click="selectAvatar(avatar)"
-                    >
-                      <div class="avatar-image">
-                        <img :src="BASE_URL + avatar.image_url" loading="lazy" decoding="async" @error="onAvatarImgError" />
-                      </div>
-                      <div class="avatar-info">
-                        <span class="avatar-type">{{ avatar.avatar_type }}</span>
-                        <span class="avatar-costume">{{ avatar.costume || '默认服装' }}</span>
-                      </div>
-                      <div class="avatar-actions">
-                        <button
-                          class="avatar-btn layer"
-                          :title="`差分叠加层：${(avatar.layers || []).length} 层`"
-                          @click.stop="openLayerDialog(avatar)"
-                        >
-                          差分{{ (avatar.layers || []).length ? `(${avatar.layers!.length})` : '' }}
-                        </button>
-                        <button
-                          class="avatar-btn cutout"
-                          :disabled="cutoutLoadingId !== null || cutoutBatchRunning"
-                          title="去掉立绘背景，保留透明底人物"
-                          @click.stop="cutoutAvatar(avatar)"
-                        >
-                          {{ cutoutLoadingId === avatar.avatar_id ? '抠图中…' : '抠图' }}
-                        </button>
-                        <button 
-                          class="avatar-btn" 
-                          :class="{ default: avatar.is_default }"
-                          @click.stop="setDefaultAvatar(avatar)"
-                        >
-                          {{ avatar.is_default ? '默认' : '设为默认' }}
-                        </button>
-                        <button class="avatar-btn delete" @click.stop="deleteAvatar(avatar.avatar_id)">
-                          删除
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="add-avatar-card" @click="showAddAvatarDialog">
-                      <el-icon><Plus /></el-icon>
-                      <span>添加立绘</span>
-                    </div>
-                  </div>
-
-                  <div class="drawer-footer">
-                    <button class="secondary-btn" @click="characterDrawerVisible = false">取消</button>
-                    <button class="primary-btn" @click="saveCharacter">保存</button>
-                  </div>
-                </div>
-              </el-drawer>
-
-              <!-- 添加立绘对话框 -->
-              <el-dialog v-model="avatarDialogVisible" title="添加立绘" width="460px" class="custom-dialog">
-                <el-form :model="newAvatar" label-position="top">
-                  <el-form-item label="表情类型">
-                    <div class="type-options">
-                      <span 
-                        v-for="type in avatarTypes" 
-                        :key="type"
-                        class="type-option"
-                        :class="{ selected: newAvatar.avatar_type === type }"
-                        @click="newAvatar.avatar_type = type"
-                      >
-                        {{ type }}
-                      </span>
-                    </div>
-                  </el-form-item>
-                  <el-form-item label="服装描述">
-                    <el-input v-model="newAvatar.costume" placeholder="请输入服装描述" />
-                  </el-form-item>
-                  <el-form-item label="设为默认">
-                    <el-switch v-model="newAvatar.is_default" />
-                  </el-form-item>
-                  <el-form-item label="上传立绘">
-                    <el-upload 
-                      ref="upload" 
-                      :show-file-list="false" 
-                      :auto-upload="false"
-                      :on-change="handleChange" 
-                      accept=".jpg,.jpeg,.png,.gif,.webp"
-                      drag
-                    >
-                      <div class="upload-area">
-                        <el-icon><UploadFilled /></el-icon>
-                        <p>点击或拖拽上传立绘图片</p>
-                      </div>
-                    </el-upload>
-                  </el-form-item>
-                </el-form>
-                
-                <div v-if="previewImageUrl" class="preview-image">
-                  <img :src="previewImageUrl" />
-                </div>
-                
-                <template #footer>
-                  <button class="dialog-btn cancel" @click="avatarDialogVisible = false">取消</button>
-                  <button class="dialog-btn confirm" @click="addAvatar" :disabled="!selectedFile">确定</button>
-                </template>
-              </el-dialog>
-
-              <!-- 立绘差分层管理 -->
-              <ProjectLayerDialog
-                v-model:visible="layerDialogVisible"
-                :avatar="layerTargetAvatar"
-                @changed="handleLayerChanged"
-              />
-
-              <!-- 抠图进度对话框 -->
-              <el-dialog
-                v-model="cutoutDialogVisible"
-                title="角色抠图"
-                width="420px"
-                class="custom-dialog cutout-dialog"
-                :close-on-click-modal="false"
-                :show-close="cutoutStatus !== 'running'"
-                @closed="stopCutoutTimer"
-              >
-                <div class="cutout-progress">
-                  <div v-if="cutoutTarget" class="cutout-target">
-                    {{ cutoutTarget.avatar_type }} · {{ cutoutTarget.costume || '默认服装' }}
-                  </div>
-                  <el-progress
-                    :percentage="cutoutPercent"
-                    :stroke-width="10"
-                    :color="cutoutStatus === 'error' ? '#F56C6C' : (cutoutStatus === 'success' ? '#67C23A' : '#5b8def')"
-                  />
-                  <div class="cutout-stage">{{ cutoutStage }}</div>
-                  <div v-if="cutoutError" class="cutout-error">{{ cutoutError }}</div>
-                  <div class="cutout-hint">大图可能需要几秒；处理期间可以点「后台运行」，完成后会提示。</div>
-                </div>
-                <template #footer>
-                  <button v-if="cutoutStatus === 'error'" class="dialog-btn confirm" @click="retryCutout">重试</button>
-                  <button class="dialog-btn cancel" @click="cutoutDialogVisible = false">
-                    {{ cutoutStatus === 'running' ? '后台运行' : '关闭' }}
-                  </button>
-                </template>
-              </el-dialog>
-
-              <!-- 参数设置对话框 -->
-              <el-dialog
-                v-model="settingsDialogVisible"
-                :title="`参数设置${currentCharacter?.name ? ` · ${currentCharacter.name}` : ''}`"
-                width="500px"
-                class="custom-dialog"
-              >
-                <div class="settings-panel">
-                  <button class="secondary-btn small" @click="addSetting">
-                    <el-icon><Plus /></el-icon>
-                    添加参数
-                  </button>
-                  
-                  <el-table :data="settingsArray" class="settings-table">
-                    <el-table-column prop="key" label="参数名">
-                      <template #default="{ row, $index }">
-                        <el-input :model-value="row.key" @change="renameSetting($index, $event)" />
-                      </template>
-                    </el-table-column>
-                    <el-table-column prop="value" label="参数值">
-                      <template #default="{ row, $index }">
-                        <el-input :model-value="row.value" @change="updateSettingValue($index, $event)" />
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="80">
-                      <template #default="{ $index }">
-                        <button class="action-btn delete" @click="removeSetting($index)">删除</button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
-                <template #footer>
-                  <button class="dialog-btn confirm" @click="settingsDialogVisible = false">关闭</button>
-                </template>
-              </el-dialog>
-            </div>
+            <ProjectCharactersPanel
+              :project-id="projectId"
+              @stats-change="onCharacterStats"
+            />
           </el-tab-pane>
 
           <!-- 变量（好感度/数值/开关） -->
@@ -487,201 +205,128 @@
   </div>
 </template>
 
-<script lang="ts">
-import { ref, defineComponent, onMounted } from 'vue'
-import { Plus, UploadFilled } from '@element-plus/icons-vue'
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { Character } from '@/api/character'
 import { getProject, getDialogueCount, type Project } from '@/api/project'
-import { TRANSLATION_LANGUAGES } from '@/api/translation'
 import { getScenes, type Scene } from '@/api/scenes'
 import { BASE_URL } from '@/utils/request'
 import TechNavCircle from '@/components/TechNavCircle.vue'
 import ProjectOverviewPanel from '@/components/project/ProjectOverviewPanel.vue'
+import ProjectCharactersPanel from '@/components/project/ProjectCharactersPanel.vue'
 import ProjectVariableDialog from '@/components/project/ProjectVariableDialog.vue'
 import ProjectEndingDialog from '@/components/project/ProjectEndingDialog.vue'
 import ProjectCgDialog from '@/components/project/ProjectCgDialog.vue'
-import ProjectLayerDialog from '@/components/project/ProjectLayerDialog.vue'
-import { useProjectCutout } from '@/composables/project/useProjectCutout'
 import { useProjectVariables } from '@/composables/project/useProjectVariables'
 import { useProjectEndings } from '@/composables/project/useProjectEndings'
 import { useProjectCgs } from '@/composables/project/useProjectCgs'
-import { useProjectCharacters } from '@/composables/project/useProjectCharacters'
 
-export default defineComponent({
-  name: 'ProjectView',
-  components: {
-    Plus, UploadFilled,
-    TechNavCircle, ProjectOverviewPanel,
-    ProjectVariableDialog, ProjectEndingDialog, ProjectCgDialog,
-    ProjectLayerDialog
-  },
-  props: {
-    projectId: { type: Number, required: true }
-  },
-  setup(props) {
-    // 原有状态
-    const project = ref<Project | null>(null)
-    const totalDialogues = ref(0)
-    const scenes = ref<Scene[]>([])
-    const loadingScenes = ref(false)
-    const activeTab = ref('overview')
+const props = defineProps<{ projectId: number }>()
 
-    // 项目变量：列表读写、弹窗开关与行为变量启用都在 useProjectVariables 内
-    const {
-      variables,
-      behaviorSaving,
-      isBehaviorVariable,
-      missingBehaviorVariables,
-      variableDialogVisible,
-      editingVariableId,
-      variableSaving,
-      variableInitial,
-      fetchVariables,
-      enableBehaviorVariables,
-      openCreateVariable,
-      openEditVariable,
-      handleSaveVariable,
-      removeVariable,
-    } = useProjectVariables({ projectId: () => Number(props.projectId) })
+// 原有状态
+const project = ref<Project | null>(null)
+const totalDialogues = ref(0)
+const scenes = ref<Scene[]>([])
+const activeTab = ref('overview')
 
-    // 结局：列表读写、触发节点下拉与弹窗编排都在 useProjectEndings 内
-    const {
-      endings,
-      endingDialogVisible,
-      editingEndingId,
-      endingSaving,
-      endingInitial,
-      nodeOptions,
-      fetchEndings,
-      openCreateEnding,
-      openEditEnding,
-      handleSaveEnding,
-      removeEnding,
-      nodeLabel,
-      formatEndingConditions,
-    } = useProjectEndings({ projectId: () => Number(props.projectId) })
+// 角色库归 ProjectCharactersPanel 所有，本页只留概览要用的两份派生值
+const characters = ref<Character[]>([])
+const totalAvatars = ref(0)
 
-    // CG 图鉴：列表读写、弹窗编排与解锁文案都在 useProjectCgs 内
-    const {
-      cgs,
-      cgDialogVisible,
-      editingCGId,
-      cgSaving,
-      cgInitial,
-      describeCgUnlock,
-      fetchCGs,
-      openCreateCG,
-      openEditCG,
-      handleSaveCG,
-      removeCG,
-    } = useProjectCgs({
-      projectId: () => Number(props.projectId),
-      // CG 弹窗的「解锁条件」下拉复用结局列表
-      ensureEndings: fetchEndings,
-    })
+const onCharacterStats = (payload: { characters: Character[]; avatarCount: number }) => {
+  characters.value = payload.characters
+  totalAvatars.value = payload.avatarCount
+}
 
-    // 角色库：列表与搜索、角色抽屉表单、立绘与参数设置都在 useProjectCharacters 内
-    const {
-      avatarTypes, characters, characterAvatars, currentCharacterAvatars,
-      characterSearch, loadingCharacters, filteredCharacters, totalAvatars,
-      isAdd, characterDrawerVisible, currentCharacter, characterNameTranslations,
-      avatarDialogVisible, newAvatar, selectedFile, previewImageUrl, selectedAvatar,
-      layerDialogVisible, layerTargetAvatar, settingsDialogVisible, settingsArray,
-      fetchCharacters, fetchCharacterAvatars, syncCurrentCharacterAvatars,
-      showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
-      showAddAvatarDialog, handleChange, addAvatar, selectAvatar, setDefaultAvatar,
-      deleteAvatar, openLayerDialog, handleLayerChanged, getAvatarUrl, onAvatarImgError,
-      showSettingsDialog, addSetting, removeSetting, renameSetting, updateSettingValue, updateSettings,
-    } = useProjectCharacters({ projectId: () => Number(props.projectId) })
+// 项目变量：列表读写、弹窗开关与行为变量启用都在 useProjectVariables 内
+const {
+  variables,
+  behaviorSaving,
+  isBehaviorVariable,
+  missingBehaviorVariables,
+  variableDialogVisible,
+  editingVariableId,
+  variableSaving,
+  variableInitial,
+  fetchVariables,
+  enableBehaviorVariables,
+  openCreateVariable,
+  openEditVariable,
+  handleSaveVariable,
+  removeVariable,
+} = useProjectVariables({ projectId: () => Number(props.projectId) })
 
-    const getGenreColor = (genre?: string) => {
-      const colors: Record<string, string> = {
-        '悬疑': '#6c5b7b', '恋爱': '#ff8fab', '科幻': '#5d5fef',
-        '奇幻': '#c9a9e8', '历史': '#c49a6c', '现代': '#a8e6cf', '其他': '#b8b8b8'
-      }
-      return colors[genre || ''] || '#ff8fab'
-    }
+// 结局：列表读写、触发节点下拉与弹窗编排都在 useProjectEndings 内
+const {
+  endings,
+  endingDialogVisible,
+  editingEndingId,
+  endingSaving,
+  endingInitial,
+  nodeOptions,
+  fetchEndings,
+  openCreateEnding,
+  openEditEnding,
+  handleSaveEnding,
+  removeEnding,
+  nodeLabel,
+  formatEndingConditions,
+} = useProjectEndings({ projectId: () => Number(props.projectId) })
 
-    const fetchProjectDetails = async (projectId: number) => {
-      try {
-        const res = await getProject(projectId)
-        project.value = res
-        await Promise.all([fetchCharacters(), fetchScenes(projectId)])
-      } catch (error) {
-        ElMessage.error('获取项目详情失败')
-      }
-    }
+// CG 图鉴：列表读写、弹窗编排与解锁文案都在 useProjectCgs 内
+const {
+  cgs,
+  cgDialogVisible,
+  editingCGId,
+  cgSaving,
+  cgInitial,
+  describeCgUnlock,
+  fetchCGs,
+  openCreateCG,
+  openEditCG,
+  handleSaveCG,
+  removeCG,
+} = useProjectCgs({
+  projectId: () => Number(props.projectId),
+  // CG 弹窗的「解锁条件」下拉复用结局列表
+  ensureEndings: fetchEndings,
+})
 
-    const fetchScenes = async (projectId: number) => {
-      loadingScenes.value = true
-      try {
-        const res = await getScenes(projectId)
-        scenes.value = res
-      } finally {
-        loadingScenes.value = false
-      }
-    }
-
-    // 抠图状态与流程由 useProjectCutout 自管
-    const {
-      cutoutLoadingId,
-      cutoutBatchRunning,
-      cutoutDialogVisible,
-      cutoutTarget,
-      cutoutPercent,
-      cutoutStage,
-      cutoutStatus,
-      cutoutError,
-      stopCutoutTimer,
-      cutoutAvatar,
-      retryCutout,
-      batchCutout,
-    } = useProjectCutout({ characters, characterAvatars, currentCharacterAvatars, selectedAvatar })
-
-    // ==================== 生命周期 ====================
-    onMounted(async () => {
-      await fetchProjectDetails(props.projectId)
-      const res = await getDialogueCount(props.projectId)
-      totalDialogues.value = res?.length ?? 0
-      await fetchVariables()
-      await fetchEndings()
-      await fetchCGs()
-    })
-
-    return {
-      project, isAdd, selectedFile, characters, characterAvatars, scenes,
-      currentCharacterAvatars, BASE_URL, activeTab,
-      variables, variableDialogVisible, editingVariableId, variableSaving, variableInitial,
-      missingBehaviorVariables, behaviorSaving, enableBehaviorVariables, isBehaviorVariable,
-      fetchVariables, openCreateVariable, openEditVariable, handleSaveVariable, removeVariable,
-      endings, endingDialogVisible, editingEndingId, endingSaving, endingInitial, nodeOptions,
-      fetchEndings, openCreateEnding, openEditEnding, handleSaveEnding, removeEnding, nodeLabel, formatEndingConditions,
-      cgs, cgDialogVisible, editingCGId, cgSaving, cgInitial,
-      fetchCGs, openCreateCG, openEditCG, handleSaveCG, removeCG, describeCgUnlock,
-      characterDrawerVisible, currentCharacter, characterNameTranslations,
-      TRANSLATION_LANGUAGES, avatarDialogVisible, newAvatar,
-      selectedAvatar, cutoutLoadingId, cutoutBatchRunning,
-      cutoutDialogVisible, cutoutTarget, cutoutPercent, cutoutStage, cutoutStatus, cutoutError,
-      stopCutoutTimer, retryCutout, batchCutout,
-      settingsDialogVisible,
-      characterSearch, loadingCharacters,
-      avatarTypes, previewImageUrl, filteredCharacters, totalAvatars, totalDialogues,
-      settingsArray,
-      handleChange, getGenreColor,
-      showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
-      showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, cutoutAvatar, deleteAvatar,
-      layerDialogVisible, layerTargetAvatar,
-      openLayerDialog, handleLayerChanged,
-      showSettingsDialog, addSetting, removeSetting, renameSetting, updateSettingValue, updateSettings,
-      getAvatarUrl, onAvatarImgError,
-      // 补充原有方法的引用
-      fetchProjectDetails
-    }
+const getGenreColor = (genre?: string) => {
+  const colors: Record<string, string> = {
+    '悬疑': '#6c5b7b', '恋爱': '#ff8fab', '科幻': '#5d5fef',
+    '奇幻': '#c9a9e8', '历史': '#c49a6c', '现代': '#a8e6cf', '其他': '#b8b8b8'
   }
+  return colors[genre || ''] || '#ff8fab'
+}
+
+const fetchProjectDetails = async (projectId: number) => {
+  try {
+    const res = await getProject(projectId)
+    project.value = res
+    await fetchScenes(projectId)
+  } catch (error) {
+    ElMessage.error('获取项目详情失败')
+  }
+}
+
+const fetchScenes = async (projectId: number) => {
+  const res = await getScenes(projectId)
+  scenes.value = res
+}
+
+// ==================== 生命周期 ====================
+onMounted(async () => {
+  await fetchProjectDetails(props.projectId)
+  const res = await getDialogueCount(props.projectId)
+  totalDialogues.value = res?.length ?? 0
+  await fetchVariables()
+  await fetchEndings()
+  await fetchCGs()
 })
 </script>
 <style scoped lang="scss" src="./project/projectShell.scss"></style>
-<style scoped lang="scss" src="./project/projectCharacters.scss"></style>
 <style scoped lang="scss" src="./project/projectDialogs.scss"></style>
 <style scoped lang="scss" src="./project/projectResponsive.scss"></style>
 <style scoped lang="scss" src="./project/projectPanels.scss"></style>

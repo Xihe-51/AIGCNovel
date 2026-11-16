@@ -27,20 +27,7 @@
     grid-template-columns: 1fr !important;
   }
   
-  .panel-toolbar {
-    flex-direction: column;
-    gap: 16px;
-    
-    .search-box {
-      width: 100% !important;
-    }
-  }
-  
   .info-grid {
-    grid-template-columns: 1fr !important;
-  }
-  
-  .avatar-grid {
     grid-template-columns: 1fr !important;
   }
 }
