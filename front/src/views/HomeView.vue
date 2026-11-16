@@ -323,7 +323,6 @@ const {
 const statsTimeRange = ref('all')
 const { genreChartRef, wordCountChartRef, statusChartRef, initCharts } = useHomeCharts({
   projects,
-  isPublicMode,
   statsTimeRange
 })
 
@@ -358,8 +357,8 @@ const goToProjectDetail = (projectId: number) => {
   router.push(isPublicMode.value ? `/view/${projectId}` : `/project/${projectId}`)
 }
 
-watch(projects, (list) => {
-  if (!isPublicMode.value && list.length > 0) nextTick(initCharts)
+watch(projects, () => {
+  if (!isPublicMode.value) nextTick(initCharts)
 })
 
 onMounted(() => {

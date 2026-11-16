@@ -10,7 +10,6 @@ import {
 
 export interface HomeChartsContext {
   projects: Ref<Project[]>
-  isPublicMode: Ref<boolean>
   statsTimeRange: Ref<string>
 }
 
@@ -175,12 +174,6 @@ export function useHomeCharts(ctx: HomeChartsContext) {
     renderStatusChart(echarts, filtered)
   }
 
-  const refreshCharts = () => {
-    if (!ctx.isPublicMode.value && ctx.projects.value.length > 0) {
-      initCharts()
-    }
-  }
-
   const handleChartResize = () => {
     genreChart?.resize()
     wordCountChart?.resize()
@@ -199,7 +192,6 @@ export function useHomeCharts(ctx: HomeChartsContext) {
     genreChartRef,
     wordCountChartRef,
     statusChartRef,
-    initCharts,
-    refreshCharts
+    initCharts
   }
 }

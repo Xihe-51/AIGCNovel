@@ -40,6 +40,7 @@ export function useHomeProjects() {
       ElMessage.success('项目已删除')
     } catch (error) {
       ElMessage.error(extractErrorMessage(error, '删除项目失败'))
+      fetchProjects()
     }
   }
 
