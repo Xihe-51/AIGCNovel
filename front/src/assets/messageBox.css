@@ -1,0 +1,44 @@
+/* Element 的 MessageBox 是运行时挂载到 body 上的，组件内的 scoped 样式
+   （哪怕写了 :deep）都命中不到它，所以统一放在这里做全局深色外观，
+   首页 / 市场 / 播放器 / 编辑器 / AI 的所有确认框共用一套样式。 */
+.el-message-box {
+	background: #1a1a2e;
+	backdrop-filter: blur(20px);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 20px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.el-message-box .el-message-box__header {
+	padding: 18px 20px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.el-message-box .el-message-box__title {
+	color: #ffffff;
+	font-weight: 600;
+}
+
+.el-message-box .el-message-box__headerbtn .el-message-box__close {
+	color: #9ca3af;
+}
+
+.el-message-box .el-message-box__content {
+	padding: 24px 20px;
+	color: #e5e7eb;
+}
+
+.el-message-box .el-message-box__message p {
+	color: #e5e7eb;
+	white-space: pre-line;
+}
+
+.el-message-box .el-message-box__btns {
+	padding: 16px 20px 20px;
+	border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.el-message-box .el-message-box__btns .el-button {
+	padding: 9px 22px;
+	border-radius: 30px;
+}

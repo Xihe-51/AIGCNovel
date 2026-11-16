@@ -32,7 +32,6 @@ export function useHomeProjects() {
   const confirmDelete = async (projectId: number) => {
     const confirmed = await confirmAction('确定要删除这个项目吗?', {
       title: '提示',
-      customClass: 'delete-confirm',
     })
     if (!confirmed) return
     try {

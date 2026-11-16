@@ -307,33 +307,6 @@ $text-secondary: #9ca3af;
   }
 }
 
-// 音乐功能对话框
-:deep(.music-dialog) {
-  background: $bg-primary !important;
-  border: 1px solid $border-light !important;
-  border-radius: 20px !important;
-  
-  .el-message-box__title {
-    color: $text-primary !important;
-  }
-  
-  .el-message-box__message {
-    color: $text-secondary !important;
-    white-space: pre-line;
-  }
-  
-  .el-button--primary {
-    background: linear-gradient(135deg, $pink, $purple) !important;
-    border: none !important;
-    border-radius: 30px !important;
-    padding: 10px 30px !important;
-    
-    &:hover {
-      opacity: 0.9;
-    }
-  }
-}
-
 // 响应式
 @media (max-width: 768px) {
   .ai-studio {
