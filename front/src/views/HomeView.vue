@@ -285,15 +285,9 @@
 </template>
 
 <script setup lang="ts">
-
-
-
-import { ref, computed, onMounted, watch, nextTick ,onUnmounted } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import type { ECharts } from 'echarts'
 import {
-  MagicStick,
   Plus,
   Edit,
   Delete,
@@ -304,784 +298,75 @@ import {
   Download,
   Select
 } from '@element-plus/icons-vue'
-import * as projectApi from '@/api/project'
-import type { Project, TemplateMeta } from '@/api/project'
-import { listEndings } from '@/api/ending'
-import type { Ending } from '@/api/ending'
-import { BASE_URL } from "@/utils/request"
-
-interface ProjectForm {
-  title: string
-  genre: string
-  template_type: string
-  isPublic?: boolean
-}
+import type { Project } from '@/api/project'
+import { BASE_URL } from '@/utils/request'
+import { buildCoverStyle, formatHomeDate as formatDate, getGenreTagType } from '@/utils/homeStats'
+import { useHomeBackground } from '@/composables/home/useHomeBackground'
+import { useHomeCharts } from '@/composables/home/useHomeCharts'
+import { useHomeProjects } from '@/composables/home/useHomeProjects'
+import { useProjectExport } from '@/composables/home/useProjectExport'
+import { useProjectForm } from '@/composables/home/useProjectForm'
 
 const router = useRouter()
-const projects = ref<Project[]>([])
-const dialogVisible = ref(false)
-const isEditMode = ref(false)
-const currentProjectId = ref<number | null>(null)
-const coverFile = ref<File | null>(null)
-const loading = ref(false)
-const isPublicMode = ref(false)
+
+const {
+  projects,
+  isPublicMode,
+  importInputRef,
+  fetchProjects,
+  handleModeChange,
+  confirmDelete,
+  handleImportClick,
+  handleImportFile
+} = useHomeProjects()
+
 const statsTimeRange = ref('all')
-const templates = ref<TemplateMeta[]>([])
-const importInputRef = ref<HTMLInputElement | null>(null)
-
-// 多形态导出：结局/路线选择
-const exportDialogVisible = ref(false)
-const exportFormat = ref<'novel' | 'audio' | 'storyboard'>('novel')
-const exportTarget = ref<Project | null>(null)
-const exportEndingId = ref<number | undefined>(undefined)
-const projectEndings = ref<Ending[]>([])
-const exporting = ref(false)
-let exportSeq = 0
-
-// 图表相关引用
-const genreChartRef = ref<HTMLDivElement | null>(null)
-const wordCountChartRef = ref<HTMLDivElement | null>(null)
-const statusChartRef = ref<HTMLDivElement | null>(null)
-
-// 图表实例
-let genreChart: ECharts | null = null
-let wordCountChart: ECharts | null = null
-let statusChart: ECharts | null = null
-// ECharts 只在真正需要画图时加载，避免首页路由预取 1MB 图表库
-let echartsModule: Promise<typeof import('echarts')> | null = null
-const loadEcharts = () => (echartsModule ||= import('echarts'))
-
-const projectForm = ref<ProjectForm>({
-  title: '',
-  genre: '',
-  template_type: '线性叙事',
-  isPublic: false
+const { genreChartRef, wordCountChartRef, statusChartRef, initCharts } = useHomeCharts({
+  projects,
+  isPublicMode,
+  statsTimeRange
 })
 
-const dialogTitle = computed(() => isEditMode.value ? '编辑项目' : '新建项目')
+const {
+  dialogVisible,
+  isEditMode,
+  templates,
+  projectForm,
+  dialogTitle,
+  loadTemplates,
+  showCreateDialog,
+  showEditDialog,
+  handleCoverChange,
+  submitProject
+} = useProjectForm({ onSubmitted: () => fetchProjects() })
 
-// 封面样式
-const coverStyle = (project: Project) => ({
-  backgroundImage: project.cover_url 
-    ? `url(${BASE_URL}${project.cover_url})` 
-    : 'linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%)'
-})
+const {
+  exportDialogVisible,
+  exportFormat,
+  exportEndingId,
+  projectEndings,
+  exporting,
+  handleExport,
+  confirmFormatExport
+} = useProjectExport()
 
-// 获取项目列表 - 根据模式切换获取不同项目
-const fetchProjects = async () => {
-  try {
-    loading.value = true
-    let res;
-    if (isPublicMode.value) {
-      // 获取公开项目
-      res = await projectApi.getPublicProjects()
-    } else {
-      // 获取用户自己的项目
-      res = await projectApi.getProjects()
-    }
-    projects.value = res
-    
-    // 当切换到我的项目时，初始化图表
-    if (!isPublicMode.value) {
-      nextTick(() => {
-        initCharts()
-      })
-    }
-  } catch (error) {
-    console.log(error)
-    ElMessage.error(isPublicMode.value ? '获取公开项目列表失败' : '获取项目列表失败')
-  } finally {
-    loading.value = false
-  }
-}
+useHomeBackground()
 
-// 处理模式切换
-const handleModeChange = () => {
-  // 切换模式时重新加载项目列表
-  fetchProjects()
-}
+const coverStyle = (project: Project) => buildCoverStyle(project, BASE_URL)
 
-// 刷新图表数据
-const refreshCharts = () => {
-  if (!isPublicMode.value && projects.value.length > 0) {
-    initCharts()
-  }
-}
-
-// 窗口尺寸变化时重绘图表；在 setup 阶段注册一次，避免 initCharts 多次调用重复绑定
-const handleChartResize = () => {
-  genreChart?.resize()
-  wordCountChart?.resize()
-  statusChart?.resize()
-}
-window.addEventListener('resize', handleChartResize)
-onUnmounted(() => {
-  window.removeEventListener('resize', handleChartResize)
-  genreChart?.dispose()
-  wordCountChart?.dispose()
-  statusChart?.dispose()
-})
-
-// 初始化图表
-const initCharts = async () => {
-  if (!genreChartRef.value && !wordCountChartRef.value && !statusChartRef.value) return
-  const echarts = await loadEcharts()
-  // 处理时间范围过滤
-  const filteredProjects = filterProjectsByTimeRange(projects.value, statsTimeRange.value)
-  
-  // 项目类型分布图表
-  if (genreChartRef.value) {
-    if (genreChart) {
-      genreChart.dispose()
-    }
-    genreChart = echarts.init(genreChartRef.value)
-    const genreData = getGenreDistribution(filteredProjects)
-    
-    genreChart.setOption({
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderColor: '#ffccd5',
-        borderWidth: 1,
-        textStyle: {
-          color: '#333'
-        },
-        formatter: '{a} <br/>{b}: {c} ({d}%)'
-      },
-      legend: {
-        orient: 'vertical',
-        left: 10,
-        textStyle: {
-          color: '#666'
-        }
-      },
-      series: [
-        {
-          name: '项目类型',
-          type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
-          itemStyle: {
-            borderRadius: 8,
-            borderColor: '#fff',
-            borderWidth: 2,
-            color: function(params: any) {
-              const colorList = [
-                '#ff9a9e', '#f67280', '#c06c84', 
-                '#6c5b7b', '#355c7d', '#ffaaa5', '#fad0c4'
-              ];
-              return colorList[params.dataIndex % colorList.length];
-            }
-          },
-          label: {
-            show: false,
-            position: 'center'
-          },
-          emphasis: {
-            label: {
-              show: true,
-              fontSize: 16,
-              fontWeight: 'bold',
-              color: '#333'
-            }
-          },
-          labelLine: {
-            show: false
-          },
-          data: genreData
-        }
-      ]
-    })
-  }
-  
-  // 字数统计趋势图表
-  if (wordCountChartRef.value) {
-    if (wordCountChart) {
-      wordCountChart.dispose()
-    }
-    wordCountChart = echarts.init(wordCountChartRef.value)
-    const wordCountData = getWordCountByDate(filteredProjects)
-    
-    wordCountChart.setOption({
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderColor: '#ffccd5',
-        borderWidth: 1,
-        textStyle: {
-          color: '#333'
-        }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        axisLine: {
-          lineStyle: {
-            color: '#ffccd5'
-          }
-        },
-        axisLabel: {
-          color: '#666'
-        }
-      },
-      yAxis: {
-        type: 'value',
-        axisLine: {
-          lineStyle: {
-            color: '#ffccd5'
-          }
-        },
-        axisLabel: {
-          color: '#666',
-          formatter: '{value} 字'
-        },
-        splitLine: {
-          lineStyle: {
-            color: 'rgba(255, 204, 213, 0.2)'
-          }
-        }
-      },
-      series: [
-        {
-          name: '累计字数',
-          type: 'line',
-          stack: 'Total',
-          data: wordCountData.values,
-          smooth: true,
-          lineStyle: {
-            width: 3,
-            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: '#ff9a9e' },
-              { offset: 1, color: '#fad0c4' }
-            ])
-          },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(255, 154, 158, 0.4)' },
-              { offset: 1, color: 'rgba(250, 208, 196, 0.1)' }
-            ])
-          },
-          symbol: 'circle',
-          symbolSize: 6,
-          itemStyle: {
-            color: '#ff9a9e'
-          },
-          emphasis: {
-            itemStyle: {
-              color: '#fff',
-              borderColor: '#ff9a9e',
-              borderWidth: 2,
-              shadowBlur: 10,
-              shadowColor: 'rgba(255, 154, 158, 0.5)'
-            }
-          }
-        }
-      ]
-    })
-  }
-  
-  // 项目状态分布图表
-  if (statusChartRef.value) {
-    if (statusChart) {
-      statusChart.dispose()
-    }
-    statusChart = echarts.init(statusChartRef.value)
-    const statusData = getStatusDistribution(filteredProjects)
-    
-    statusChart.setOption({
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderColor: '#ffccd5',
-        borderWidth: 1,
-        textStyle: {
-          color: '#333'
-        }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: statusData.labels,
-        axisLine: {
-          lineStyle: {
-            color: '#ffccd5'
-          }
-        },
-        axisLabel: {
-          color: '#666'
-        }
-      },
-      yAxis: {
-        type: 'value',
-        axisLine: {
-          lineStyle: {
-            color: '#ffccd5'
-          }
-        },
-        axisLabel: {
-          color: '#666'
-        },
-        splitLine: {
-          lineStyle: {
-            color: 'rgba(255, 204, 213, 0.2)'
-          }
-        }
-      },
-      series: [
-        {
-          data: statusData.values,
-          type: 'bar',
-          barWidth: '60%',
-          itemStyle: {
-            color: function(params: any) {
-              const colorList = [
-                new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                  { offset: 0, color: '#67c23a' },
-                  { offset: 1, color: '#b3e19d' }
-                ]),
-                new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                  { offset: 0, color: '#ff9a9e' },
-                  { offset: 1, color: '#fad0c4' }
-                ])
-              ];
-              return colorList[params.dataIndex];
-            },
-            borderRadius: [4, 4, 0, 0]
-          },
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowColor: 'rgba(0, 0, 0, 0.1)'
-            }
-          }
-        }
-      ]
-    })
-  }
-  
-//页面滑动效果
-const background = document.querySelector(".background") as HTMLElement | null;
-
-if (background) {
-    document.addEventListener('scroll', () => {
-        const scrollY = window.scrollY;
-        
-        if (scrollY !== 0) {
-            background.style.backgroundPosition = `calc(50% + ${scrollY}px) calc(50% + ${scrollY}px)`;
-        } else {
-            background.style.backgroundPosition = '';
-        }
-    });
-}
-
-
-}
-
-// 根据时间范围过滤项目
-const filterProjectsByTimeRange = (projects: Project[], range: string) => {
-  if (range === 'all') return projects
-  
-  const days = parseInt(range)
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - days)
-  
-  return projects.filter(project => {
-    const projectDate = new Date(project.created_at)
-    return projectDate >= cutoffDate
-  })
-}
-
-// 获取项目类型分布数据
-const getGenreDistribution = (projects: Project[]) => {
-  const genreMap: Record<string, number> = {}
-  
-  projects.forEach(project => {
-    if (genreMap[project.genre]) {
-      genreMap[project.genre]++
-    } else {
-      genreMap[project.genre] = 1
-    }
-  })
-  
-  return Object.entries(genreMap).map(([name, value]) => ({
-    name,
-    value
-  }))
-}
-
-// 获取按日期统计的字数数据
-const getWordCountByDate = (projects: Project[]) => {
-  // 按创建日期分组
-  const dateMap: Record<string, number> = {}
-  
-  projects.forEach(project => {
-    const date = new Date(project.created_at).toISOString().split('T')[0]
-    if (dateMap[date]) {
-      dateMap[date] += project.word_count
-    } else {
-      dateMap[date] = project.word_count
-    }
-  })
-  
-  // 按日期排序
-  const sortedDates = Object.keys(dateMap).sort()
-  
-  return {
-    dates: sortedDates,
-    values: sortedDates.map(date => dateMap[date])
-  }
-}
-
-// 获取项目状态分布数据（公开/私有）
-const getStatusDistribution = (projects: Project[]) => {
-  let publicCount = 0
-  let privateCount = 0
-  
-  projects.forEach(project => {
-    if (project.is_public) {
-      publicCount++
-    } else {
-      privateCount++
-    }
-  })
-  
-  return {
-    labels: ['已公开', '未公开'],
-    values: [publicCount, privateCount]
-  }
-}
-
-// 显示创建对话框
-const showCreateDialog = () => {
-  isEditMode.value = false
-  projectForm.value = {
-    title: '',
-    genre: '',
-    template_type: '线性叙事',
-    isPublic: false
-  }
-  dialogVisible.value = true
-}
-
-// 显示编辑对话框
-const showEditDialog = (project: Project) => {
-  isEditMode.value = true
-  currentProjectId.value = project.project_id
-  projectForm.value = {
-    title: project.title,
-    genre: project.genre,
-    template_type: project.template_type,
-    isPublic: project.is_public
-  }
-  dialogVisible.value = true
-}
-
-// 提交项目
-const submitProject = async () => {
-  if (!projectForm.value.title || !projectForm.value.genre) {
-    ElMessage.warning('请填写完整信息')
-    return
-  }
-  
-  try {
-    if (isEditMode.value && currentProjectId.value) {
-      // 更新项目
-      const updatedProject = await projectApi.updateProject(
-        currentProjectId.value,
-        {
-          title: projectForm.value.title,
-          genre: projectForm.value.genre,
-          template_type: projectForm.value.template_type,
-          is_public: projectForm.value.isPublic
-        }
-      )
-      
-      // 如果有上传封面
-      if (coverFile.value) {
-        const { cover_url } = await projectApi.uploadProjectCover(
-          currentProjectId.value,
-          coverFile.value
-        )
-        updatedProject.cover_url = cover_url
-      }
-      
-      projects.value = projects.value.map(p => 
-        p.project_id === currentProjectId.value ? updatedProject : p
-      )
-      ElMessage.success('项目更新成功')
-    } else {
-      // 创建项目
-      const newProject = await projectApi.createProject({
-        title: projectForm.value.title,
-        genre: projectForm.value.genre,
-        template_type: projectForm.value.template_type,
-        is_public: projectForm.value.isPublic
-      })
-      projects.value.unshift(newProject)
-      const tpl = templates.value.find(t => t.template_type === projectForm.value.template_type)
-      const sceneCount = tpl && tpl.starter_scenes ? tpl.starter_scenes.length : 0
-      ElMessage.success(sceneCount
-        ? `项目创建成功，已按模板预置 ${sceneCount} 个场景`
-        : '项目创建成功')
-    }
-    fetchProjects()
-    dialogVisible.value = false
-    coverFile.value = null
-  } catch (error) {
-    ElMessage.error(isEditMode.value ? '更新项目失败' : '创建项目失败')
-  }
-}
-
-// 加载模板中心元数据（失败时回退到内置三种模板）
-const loadTemplates = async () => {
-  try {
-    const list = await projectApi.getTemplates()
-    if (Array.isArray(list) && list.length > 0) {
-      templates.value = list
-      return
-    }
-  } catch (error) {
-    console.warn('获取模板列表失败，使用内置模板兜底', error)
-  }
-  // 兜底模板：与后端 TEMPLATES 的骨架保持一致（接口不可用时也能讲清楚会建出什么）
-  templates.value = [
-    {
-      template_type: '线性叙事',
-      name: '线性叙事',
-      description: '单主线顺序推进，读者从头读到尾，适合短篇与明确结局的故事。',
-      features: ['单主线', '顺序阅读', '单结局'],
-      starter_scenes: [
-        { title: '开场', order_num: 1 },
-        { title: '发展', order_num: 2 },
-        { title: '结局', order_num: 3 }
-      ],
-      recommended_variables: []
-    },
-    {
-      template_type: '分支叙事',
-      name: '分支叙事',
-      description: '关键时刻提供选择，不同选择走向不同结局，适合多线多结局剧情。',
-      features: ['多分支', '多结局', '选择驱动'],
-      starter_scenes: [
-        { title: '开场', order_num: 1 },
-        { title: '分歧点', order_num: 2 },
-        { title: '结局·A 线', order_num: 3 },
-        { title: '结局·B 线', order_num: 4 }
-      ],
-      recommended_variables: [{ name: 'affection', label: '好感度', initial_value: 0 }]
-    },
-    {
-      template_type: '开放世界',
-      name: '开放世界',
-      description: '多场景自由探索，用变量串联线索与状态，适合悬疑与探索类故事。',
-      features: ['多场景', '变量驱动', '自由探索'],
-      starter_scenes: [
-        { title: '序章', order_num: 1 },
-        { title: '探索区域·甲', order_num: 2 },
-        { title: '探索区域·乙', order_num: 3 },
-        { title: '终章', order_num: 4 }
-      ],
-      recommended_variables: [{ name: 'clue', label: '线索数', initial_value: 0 }]
-    }
-  ]
-}
-
-// 触发浏览器下载
-const downloadFile = (content: string | Blob, filename: string, mime: string) => {
-  const blob = content instanceof Blob ? content : new Blob([content], { type: mime })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-// 导出项目：json=完整项目包，txt=纯文本剧本，docx=Word 文档，novel/audio=多形态导出
-const handleExport = async (project: Project, format: string) => {
-  if (format === 'novel' || format === 'audio' || format === 'storyboard') {
-    openFormatExport(project, format)
-    return
-  }
-  try {
-    if (format === 'txt') {
-      const text = await projectApi.exportProjectText(project.project_id)
-      downloadFile(text, `${project.title}.txt`, 'text/plain;charset=utf-8')
-    } else if (format === 'docx') {
-      const blob = await projectApi.exportProjectDocx(project.project_id)
-      downloadFile(blob, `${project.title}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    } else if (format === 'static') {
-      ElMessage.info('正在打包静态网页，包含素材时可能需要一点时间')
-      const blob = await projectApi.exportProjectStaticPackage(project.project_id)
-      downloadFile(blob, `${project.title}-网页版.zip`, 'application/zip')
-    } else {
-      const bundle = await projectApi.exportProjectBundle(project.project_id)
-      downloadFile(JSON.stringify(bundle, null, 2), `${project.title}.json`, 'application/json')
-    }
-    ElMessage.success('导出成功')
-  } catch (error: any) {
-    ElMessage.error('导出失败：' + (error?.message || '请稍后重试'))
-  }
-}
-
-// 打开多形态导出对话框：选择结局/路线
-const openFormatExport = async (project: Project, format: 'novel' | 'audio' | 'storyboard') => {
-  const seq = ++exportSeq
-  exportTarget.value = project
-  exportFormat.value = format
-  exportEndingId.value = undefined
-  projectEndings.value = []
-  exportDialogVisible.value = true
-  try {
-    const rows = await listEndings(project.project_id)
-    if (seq === exportSeq) projectEndings.value = rows
-  } catch (e) {
-    if (seq === exportSeq) projectEndings.value = []
-  }
-}
-
-const confirmFormatExport = async () => {
-  const project = exportTarget.value
-  if (!project || exporting.value) return
-  exporting.value = true
-  try {
-    if (exportFormat.value === 'novel') {
-      const blob = await projectApi.exportProjectNovel(project.project_id, exportEndingId.value)
-      downloadFile(blob, `${project.title}-主线小说.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    } else if (exportFormat.value === 'storyboard') {
-      const blob = await projectApi.exportProjectStoryboard(project.project_id, exportEndingId.value)
-      downloadFile(blob, `${project.title}-分镜脚本.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    } else {
-      const blob = await projectApi.exportProjectAudioScript(project.project_id, exportEndingId.value)
-      downloadFile(blob, `${project.title}-有声剧脚本.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    }
-    ElMessage.success('导出成功')
-    exportDialogVisible.value = false
-  } catch (error: any) {
-    ElMessage.error('导出失败：' + (error?.response?.data?.message || error?.message || '未知错误'))
-  } finally {
-    exporting.value = false
-  }
-}
-
-// 导入项目（选择 JSON 文件 → 新建项目）
-const handleImportClick = () => {
-  importInputRef.value?.click()
-}
-
-const handleImportFile = async (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  try {
-    const text = await file.text()
-    const bundle = JSON.parse(text)
-    const project = await projectApi.importProject(bundle)
-    if (project) projects.value.unshift(project)
-    ElMessage.success('项目导入成功')
-    fetchProjects()
-  } catch (error) {
-    ElMessage.error('导入失败：请确认文件是有效的项目 JSON 包')
-  } finally {
-    input.value = ''
-  }
-}
-
-// 确认删除
-const confirmDelete = (projectId: number) => {
-  ElMessageBox.confirm('确定要删除这个项目吗?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-    customClass: 'delete-confirm'
-  }).then(async () => {
-    try {
-      await projectApi.deleteProject(projectId)
-      projects.value = projects.value.filter(p => p.project_id !== projectId)
-      ElMessage.success('项目已删除')
-    } catch (error) {
-      ElMessage.error('删除项目失败')
-    }
-  }).catch(() => {})
-}
-
-// 跳转到项目详情
 const goToProjectDetail = (projectId: number) => {
-  if(isPublicMode.value){
-	router.push(`/view/${projectId}`)
-  }
-  else {
-	router.push(`/project/${projectId}`)
-  }
+  router.push(isPublicMode.value ? `/view/${projectId}` : `/project/${projectId}`)
 }
 
-// 处理封面变化
-const handleCoverChange = (file: any) => {
-  coverFile.value = file.raw
-}
-
-// 格式化日期
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return `${date.getFullYear()}-${(
-    date.getMonth() + 1
-  ).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
-}
-
-// 获取类型标签样式
-const getGenreTagType = (genre: string) => {
-  const map: Record<string, string> = {
-    '悬疑': '',
-    '恋爱': 'danger',
-    '科幻': 'info',
-    '奇幻': 'warning',
-    '历史': 'success',
-    '现代': '',
-    '其他': 'info'
-  }
-  return map[genre] || ''
-}
-
-// 获取模板标签样式
-const getTemplateTagType = (template: string) => {
-  const map: Record<string, string> = {
-    '线性叙事': '',
-    '分支叙事': 'success',
-    '开放世界': 'warning'
-  }
-  return map[template] || ''
-}
-
-// 监听项目数据变化，刷新图表
-watch(projects, (newVal) => {
-  if (!isPublicMode.value && newVal.length > 0) {
-    nextTick(() => {
-      initCharts()
-    })
-  }
+watch(projects, (list) => {
+  if (!isPublicMode.value && list.length > 0) nextTick(initCharts)
 })
 
 onMounted(() => {
-  const token = localStorage.getItem('token');
-  if(!token){ 
-	router.push(`/login`)
-	return
+  const token = localStorage.getItem('token')
+  if (!token) {
+    router.push('/login')
+    return
   }
   loadTemplates()
   fetchProjects()
