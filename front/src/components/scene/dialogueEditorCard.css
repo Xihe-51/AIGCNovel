@@ -211,7 +211,7 @@
   line-height: 1.5;
 }
 
-/* 逐句译文（设置段共用同名样式，父级 sceneDialogs.css 里另有一份） */
+/* 逐句译文（场景设置的场景译文沿用同名样式，见 sceneSettingsPanel.css） */
 .dlg-translation-bar {
   display: flex;
   align-items: center;
