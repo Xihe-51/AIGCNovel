@@ -17,126 +17,14 @@
         <el-tabs v-model="activeTab" class="custom-tabs">
           <!-- 项目概览 -->
           <el-tab-pane label="项目概览" name="overview">
-            <div v-if="project" class="overview-panel">
-              <!-- 作品头卡 -->
-              <div class="hero-card">
-                <div class="hero-cover">
-                  <img v-if="project.cover_url" :src="BASE_URL + project.cover_url" alt="" />
-                  <span v-else>{{ project.title.slice(0, 1) }}</span>
-                </div>
-                <div class="hero-main">
-                  <div class="hero-title-row">
-                    <h2 class="hero-title">{{ project.title }}</h2>
-                    <span class="hero-tag">{{ project.genre }}</span>
-                    <span :class="['hero-tag', project.is_public ? 'is-public' : 'is-private']">
-                      {{ project.is_public ? '已公开' : '未公开' }}
-                    </span>
-                  </div>
-                  <div class="hero-meta">
-                    <span>{{ project.word_count }} 字</span>
-                    <span class="dot">·</span>
-                    <span>{{ scenes.length }} 个场景</span>
-                    <span class="dot">·</span>
-                    <span>{{ characters.length }} 个角色</span>
-                    <span class="dot">·</span>
-                    <span>更新于 {{ formatTime(project.updated_at) }}</span>
-                  </div>
-                  <div class="hero-actions">
-                    <button class="hero-primary" @click="goCreate">
-                      <el-icon><Edit /></el-icon>
-                      <span>开始创作</span>
-                    </button>
-                    <button class="hero-ghost" @click="openPlayer">
-                      <el-icon><VideoPlay /></el-icon>
-                      <span>试玩</span>
-                    </button>
-                    <button class="hero-ghost" @click="openReleasePreview">
-                      <el-icon><Promotion /></el-icon>
-                      <span>发布预览</span>
-                    </button>
-                    <button class="hero-ghost" @click="openFeaturePreview">
-                      <el-icon><View /></el-icon>
-                      <span>剧情树预览</span>
-                    </button>
-                    <button class="hero-ghost" @click="openAssetCheck">
-                      <el-icon><WarningFilled /></el-icon>
-                      <span>素材体检</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 统计数据 -->
-              <div class="stats-grid">
-                <div class="stat-card">
-                  <div class="stat-icon user">
-                    <el-icon><User /></el-icon>
-                  </div>
-                  <div class="stat-content">
-                    <span class="stat-value">{{ characters.length }}</span>
-                    <span class="stat-label">角色数量</span>
-                  </div>
-                </div>
-
-                <div class="stat-card">
-                  <div class="stat-icon picture">
-                    <el-icon><Picture /></el-icon>
-                  </div>
-                  <div class="stat-content">
-                    <span class="stat-value">{{ totalAvatars }}</span>
-                    <span class="stat-label">立绘数量</span>
-                  </div>
-                </div>
-
-                <div class="stat-card">
-                  <div class="stat-icon film">
-                    <el-icon><Film /></el-icon>
-                  </div>
-                  <div class="stat-content">
-                    <span class="stat-value">{{ scenes.length }}</span>
-                    <span class="stat-label">场景数量</span>
-                  </div>
-                </div>
-
-                <div class="stat-card">
-                  <div class="stat-icon chat">
-                    <el-icon><ChatLineRound /></el-icon>
-                  </div>
-                  <div class="stat-content">
-                    <span class="stat-value">{{ totalDialogues }}</span>
-                    <span class="stat-label">对话数量</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 功能预览弹窗 -->
-              <ProjectFlowPreview
-                v-model:visible="showFeaturePreview"
-                :project-id="projectId"
-                :project-title="project?.title || ''"
-                @open-node-editor="openNodeEditor"
-              />
-
-              <!-- 节点级剧情图编辑器（第 10 批） -->
-              <el-dialog
-                v-model="showNodeEditor"
-                title="节点级剧情图"
-                width="1120px"
-                class="custom-dialog"
-                :close-on-click-modal="false"
-                destroy-on-close
-              >
-                <StoryGraphEditor v-if="showNodeEditor" :project-id="projectId" />
-              </el-dialog>
-
-              <!-- 素材体检 -->
-              <ProjectAssetDialog v-model:visible="assetDialogVisible" :project-id="projectId" />
-            </div>
-            
-            <div v-else class="loading-state">
-              <div class="spinner"></div>
-              <span>加载中...</span>
-            </div>
+            <ProjectOverviewPanel
+              :project="project"
+              :project-id="projectId"
+              :scene-count="scenes.length"
+              :character-count="characters.length"
+              :avatar-count="totalAvatars"
+              :dialogue-count="totalDialogues"
+            />
           </el-tab-pane>
 
           <!-- 角色管理 -->
@@ -601,26 +489,17 @@
 
 <script lang="ts">
 import { ref, defineComponent, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { 
-  DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture, 
-  Film, ChatLineRound, Plus, Search, Sort, Close, Refresh,
-  ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion
-} from '@element-plus/icons-vue'
+import { Plus, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { getProject, getDialogueCount } from '@/api/project'
-import type { Character, CharacterAvatar } from '@/api/character'
+import { getProject, getDialogueCount, type Project } from '@/api/project'
 import { TRANSLATION_LANGUAGES } from '@/api/translation'
-import { getScenes } from '@/api/scenes'
-import { getDialoguesBySceneId } from '@/api/dialogue'
+import { getScenes, type Scene } from '@/api/scenes'
 import { BASE_URL } from '@/utils/request'
-import StoryGraphEditor from '@/components/StoryGraphEditor.vue'
 import TechNavCircle from '@/components/TechNavCircle.vue'
+import ProjectOverviewPanel from '@/components/project/ProjectOverviewPanel.vue'
 import ProjectVariableDialog from '@/components/project/ProjectVariableDialog.vue'
 import ProjectEndingDialog from '@/components/project/ProjectEndingDialog.vue'
 import ProjectCgDialog from '@/components/project/ProjectCgDialog.vue'
-import ProjectFlowPreview from '@/components/project/ProjectFlowPreview.vue'
-import ProjectAssetDialog from '@/components/project/ProjectAssetDialog.vue'
 import ProjectLayerDialog from '@/components/project/ProjectLayerDialog.vue'
 import { useProjectCutout } from '@/composables/project/useProjectCutout'
 import { useProjectVariables } from '@/composables/project/useProjectVariables'
@@ -628,78 +507,23 @@ import { useProjectEndings } from '@/composables/project/useProjectEndings'
 import { useProjectCgs } from '@/composables/project/useProjectCgs'
 import { useProjectCharacters } from '@/composables/project/useProjectCharacters'
 
-// 接口定义保持不变
-interface Project {
-  project_id: number
-  user_id: number
-  title: string
-  cover_url?: string
-  genre: string
-  template_type: string
-  word_count: number
-  description?: string
-  is_public?: boolean
-  created_at: string
-  updated_at: string
-}
-
-interface Scene {
-  scene_id: number
-  project_id: number
-  title: string
-  background_url?: string
-  background_color?: string
-  description?: string
-  order_num: number
-  created_at: string
-}
-
-interface ScriptContent {
-  content_id?: number
-  project_id: number
-  scene_id: number
-  character_id?: number
-  character?: Character
-  content_type: '对话' | '描述' | '选择'
-  content_text: string
-  avatar_type?: string
-  branch_condition?: any
-  order_num: number
-  options?: { text: string; target: number | string }[]
-  tempId?: string
-}
-
-interface SceneCharacter {
-  character_id: number
-  name: string
-  position: { x: number; y: number; z: number; scale?: number }
-  avatar_type?: string
-  currentAvatar?: CharacterAvatar
-}
-
 export default defineComponent({
   name: 'ProjectView',
   components: {
-    DocumentAdd, VideoPlay, InfoFilled, Notebook, Edit, User, Picture,
-    Film, ChatLineRound, Plus, Search, Sort, Close, Refresh,
-    ArrowUp, ArrowDown, Share, Microphone, UploadFilled, View, WarningFilled, Promotion,
-    TechNavCircle, StoryGraphEditor,
-  ProjectFlowPreview,
+    Plus, UploadFilled,
+    TechNavCircle, ProjectOverviewPanel,
     ProjectVariableDialog, ProjectEndingDialog, ProjectCgDialog,
-    ProjectAssetDialog, ProjectLayerDialog
+    ProjectLayerDialog
   },
   props: {
     projectId: { type: Number, required: true }
   },
   setup(props) {
-    const router = useRouter()
     // 原有状态
     const project = ref<Project | null>(null)
-    const editingDescription = ref(false)
     const totalDialogues = ref(0)
     const scenes = ref<Scene[]>([])
     const loadingScenes = ref(false)
-    const sceneScriptContents = ref<ScriptContent[]>([])
     const activeTab = ref('overview')
 
     // 项目变量：列表读写、弹窗开关与行为变量启用都在 useProjectVariables 内
@@ -719,12 +543,6 @@ export default defineComponent({
       handleSaveVariable,
       removeVariable,
     } = useProjectVariables({ projectId: () => Number(props.projectId) })
-
-    // 变量绑定角色后，播放器「好感度」页按角色展示
-    const characterName = (id: number | null | undefined) => {
-      if (!id) return '—'
-      return characters.value.find(c => c.character_id === id)?.name || `#${id}`
-    }
 
     // 结局：列表读写、触发节点下拉与弹窗编排都在 useProjectEndings 内
     const {
@@ -776,50 +594,6 @@ export default defineComponent({
       showSettingsDialog, addSetting, removeSetting, renameSetting, updateSettingValue, updateSettings,
     } = useProjectCharacters({ projectId: () => Number(props.projectId) })
 
-    const showFeaturePreview = ref(false)
-    const showNodeEditor = ref(false)
-    const assetDialogVisible = ref(false)
-    const sceneEditorVisible = ref(false)
-    const currentScene = ref<Scene | null>(null)
-    const sceneCharacters = ref<SceneCharacter[]>([])
-    const currentSceneBackground = ref('')
-    const draggingCharacter = ref<SceneCharacter | null>(null)
-    const dragStartPos = ref({ x: 0, y: 0 })
-    const previewMode = ref(false)
-    const currentPreviewScene = ref<Scene | null>(null)
-    const currentPreviewContentIndex = ref(0)
-    const currentPreviewContent = ref<ScriptContent | null>(null)
-    const currentPreviewCharacters = ref<SceneCharacter[]>([])
-
-    // 剧情树画布的状态与交互由 ProjectFlowPreview 自管，这里只控制显隐
-    const openFeaturePreview = () => {
-      showFeaturePreview.value = true
-    }
-    // 进入独立的创作工作台（场景列表 + 对话编辑 + 工具面板）
-    const goCreate = () => {
-      router.push(`/create/${props.projectId}`)
-    }
-
-    // 新窗口打开播放器试玩（作者预览带演出模式入口）
-    const openPlayer = () => {
-      window.open(router.resolve({ path: `/view/${props.projectId}`, query: { edit: '1' } }).href, '_blank')
-    }
-
-    // 以玩家视角打开发布版：关闭调试器与演出编辑入口
-    const openReleasePreview = () => {
-      window.open(router.resolve({ path: `/view/${props.projectId}`, query: { release: '1' } }).href, '_blank')
-    }
-
-    // 第 10 批：节点级剧情图编辑器（content-level 节点 + 拖拽连线 + 条件编辑）
-    const openNodeEditor = () => {
-      showNodeEditor.value = true
-    }
-
-    // 素材体检：扫描与结果渲染由 ProjectAssetDialog 自管，这里只负责显隐
-    const openAssetCheck = () => {
-      assetDialogVisible.value = true
-    }
-
     const getGenreColor = (genre?: string) => {
       const colors: Record<string, string> = {
         '悬疑': '#6c5b7b', '恋爱': '#ff8fab', '科幻': '#5d5fef',
@@ -848,29 +622,6 @@ export default defineComponent({
       }
     }
 
-    const fetchScriptContents = async (sceneId: number) => {
-      const res = await getDialoguesBySceneId(sceneId)
-      const contents: ScriptContent[] = res
-      contents.forEach(content => {
-        if (content.character_id) {
-          content.character = characters.value.find(c => c.character_id === content.character_id)
-        }
-      })
-      sceneScriptContents.value = contents
-    }
-
-    const formatTime = (time: string) => new Date(time).toLocaleString()
-
-    const getContentTagType = (type: string) => {
-      const types: Record<string, string> = { '对话': 'success', '描述': '', '选择': 'warning' }
-      return types[type] || 'info'
-    }
-
-    const getCharacterColor = (characterId: number) => {
-      const colors = ['#ff9ff3', '#feca57', '#ff6b6b', '#48dbfb', '#1dd1a1', '#f368e0']
-      return colors[characterId % colors.length]
-    }
-
     // 抠图状态与流程由 useProjectCutout 自管
     const {
       cutoutLoadingId,
@@ -887,18 +638,6 @@ export default defineComponent({
       batchCutout,
     } = useProjectCutout({ characters, characterAvatars, currentCharacterAvatars, selectedAvatar })
 
-    const getNextScene = (currentSceneId: number) => {
-      const sortedScenes = [...scenes.value].sort((a, b) => a.order_num - b.order_num)
-      const currentIndex = sortedScenes.findIndex(s => s.scene_id === currentSceneId)
-      if (currentIndex === -1 || currentIndex >= sortedScenes.length - 1) return null
-      return sortedScenes[currentIndex + 1]
-    }
-
-    const startVoice = (voice_url: string) => {
-      const audio = new Audio(BASE_URL + voice_url)
-      audio.play().catch(error => console.error("播放失败:", error))
-    }
-
     // ==================== 生命周期 ====================
     onMounted(async () => {
       await fetchProjectDetails(props.projectId)
@@ -911,7 +650,7 @@ export default defineComponent({
 
     return {
       project, isAdd, selectedFile, characters, characterAvatars, scenes,
-      currentCharacterAvatars, BASE_URL, sceneScriptContents, activeTab,
+      currentCharacterAvatars, BASE_URL, activeTab,
       variables, variableDialogVisible, editingVariableId, variableSaving, variableInitial,
       missingBehaviorVariables, behaviorSaving, enableBehaviorVariables, isBehaviorVariable,
       fetchVariables, openCreateVariable, openEditVariable, handleSaveVariable, removeVariable,
@@ -924,22 +663,17 @@ export default defineComponent({
       selectedAvatar, cutoutLoadingId, cutoutBatchRunning,
       cutoutDialogVisible, cutoutTarget, cutoutPercent, cutoutStage, cutoutStatus, cutoutError,
       stopCutoutTimer, retryCutout, batchCutout,
-      settingsDialogVisible, showFeaturePreview, showNodeEditor,
-      assetDialogVisible, openAssetCheck,
-      sceneEditorVisible, currentScene, sceneCharacters, currentSceneBackground,
-      previewMode, currentPreviewScene, currentPreviewContent, currentPreviewCharacters,
-      editingDescription, characterSearch, loadingCharacters, loadingScenes,
+      settingsDialogVisible,
+      characterSearch, loadingCharacters,
       avatarTypes, previewImageUrl, filteredCharacters, totalAvatars, totalDialogues,
       settingsArray,
-      formatTime, handleChange, getGenreColor, getContentTagType, getCharacterColor,
+      handleChange, getGenreColor,
       showAddCharacterDialog, editCharacter, saveCharacter, deleteCharacter,
       showAddAvatarDialog, addAvatar, selectAvatar, setDefaultAvatar, cutoutAvatar, deleteAvatar,
       layerDialogVisible, layerTargetAvatar,
       openLayerDialog, handleLayerChanged,
       showSettingsDialog, addSetting, removeSetting, renameSetting, updateSettingValue, updateSettings,
-      fetchScenes, getNextScene,
-      getAvatarUrl, onAvatarImgError, startVoice,
-      openFeaturePreview, openNodeEditor, goCreate, openPlayer, openReleasePreview,
+      getAvatarUrl, onAvatarImgError,
       // 补充原有方法的引用
       fetchProjectDetails
     }
@@ -947,8 +681,6 @@ export default defineComponent({
 })
 </script>
 <style scoped lang="scss" src="./project/projectShell.scss"></style>
-<style scoped lang="scss" src="./project/projectOverview.scss"></style>
-<style scoped lang="scss" src="./project/projectStates.scss"></style>
 <style scoped lang="scss" src="./project/projectCharacters.scss"></style>
 <style scoped lang="scss" src="./project/projectDialogs.scss"></style>
 <style scoped lang="scss" src="./project/projectResponsive.scss"></style>

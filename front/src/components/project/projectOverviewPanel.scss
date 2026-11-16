@@ -1,4 +1,4 @@
-@use './projectVars' as *;
+@use '../../views/project/projectVars' as *;
 
 // 概览页面
 .overview-panel {
@@ -219,4 +219,27 @@
       }
     }
   }
+}
+
+// 概览数据加载态
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 80px;
+  color: $cg-text-light;
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid rgba(255, 143, 171, 0.2);
+    border-top-color: $cg-pink;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
