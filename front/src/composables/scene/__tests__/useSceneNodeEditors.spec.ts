@@ -67,7 +67,6 @@ describe('useSceneNodeEditors / 台词显示条件', () => {
   it('确定时过滤空变量并取整数值，写入后标记 dirty', () => {
     const editors = createEditors()
     editors.openNodeConditionDialog(1)
-    editors.addNodeCondition()
     editors.nodeConditionItems.value = [
       { variable: 'love', op: '>=', value: 2.7 },
       { variable: '', op: '>=', value: 9 },
@@ -82,6 +81,25 @@ describe('useSceneNodeEditors / 台词显示条件', () => {
     expect(editors.markDirty).toHaveBeenCalled()
     expect(editors.nodeConditionVisible.value).toBe(false)
     expect(ElMessage.success).toHaveBeenCalled()
+  })
+
+  it('接受弹窗回传的草稿，不必依赖内部 items', () => {
+    const editors = createEditors()
+    editors.openNodeConditionDialog(0)
+
+    editors.applyNodeCondition({
+      mode: 'or',
+      items: [
+        { variable: 'love', op: '>', value: 4.8 },
+        { variable: '', op: '>=', value: 1 },
+      ],
+    })
+
+    expect(editors.dialogues.value[0].branch_condition).toEqual({
+      mode: 'or',
+      items: [{ variable: 'love', op: '>', value: 4 }],
+    })
+    expect(editors.nodeConditionVisible.value).toBe(false)
   })
 
   it('全部条件为空时保存为 null（表示无条件）', () => {

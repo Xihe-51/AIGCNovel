@@ -763,65 +763,18 @@
 	</div>
 	
 	<!-- AI对话对话框 -->
-	<el-dialog 
-		v-model="aiDialogVisible" 
-		:title="'AI 对话生成 - ' + (currentAIIndex !== null ? '第' + (currentAIIndex + 1) + '条对话' : '')" 
-		width="600px"
-		class="ai-dialog"
-		:close-on-click-modal="false"
-		append-to-body
-	>
-		<div class="ai-dialog-content">
-			<div class="ai-question-section">
-				<h4>你的问题</h4>
-				<el-input
-					v-model="aiQuestion"
-					type="textarea"
-					:rows="4"
-					placeholder="请输入你的问题，例如：'生成一个关于告白的对话' 或 '帮我想一段悲伤的台词'"
-				/>
-			</div>
-			
-			<div v-if="aiAnswer" class="ai-answer-section">
-				<h4>AI 回答</h4>
-				<div v-if="aiRefs.length" class="ai-refs">
-					<span class="ai-refs-label">本次参考角色设定：</span>
-					<el-tag
-						v-for="r in aiRefs"
-						:key="r.character_id"
-						size="small"
-						effect="plain"
-						class="ai-ref-tag"
-					>{{ r.name }}</el-tag>
-				</div>
-				<div class="answer-box">
-					<p>{{ aiAnswer }}</p>
-				</div>
-				<div class="answer-actions">
-					<el-button size="small" type="success" @click="applyAIAnswer">
-						应用到当前对话
-					</el-button>
-					<el-button size="small" @click="aiAnswer = ''">
-						清空回答
-					</el-button>
-				</div>
-			</div>
-			
-			<div v-if="aiLoading" class="ai-loading">
-				<span class="ui-spinner ui-spinner-sm"></span>
-				<p>{{ aiStage || 'AI 正在思考中...' }}</p>
-			</div>
-		</div>
-		
-		<template #footer>
-			<div class="dialog-footer">
-				<el-button @click="aiDialogVisible = false">取消</el-button>
-				<el-button type="primary" @click="sendToAI" :loading="aiLoading" :disabled="!aiQuestion.trim()">
-					<el-icon><Promotion /></el-icon> 发送问题
-				</el-button>
-			</div>
-		</template>
-	</el-dialog>
+	<AiAssistDialog
+		v-model:visible="aiDialogVisible"
+		v-model:question="aiQuestion"
+		:index="currentAIIndex"
+		:answer="aiAnswer"
+		:refs="aiRefs"
+		:loading="aiLoading"
+		:stage="aiStage"
+		@send="sendToAI"
+		@apply="applyAIAnswer"
+		@clear-answer="aiAnswer = ''"
+	/>
 
 		<!-- 演出指令弹窗 -->
 		<DirectiveDialog
@@ -837,52 +790,16 @@
 			@changed="handleDirectivesChanged"
 		/>
 
-		<!-- 台词显示条件 -->
-		<el-dialog v-model="nodeConditionVisible" title="台词显示条件" width="470px" append-to-body>
-			<div class="node-cond-target">当前台词：{{ nodeConditionTarget || '（空）' }}</div>
-			<div class="node-cond-hint">条件不满足时，顺序播放会跳过这条台词；不填变量表示无条件。</div>
-			<div v-if="nodeConditionItems.length > 1" class="scene-lock-mode">
-				<span class="scene-lock-mode-label">条件关系</span>
-				<el-radio-group v-model="nodeConditionMode" size="small">
-					<el-radio-button value="and">全部满足</el-radio-button>
-					<el-radio-button value="or">任一满足</el-radio-button>
-				</el-radio-group>
-			</div>
-			<div v-for="(c, ci) in nodeConditionItems" :key="ci" class="scene-lock-row">
-				<el-select v-model="c.variable" size="small" clearable placeholder="变量" class="condition-var">
-					<el-option
-						v-for="v in variables"
-						:key="v.variable_id"
-						:label="v.label"
-						:value="v.name"
-					></el-option>
-				</el-select>
-				<el-select v-model="c.op" size="small" class="condition-op" :disabled="!c.variable">
-					<el-option label="≥" value=">=" />
-					<el-option label=">" value=">" />
-					<el-option label="≤" value="<=" />
-					<el-option label="<" value="<" />
-					<el-option label="=" value="==" />
-					<el-option label="≠" value="!=" />
-				</el-select>
-				<el-input-number
-					v-model="c.value"
-					size="small"
-					:step="1"
-					:disabled="!c.variable"
-					class="condition-value"
-				/>
-				<el-button size="small" type="danger" plain icon="Delete" @click="removeNodeCondition(ci)" />
-			</div>
-			<div class="scene-lock-actions">
-				<el-button size="small" icon="Plus" @click="addNodeCondition">添加条件</el-button>
-			</div>
-			<template #footer>
-				<el-button size="small" @click="nodeConditionVisible = false">取消</el-button>
-				<el-button size="small" @click="clearNodeCondition">清除条件</el-button>
-				<el-button size="small" type="primary" @click="applyNodeCondition">确定</el-button>
-			</template>
-		</el-dialog>
+	<!-- 台词显示条件 -->
+	<NodeConditionDialog
+		v-model:visible="nodeConditionVisible"
+		:target-label="nodeConditionTarget"
+		:mode="nodeConditionMode"
+		:items="nodeConditionItems"
+		:variables="variables"
+		@apply="applyNodeCondition"
+		@clear="clearNodeCondition"
+	/>
 
 		<!-- 批量导入剧本 -->
 		<ScriptImportDialog
@@ -948,40 +865,15 @@
 		/>
 
 		<!-- 从项目素材库选择，复用已有背景/音乐 -->
-		<el-dialog
-			v-model="assetPickerVisible"
-			:title="assetPickerKind === 'image' ? '从素材库选择背景' : '从素材库选择音乐'"
-			width="620px"
-			append-to-body
-		>
-			<div v-if="assetPickerLoading" class="asset-pick-state">正在读取素材…</div>
-			<div v-else-if="!assetPickerItems.length" class="asset-pick-state">
-				素材库里还没有可用的{{ assetPickerKind === 'image' ? '图片' : '音频' }}。
-			</div>
-			<div v-else class="asset-pick-grid">
-				<button
-					v-for="a in assetPickerItems"
-					:key="a.url"
-					type="button"
-					:class="['asset-pick-item', {
-						'is-selected': assetPickerKind === 'image'
-							? scene.background_url === a.url
-							: scene.music_url === a.url
-					}]"
-					@click="useAssetFromLibrary(a)"
-				>
-					<img v-if="assetPickerKind === 'image'" :src="BASE_URL + a.url" alt="" loading="lazy" />
-					<span v-else class="asset-pick-audio">♪</span>
-					<span class="asset-pick-url" :title="a.url">{{ a.url.split('/').pop() }}</span>
-					<span class="asset-pick-meta">
-						{{ a.usage_count ? '引用 ' + a.usage_count + ' 处' : '未引用' }}
-					</span>
-				</button>
-			</div>
-			<template #footer>
-				<el-button @click="assetPickerVisible = false">取消</el-button>
-			</template>
-		</el-dialog>
+		<AssetPickerDialog
+			v-model:visible="assetPickerVisible"
+			:kind="assetPickerKind"
+			:loading="assetPickerLoading"
+			:items="assetPickerItems"
+			:base-url="BASE_URL"
+			:selected-url="assetPickerKind === 'image' ? scene.background_url : scene.music_url"
+			@select="useAssetFromLibrary"
+		/>
 	</template>
 
 <script setup>
@@ -1028,6 +920,9 @@ import VoiceBatchDialog from '@/components/scene/VoiceBatchDialog.vue';
 import VoiceDirectorDialog from '@/components/scene/VoiceDirectorDialog.vue';
 import ScriptImportDialog from '@/components/scene/ScriptImportDialog.vue';
 import DirectiveDialog from '@/components/scene/DirectiveDialog.vue';
+import AiAssistDialog from '@/components/scene/AiAssistDialog.vue';
+import NodeConditionDialog from '@/components/scene/NodeConditionDialog.vue';
+import AssetPickerDialog from '@/components/scene/AssetPickerDialog.vue';
 import { MAX_AVATAR_LAYERS } from '@/composables/scene/useDirectiveEditor';
 import { useSceneStagePreview } from '@/composables/scene/useSceneStagePreview';
 import { useSceneStageActions } from '@/composables/scene/useSceneStageActions';
@@ -1365,8 +1260,6 @@ const {
 	nodeConditionTarget,
 	hasNodeCondition,
 	openNodeConditionDialog,
-	addNodeCondition,
-	removeNodeCondition,
 	applyNodeCondition,
 	clearNodeCondition,
 	getDialogueEffects,

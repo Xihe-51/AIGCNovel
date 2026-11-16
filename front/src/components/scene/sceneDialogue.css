@@ -448,45 +448,5 @@
   margin-top: 4px;
 }
 
-.ai-refs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.ai-refs-label {
-  font-size: 13px;
-  color: #64748b;
-}
-
-.ai-ref-tag {
-  --el-tag-bg-color: #fff1f5;
-  --el-tag-border-color: #ffc7d8;
-  --el-tag-text-color: #c81f4a;
-}
-
-.answer-box {
-  background: linear-gradient(135deg, #f0fdf4 0%, #f0fbf7 100%);
-  padding: 20px;
-  border-radius: 12px;
-  border: 1px solid #d1fae5;
-  margin-bottom: 16px;
-  min-height: 100px;
-}
-
-.answer-box p { margin: 0; color: #1e293b; font-size: 15px; line-height: 1.7; }
-.answer-actions { display: flex; gap: 12px; justify-content: flex-end; }
-
-.ai-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 36px;
-  color: #947a83;
-}
-
-.ai-loading p { margin-top: 12px; font-size: 15px; }
+/* AI 入口按钮（弹窗本体样式随 AiAssistDialog 走） */
 .ai-button { display: flex; align-items: center; gap: 5px; }

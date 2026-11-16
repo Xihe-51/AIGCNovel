@@ -12,6 +12,7 @@ import {
   saveBranchTranslation,
   TRANSLATION_LANGUAGES,
 } from '@/api/translation'
+import { countTranslations, languagesOfTranslations } from '@/utils/scene'
 
 export interface SceneTranslationsContext {
   scene: Ref<any>
@@ -26,14 +27,9 @@ export function useSceneTranslations(ctx: SceneTranslationsContext) {
   const translationSaving = ref(false)
   const translationTarget = ref<any>(null)
 
-  const translationCount = (dialogue: any) => {
-    return dialogue && dialogue.translations ? Object.keys(dialogue.translations).length : 0
-  }
+  const translationCount = (dialogue: any) => countTranslations(dialogue)
 
-  const translatedLanguages = (dialogue: any) => {
-    const map = dialogue && dialogue.translations ? dialogue.translations : {}
-    return TRANSLATION_LANGUAGES.filter(lang => !!map[lang.code])
-  }
+  const translatedLanguages = (dialogue: any) => languagesOfTranslations(dialogue, TRANSLATION_LANGUAGES)
 
   const openTranslationDialog = (dialogue: any) => {
     if (!dialogue || !dialogue.content_id) {

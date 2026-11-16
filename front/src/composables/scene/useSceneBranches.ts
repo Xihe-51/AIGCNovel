@@ -15,6 +15,12 @@ import { listBranches, createBranch, deleteBranch } from '@/api/branch'
 import { saveBranchTranslation } from '@/api/translation'
 import { uploadSceneFile } from '@/api/scenes'
 import { createProjectVersion } from '@/api/version'
+import {
+  buildChoiceTargets,
+  formatChoiceTargetLabel,
+  hasChoiceCondition as hasChoiceConditionOf,
+  jumpTargetOf as jumpTargetOfMap,
+} from '@/utils/scene'
 
 export interface SceneBranchesContext {
   projectId: Ref<string | number>
@@ -50,23 +56,10 @@ export function useSceneBranches(ctx: SceneBranchesContext) {
   /** 可选跳转目标：项目内全部已保存节点（支持跨场景），并合并当前场景未刷新到的节点 */
   const choiceTargets = (selfIndex: number) => {
     const selfId = dialogues.value[selfIndex]?.content_id
-    const map = new Map<any, any>()
-    for (const n of (projectNodes.value || [])) {
-      if (n.content_id) map.set(n.content_id, n)
-    }
-    for (const d of (dialogues.value || [])) {
-      if (d.content_id) map.set(d.content_id, { ...map.get(d.content_id), ...d })
-    }
-    return Array.from(map.values()).filter(n => n.content_id && n.content_id !== selfId)
+    return buildChoiceTargets(dialogues.value, projectNodes.value, selfId)
   }
 
-  const choiceTargetLabel = (d: any) => {
-    const scenePart = d.scene_title ? `${d.scene_title} · ` : ''
-    const name = getCharacterName(d.character_id)
-    const text = (d.content_text || '').replace(/\n/g, ' ').slice(0, 12)
-    const who = name && name !== '未知角色' ? `${name}：` : ''
-    return `${scenePart}#${d.order_num} ${who}${text}`
-  }
+  const choiceTargetLabel = (d: any) => formatChoiceTargetLabel(d, getCharacterName(d.character_id))
 
   /* ===== 非「选择」节点：自动跳转 ===== */
 
@@ -86,10 +79,7 @@ export function useSceneBranches(ctx: SceneBranchesContext) {
     }
   }
 
-  const jumpTargetOf = (dialogue: any) => {
-    const b = jumpMap.value[dialogue.content_id]
-    return b ? b.target_content_id : ''
-  }
+  const jumpTargetOf = (dialogue: any) => jumpTargetOfMap(jumpMap.value, dialogue?.content_id)
 
   const setJumpTarget = async (dialogue: any, targetId: any) => {
     if (!dialogue.content_id || !projectId.value) return
@@ -195,8 +185,7 @@ export function useSceneBranches(ctx: SceneBranchesContext) {
     }
   }
 
-  const hasChoiceCondition = (opt: any) =>
-    (opt.cond_items || []).some((c: any) => c && c.variable)
+  const hasChoiceCondition = (opt: any) => hasChoiceConditionOf(opt)
 
   const removeChoice = (dialogue: any, i: number) => {
     pushHistory()

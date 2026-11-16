@@ -8,6 +8,12 @@ import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { saveContentEffects } from '@/api/variable'
+import {
+  buildNodeConditionPayload,
+  ensureDialogueEffects,
+  hasNodeCondition as hasNodeConditionOf,
+} from '@/utils/scene'
+import type { NodeConditionItem } from '@/utils/scene'
 
 export interface SceneNodeEditorsContext {
   projectId: Ref<string | number>
@@ -29,12 +35,7 @@ export function useSceneNodeEditors(ctx: SceneNodeEditorsContext) {
     return d ? (d.content_text || '').slice(0, 30) : ''
   })
 
-  const hasNodeCondition = (dialogue: any) => {
-    const cond = dialogue?.branch_condition
-    if (!cond || typeof cond !== 'object') return false
-    if (Array.isArray(cond.items)) return cond.items.some((i: any) => i && i.variable)
-    return !!cond.variable
-  }
+  const hasNodeCondition = (dialogue: any) => hasNodeConditionOf(dialogue)
 
   const openNodeConditionDialog = (index: number) => {
     nodeConditionIndex.value = index
@@ -51,30 +52,13 @@ export function useSceneNodeEditors(ctx: SceneNodeEditorsContext) {
     nodeConditionVisible.value = true
   }
 
-  const addNodeCondition = () => {
-    nodeConditionItems.value.push({ variable: '', op: '>=', value: 0 })
-  }
-
-  const removeNodeCondition = (index: number) => {
-    nodeConditionItems.value.splice(index, 1)
-  }
-
-  const buildNodeConditionPayload = () => {
-    const items = nodeConditionItems.value
-      .filter(c => c.variable)
-      .map(c => ({
-        variable: c.variable,
-        op: c.op || '>=',
-        value: Math.trunc(Number(c.value) || 0),
-      }))
-    if (!items.length) return null
-    return { mode: nodeConditionMode.value === 'or' ? 'or' : 'and', items }
-  }
-
-  const applyNodeCondition = () => {
+  const applyNodeCondition = (draft?: { mode?: string; items?: NodeConditionItem[] } | null) => {
     const dialogue = ctx.dialogues.value[nodeConditionIndex.value]
     if (!dialogue) return
-    dialogue.branch_condition = buildNodeConditionPayload()
+    const payload = draft
+      ? buildNodeConditionPayload(draft.mode, draft.items)
+      : buildNodeConditionPayload(nodeConditionMode.value, nodeConditionItems.value)
+    dialogue.branch_condition = payload
     ctx.markDirty()
     nodeConditionVisible.value = false
     ElMessage.success(
@@ -94,12 +78,7 @@ export function useSceneNodeEditors(ctx: SceneNodeEditorsContext) {
   }
 
   // ===== 节点数值变化 =====
-  const getDialogueEffects = (dialogue: any) => {
-    if (!dialogue._effects) {
-      dialogue._effects = (ctx.effectsMap.value[dialogue.content_id] || []).map((e: any) => ({ ...e }))
-    }
-    return dialogue._effects
-  }
+  const getDialogueEffects = (dialogue: any) => ensureDialogueEffects(dialogue, ctx.effectsMap.value)
 
   const addEffect = (dialogue: any) => {
     ctx.pushHistory()
@@ -151,8 +130,6 @@ export function useSceneNodeEditors(ctx: SceneNodeEditorsContext) {
     nodeConditionTarget,
     hasNodeCondition,
     openNodeConditionDialog,
-    addNodeCondition,
-    removeNodeCondition,
     applyNodeCondition,
     clearNodeCondition,
     getDialogueEffects,
