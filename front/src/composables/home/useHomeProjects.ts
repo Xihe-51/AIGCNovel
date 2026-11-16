@@ -18,7 +18,7 @@ export function useHomeProjects() {
         ? await projectApi.getPublicProjects()
         : await projectApi.getProjects()
     } catch (error) {
-      console.log(error)
+      console.error(error)
       ElMessage.error(isPublicMode.value ? '获取公开项目列表失败' : '获取项目列表失败')
     } finally {
       loading.value = false
