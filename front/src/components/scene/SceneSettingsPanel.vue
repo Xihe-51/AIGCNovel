@@ -184,6 +184,7 @@
 						ref="settingsAudio"
 						:src="baseUrl + scene.music_url"
 						loop
+						preload="metadata"
 						@timeupdate="emit('music-time')"
 						@loadedmetadata="emit('music-meta')"
 						@ended="emit('music-ended')">
