@@ -107,6 +107,8 @@ export function usePlayerProgress(ctx: PlayerProgressContext) {
     await nextTick()
     ctx.startTyping()
     ctx.applyVolumes()
+    // 读档后同步本地进度，避免刷新时回到读档前的旧位置
+    saveProgress(true)
   }
 
   const {

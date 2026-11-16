@@ -16,6 +16,7 @@ const createEffects = () => {
 
   const spies = {
     saveToSlot: vi.fn(),
+    saveProgress: vi.fn(),
     resetStage: vi.fn(),
     applyDirectives: vi.fn(),
     playBackgroundMusic: vi.fn(),
@@ -28,6 +29,7 @@ const createEffects = () => {
     getSceneIndex: () => sceneIndex.value,
     getDialogueIndex: () => dialogueIndex.value,
     saveToSlot: (slot: number, silent?: boolean) => spies.saveToSlot(slot, silent),
+    saveProgress: (silent?: boolean) => spies.saveProgress(silent),
     getCurrentDialogue: () => dialogue.value,
     getCurrentScene: () => scene.value,
     getDirectivesByContent: () => directives.value,
@@ -93,18 +95,23 @@ describe('usePlayerPositionEffects', () => {
     await nextTick()
     vi.advanceTimersByTime(1000)
     expect(spies.saveToSlot).not.toHaveBeenCalled()
+    expect(spies.saveProgress).not.toHaveBeenCalled()
 
     state.dialogueIndex.value = 1
     await nextTick()
     vi.advanceTimersByTime(1499)
     expect(spies.saveToSlot).not.toHaveBeenCalled()
+    expect(spies.saveProgress).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(1)
     expect(spies.saveToSlot).toHaveBeenCalledTimes(1)
     expect(spies.saveToSlot).toHaveBeenCalledWith(0, true)
+    expect(spies.saveProgress).toHaveBeenCalledTimes(1)
+    expect(spies.saveProgress).toHaveBeenCalledWith(true)
 
     vi.advanceTimersByTime(5000)
     expect(spies.saveToSlot).toHaveBeenCalledTimes(1)
+    expect(spies.saveProgress).toHaveBeenCalledTimes(1)
   })
 
   it('读档还原中 / 加载中 / 出错时跳过自动存档', async () => {
@@ -138,6 +145,7 @@ describe('usePlayerPositionEffects', () => {
     await nextTick()
     vi.advanceTimersByTime(1500)
     expect(spies.saveToSlot).toHaveBeenCalledTimes(1)
+    expect(spies.saveProgress).toHaveBeenCalledTimes(1)
   })
 
   it('换场景后重播背景音乐，同场景推进与暂停时不重播', async () => {

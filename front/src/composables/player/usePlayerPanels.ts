@@ -78,6 +78,7 @@ export function usePlayerPanels(core: PlayerCore) {
     exitGame,
     openSaveDialog,
     saveToSlot,
+    saveProgress,
     loadFromSlot,
     deleteSlot,
   } = usePlayerProgress({
@@ -177,6 +178,7 @@ export function usePlayerPanels(core: PlayerCore) {
     loadChapterData,
     loadPublicReleases,
     saveToSlot,
+    saveProgress,
     setPerformMode: (value: boolean) => { performMode.value = value },
     getPerformMode: () => performMode.value,
     getIsRestoring: () => isRestoring.value,

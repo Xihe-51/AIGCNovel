@@ -16,6 +16,8 @@ export interface PlayerPanelPort {
   loadPublicReleases: () => any
   /** 自动存档落盘 */
   saveToSlot: (slot: any, silent?: boolean) => any
+  /** 写本地进度（刷新后续读用） */
+  saveProgress: (silent?: boolean) => any
   /** 演出模式开关（作者预览） */
   setPerformMode: (value: boolean) => void
   /** 演出模式是否开启 */
@@ -34,6 +36,7 @@ export function createPlayerPanelPort(): PlayerPanelPort {
     loadChapterData: notWired('loadChapterData'),
     loadPublicReleases: notWired('loadPublicReleases'),
     saveToSlot: notWired('saveToSlot') as PlayerPanelPort['saveToSlot'],
+    saveProgress: notWired('saveProgress') as PlayerPanelPort['saveProgress'],
     setPerformMode: notWired('setPerformMode') as PlayerPanelPort['setPerformMode'],
     getPerformMode: notWired('getPerformMode'),
     getIsRestoring: notWired('getIsRestoring'),

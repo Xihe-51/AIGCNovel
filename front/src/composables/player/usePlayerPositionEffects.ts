@@ -19,6 +19,8 @@ export interface PlayerPositionEffectsContext {
   getSceneIndex: () => number
   getDialogueIndex: () => number
   saveToSlot: (slot: number, silent?: boolean) => Promise<unknown> | unknown
+  /** 写本地进度（刷新后续读用） */
+  saveProgress: (silent?: boolean) => void
   getCurrentDialogue: () => any
   getCurrentScene: () => any
   getDirectivesByContent: () => any
@@ -38,12 +40,13 @@ export function usePlayerPositionEffects(ctx: PlayerPositionEffectsContext) {
     }
   }
 
-  // 每次推进对话后延迟写入 slot 0（不打扰玩家）
+  // 每次推进对话后延迟写入 slot 0（不打扰玩家），同时刷新本地进度供刷新后续读
   watch([() => ctx.getSceneIndex(), () => ctx.getDialogueIndex()], () => {
     if (ctx.isRestoring() || ctx.isLoading() || ctx.getError()) return
     clearAutoSave()
     autoSaveTimer = setTimeout(() => {
       autoSaveTimer = null
+      ctx.saveProgress(true)
       ctx.saveToSlot(AUTO_SAVE_SLOT, true)
     }, AUTO_SAVE_DELAY)
   })

@@ -746,6 +746,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
     getSceneIndex: () => currentSceneIndex.value,
     getDialogueIndex: () => currentDialogueIndex.value,
     saveToSlot: (slot, silent) => panelPort.saveToSlot(slot, silent),
+    saveProgress: (silent) => panelPort.saveProgress(silent),
     getCurrentDialogue: () => currentDialogue.value,
     getCurrentScene: () => currentScene.value,
     getDirectivesByContent: () => directivesByContent.value,
