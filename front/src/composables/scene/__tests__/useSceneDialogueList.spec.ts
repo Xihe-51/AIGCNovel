@@ -259,7 +259,7 @@ describe('useSceneDialogueList', () => {
 
     await ctx.result.saveDialogue(0)
 
-    expect(errorMock).toHaveBeenCalledWith('保存对话失败: 网络断开')
+    expect(errorMock).toHaveBeenCalledWith('保存对话失败：网络断开')
     expect(ctx.loading.value).toBe(false)
   })
 
@@ -338,7 +338,7 @@ describe('useSceneDialogueList', () => {
 
     await ctx.result.deleteDialogue(0)
 
-    expect(errorMock).toHaveBeenCalledWith('删除对话失败: 服务器错误')
+    expect(errorMock).toHaveBeenCalledWith('删除对话失败：服务器错误')
     expect(ctx.dialogues.value).toHaveLength(2)
     expect(ctx.undoStack.value).toHaveLength(1)
   })
@@ -408,7 +408,7 @@ describe('useSceneDialogueList', () => {
 
     await ctx.result.reorderDialogues()
 
-    expect(errorMock).toHaveBeenCalledWith('重新排序失败: 顺序非法')
+    expect(errorMock).toHaveBeenCalledWith('重新排序失败：顺序非法')
   })
 
   it('重排抛错时提示网络错误', async () => {
@@ -417,7 +417,7 @@ describe('useSceneDialogueList', () => {
 
     await ctx.result.reorderDialogues()
 
-    expect(errorMock).toHaveBeenCalledWith('重新排序失败: 超时')
+    expect(errorMock).toHaveBeenCalledWith('重新排序失败：超时')
     expect(ctx.loading.value).toBe(false)
   })
 })

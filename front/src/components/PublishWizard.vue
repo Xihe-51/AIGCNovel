@@ -132,6 +132,7 @@
 	import type { PublishCheck } from '@/api/publish'
 	import { createProjectRelease, listProjectReleases, rollbackProjectRelease } from '@/api/release'
 	import type { ProjectRelease } from '@/api/release'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -168,7 +169,7 @@
 			check.value = await checkProjectPublish(Number(props.projectId))
 		} catch (e: any) {
 			check.value = null
-			ElMessage.error('发布检查失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('发布检查失败', e))
 		} finally {
 			loading.value = false
 		}
@@ -228,7 +229,7 @@
 			emit('published', true)
 			ElMessage.success(`已发布 v${release.release_no}`)
 		} catch (e: any) {
-			ElMessage.error('发布失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('发布失败', e))
 		} finally {
 			saving.value = false
 		}
@@ -251,7 +252,7 @@
 			emit('rolledback')
 			await Promise.all([loadCheck(), loadReleases()])
 		} catch (e: any) {
-			ElMessage.error('回滚失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('回滚失败', e))
 		} finally {
 			saving.value = false
 		}
@@ -290,7 +291,7 @@
 				check.value = data.data
 				ElMessage.warning(data.message || '请先修复发布检查中的错误')
 			} else {
-				ElMessage.error('发布失败：' + (data?.message || e?.message || '未知错误'))
+				ElMessage.error(formatErrorMessage('发布失败', e))
 			}
 		} finally {
 			saving.value = false
@@ -314,7 +315,7 @@
 			emit('published', false)
 			ElMessage.success('已取消公开')
 		} catch (e: any) {
-			ElMessage.error('操作失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('操作失败', e))
 		} finally {
 			saving.value = false
 		}

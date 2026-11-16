@@ -5,6 +5,7 @@ import type { Project } from '@/api/project'
 import { listEndings } from '@/api/ending'
 import type { Ending } from '@/api/ending'
 import { DOCX_MIME, downloadFile } from '@/utils/download'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export type MultiFormat = 'novel' | 'audio' | 'storyboard'
 
@@ -79,7 +80,7 @@ export function useProjectExport() {
       exportDialogVisible.value = false
     } catch (error: any) {
       ElMessage.error(
-        '导出失败：' + (error?.response?.data?.message || error?.message || '未知错误')
+        formatErrorMessage('导出失败', error)
       )
     } finally {
       exporting.value = false

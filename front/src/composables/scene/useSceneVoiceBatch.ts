@@ -11,6 +11,7 @@ import { generateVoice, submitAndWait } from '@/api/ai'
 import { importAiAsset } from '@/api/asset'
 import { saveDialogues, autoTagEmotions } from '@/api/dialogue'
 import { createProjectVersion } from '@/api/version'
+import { extractErrorMessage } from '@/utils/errorMessage'
 
 /** 台词情绪标签（与后端 EMOTION_OPTIONS 一致） */
 export const EMOTION_OPTIONS = ['平静', '犹豫', '生气', '哭腔', '低声']
@@ -158,7 +159,7 @@ export function useSceneVoiceBatch(ctx: SceneVoiceBatchContext) {
           success += 1
         } catch (e: any) {
           console.error('批量配音失败:', e)
-          voiceBatchErrors.value.push(`#${index + 1} ${e?.response?.data?.message || e?.message || '未知错误'}`)
+          voiceBatchErrors.value.push(`#${index + 1} ${extractErrorMessage(e)}`)
         } finally {
           voiceBatchDone.value += 1
         }

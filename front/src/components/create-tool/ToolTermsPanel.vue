@@ -84,6 +84,7 @@ import {
 	scanProjectTerms,
 } from '@/api/glossary'
 import type { ProjectTerm, GlossaryScanItem, GlossaryScanHit } from '@/api/glossary'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 const props = defineProps<{ projectId: string | number }>()
 const emit = defineEmits<{
@@ -136,7 +137,7 @@ const submitTerm = async () => {
 		resetTermForm()
 		await loadTerms()
 	} catch (e: any) {
-		ElMessage.error('保存失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('保存失败', e))
 	} finally {
 		savingTerm.value = false
 	}
@@ -163,7 +164,7 @@ const removeTerm = async (t: ProjectTerm) => {
 		await loadTerms()
 		ElMessage.success('术语已删除')
 	} catch (e: any) {
-		ElMessage.error('删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('删除失败', e))
 	}
 }
 
@@ -175,7 +176,7 @@ const runScan = async () => {
 		scanItems.value = res.items || []
 		scanTotal.value = res.total || 0
 	} catch (e: any) {
-		ElMessage.error('扫描失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('扫描失败', e))
 		scanItems.value = []
 		scanTotal.value = 0
 	} finally {

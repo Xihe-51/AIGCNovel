@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface HealthReportContext<T> {
   /** 取当前项目 id；空值时直接跳过请求 */
@@ -17,8 +18,7 @@ export interface HealthReportState<T> {
 }
 
 /** 统一把接口错误压成一句可读文案 */
-export const reportErrorMessage = (label: string, e: any): string =>
-  `${label}：${e?.response?.data?.message || e?.message || '未知错误'}`
+export const reportErrorMessage = (label: string, e: any): string => formatErrorMessage(label, e)
 
 /**
  * 自检类报告的异步状态：一次请求一份报告，失败即清空并给出提示。

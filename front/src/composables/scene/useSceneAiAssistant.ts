@@ -14,6 +14,7 @@ import type { Ref } from 'vue'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { continueStory } from '@/api/ai'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface AiHistoryEntry {
   content_type: string | undefined
@@ -116,7 +117,7 @@ export function useSceneAiAssistant(ctx: SceneAiAssistantContext) {
       }
     } catch (err: any) {
       console.error('AI请求失败:', err)
-      ElMessage.error('AI服务请求失败：' + (err.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('AI服务请求失败', err))
     } finally {
       aiLoading.value = false
       aiStage.value = ''

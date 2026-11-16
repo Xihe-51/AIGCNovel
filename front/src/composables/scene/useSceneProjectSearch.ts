@@ -10,6 +10,7 @@ import type { Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { searchProject, replaceProjectText } from '@/api/scenes'
 import type { ProjectSearchItem } from '@/api/scenes'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneProjectSearchContext {
   projectId: Ref<string | number>
@@ -83,7 +84,7 @@ export function useSceneProjectSearch(ctx: SceneProjectSearchContext) {
       await runSearch()
       ctx.onDataChanged()
     } catch (e: any) {
-      ElMessage.error('替换失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('替换失败', e))
     } finally {
       replacing.value = false
     }

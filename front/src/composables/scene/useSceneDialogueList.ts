@@ -7,6 +7,7 @@
  */
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Ref } from 'vue'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 /** 新台词的本地草稿（content_id 由后端保存后返回）。纯函数。 */
 export const createDialogueDraft = (scene: any, orderNum: number) => ({
@@ -110,7 +111,7 @@ export function useSceneDialogueList(ctx: SceneDialogueListContext) {
       ElMessage.success('对话保存成功')
     } catch (err: any) {
       console.error('保存对话失败:', err)
-      ElMessage.error('保存对话失败: ' + (err?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存对话失败', err))
     } finally {
       loading.value = false
     }
@@ -136,7 +137,7 @@ export function useSceneDialogueList(ctx: SceneDialogueListContext) {
       ctx.createProjectVersion(Number(projectId.value), '保存全部对话').catch(() => {})
     } catch (err: any) {
       console.error('保存全部对话失败:', err)
-      ElMessage.error('保存失败: ' + (err?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存失败', err))
     } finally {
       loading.value = false
     }
@@ -179,7 +180,7 @@ export function useSceneDialogueList(ctx: SceneDialogueListContext) {
         ElMessage.success('台词已删除（不可撤销，可用项目版本回滚恢复）')
       } catch (err: any) {
         console.error('删除对话失败:', err)
-        ElMessage.error('删除对话失败: ' + (err?.message || '未知错误'))
+        ElMessage.error(formatErrorMessage('删除对话失败', err))
       }
       return
     }
@@ -217,11 +218,11 @@ export function useSceneDialogueList(ctx: SceneDialogueListContext) {
         dialogues.value = response.data
         ElMessage.success('对话已重新排序并保存')
       } else {
-        ElMessage.error('重新排序失败: ' + (response.message || '未知错误'))
+        ElMessage.error(formatErrorMessage('重新排序失败', response))
       }
     } catch (err: any) {
       console.error('重新排序失败:', err)
-      ElMessage.error('重新排序失败: ' + (err?.message || '网络错误'))
+      ElMessage.error(formatErrorMessage('重新排序失败', err, '网络错误'))
     } finally {
       loading.value = false
     }

@@ -8,6 +8,7 @@ import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createVariable, deleteVariable, listVariables, updateVariable } from '@/api/variable'
 import type { ProjectVariable, VariablePayload } from '@/api/variable'
+import { extractErrorMessage } from '@/utils/errorMessage'
 
 export interface BehaviorVariableDefinition {
   name: string
@@ -98,7 +99,7 @@ export function useProjectVariables(ctx: ProjectVariablesContext) {
       await fetchVariables()
       ElMessage.success('行为变量已启用，可在剧情条件与后续旁白中使用')
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || e?.message || '启用行为变量失败')
+      ElMessage.error(extractErrorMessage(e, '启用行为变量失败'))
     } finally {
       behaviorSaving.value = false
     }
@@ -132,7 +133,7 @@ export function useProjectVariables(ctx: ProjectVariablesContext) {
       variableDialogVisible.value = false
       await fetchVariables()
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || e?.message || '保存变量失败')
+      ElMessage.error(extractErrorMessage(e, '保存变量失败'))
     } finally {
       variableSaving.value = false
     }

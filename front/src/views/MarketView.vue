@@ -187,6 +187,7 @@ import { importMarketAsset } from '@/api/asset'
 import { getProjects } from '@/api/project'
 import type { Project } from '@/api/project'
 import { BASE_URL } from '@/utils/request'
+import { extractErrorMessage } from '@/utils/errorMessage'
 import TechNavCircle from '@/components/TechNavCircle.vue'
 import ResourceCard from '@/components/market/ResourceCard.vue'
 import ResourceDetailDialog from '@/components/market/ResourceDetailDialog.vue'
@@ -330,7 +331,7 @@ const submitImport = async (projectId: number) => {
     fetchResources()
     if (detailDialogVisible.value) await refreshCurrentResource()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '入库失败')
+    ElMessage.error(extractErrorMessage(error, '入库失败'))
   } finally {
     importing.value = false
   }
@@ -388,7 +389,7 @@ const confirmDelete = (resource: Resource) => {
       fetchResources()
     } catch (error: any) {
       // 后端会说明「仍被 N 处引用」，这里原样展示，别吞成笼统的「删除失败」
-      const msg = error?.response?.data?.message || error?.message || '删除失败'
+      const msg = extractErrorMessage(error, '删除失败')
       ElMessage.error(msg)
     }
   }).catch(() => {})

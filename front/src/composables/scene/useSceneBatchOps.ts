@@ -16,6 +16,7 @@ import {
 import type { Scene } from '@/api/scenes'
 import { assignSceneChapter } from '@/api/chapter'
 import { renumberScenes } from '@/utils/sceneList'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneBatchOpsContext {
   projectId: Ref<string | number>
@@ -100,7 +101,7 @@ export function useSceneBatchOps(ctx: SceneBatchOpsContext) {
       ctx.onDataChanged()
       ElMessage.success(`已更新 ${ids.length} 个场景的${isImage ? '背景' : '音乐'}`)
     } catch (e: any) {
-      ElMessage.error('批量更新失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('批量更新失败', e))
     } finally {
       batchBusy.value = false
     }
@@ -118,7 +119,7 @@ export function useSceneBatchOps(ctx: SceneBatchOpsContext) {
       ctx.onDataChanged()
       ElMessage.success(`已清空 ${ids.length} 个场景的音乐`)
     } catch (e: any) {
-      ElMessage.error('清空音乐失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('清空音乐失败', e))
     } finally {
       batchBusy.value = false
     }
@@ -144,7 +145,7 @@ export function useSceneBatchOps(ctx: SceneBatchOpsContext) {
       ctx.onDataChanged()
       ElMessage.success(`已移动 ${ids.length} 个场景`)
     } catch (e: any) {
-      ElMessage.error('移动失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('移动失败', e))
     } finally {
       batchBusy.value = false
     }
@@ -161,7 +162,7 @@ export function useSceneBatchOps(ctx: SceneBatchOpsContext) {
       ctx.onDataChanged()
       ElMessage.success(`已复制 ${ids.length} 个场景`)
     } catch (e: any) {
-      ElMessage.error('批量复制失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('批量复制失败', e))
     } finally {
       batchBusy.value = false
     }
@@ -199,7 +200,7 @@ export function useSceneBatchOps(ctx: SceneBatchOpsContext) {
       ctx.onDataChanged()
       ElMessage.success(`已删除 ${ids.length} 个场景`)
     } catch (e: any) {
-      ElMessage.error('批量删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('批量删除失败', e))
       await ctx.reloadScenes()
     } finally {
       batchBusy.value = false

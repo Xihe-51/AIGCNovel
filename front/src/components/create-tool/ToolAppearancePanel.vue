@@ -26,6 +26,7 @@ import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getProject, updateProject } from '@/api/project'
 import { UI_THEMES } from '@/utils/uiThemes'
+import { extractErrorMessage } from '@/utils/errorMessage'
 
 const props = defineProps<{ projectId: string | number }>()
 
@@ -50,7 +51,7 @@ const chooseTheme = async (key: string) => {
 		themeKey.value = key
 		ElMessage.success('播放器皮肤已切换，试玩即可看到')
 	} catch (e: any) {
-		ElMessage.error(e?.response?.data?.message || '切换皮肤失败')
+		ElMessage.error(extractErrorMessage(e, '切换皮肤失败'))
 	} finally {
 		saving.value = false
 	}

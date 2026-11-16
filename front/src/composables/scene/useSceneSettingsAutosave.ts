@@ -9,6 +9,7 @@ import type { Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { updateScene, setSceneLock } from '@/api/scenes'
 import { createProjectVersion } from '@/api/version'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneSettingsAutosaveContext {
   sceneId: () => number | string
@@ -100,7 +101,7 @@ export function useSceneSettingsAutosave(ctx: SceneSettingsAutosaveContext) {
     } catch (err: any) {
       console.error('保存场景设置失败:', err)
       if (silent) ElMessage.warning('场景设置自动保存失败，请手动保存')
-      else ElMessage.error('保存场景设置失败: ' + (err.message || '未知错误'))
+      else ElMessage.error(formatErrorMessage('保存场景设置失败', err))
     } finally {
       sceneSaving.value = false
       if (sceneSaveQueued) {

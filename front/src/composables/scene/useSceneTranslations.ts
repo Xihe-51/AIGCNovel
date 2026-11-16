@@ -13,13 +13,11 @@ import {
   TRANSLATION_LANGUAGES,
 } from '@/api/translation'
 import { countTranslations, languagesOfTranslations } from '@/utils/scene'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneTranslationsContext {
   scene: Ref<any>
 }
-
-const errorMessage = (error: any) =>
-  error?.response?.data?.message || error?.message || '未知错误'
 
 export function useSceneTranslations(ctx: SceneTranslationsContext) {
   // ===== 逐句译文 =====
@@ -57,7 +55,7 @@ export function useSceneTranslations(ctx: SceneTranslationsContext) {
       ElMessage.success(saved?.text ? '译文已保存' : '译文已清除')
     } catch (error) {
       console.error('保存译文失败:', error)
-      ElMessage.error('保存译文失败：' + errorMessage(error))
+      ElMessage.error(formatErrorMessage('保存译文失败', error))
     } finally {
       translationSaving.value = false
     }
@@ -105,7 +103,7 @@ export function useSceneTranslations(ctx: SceneTranslationsContext) {
       ElMessage.success(saved?.title || saved?.description ? '场景译文已保存' : '场景译文已清除')
     } catch (error) {
       console.error('保存场景译文失败:', error)
-      ElMessage.error('保存场景译文失败：' + errorMessage(error))
+      ElMessage.error(formatErrorMessage('保存场景译文失败', error))
     } finally {
       sceneTransSaving.value = false
     }
@@ -146,7 +144,7 @@ export function useSceneTranslations(ctx: SceneTranslationsContext) {
       ElMessage.success(saved?.text ? '选项译文已保存' : '选项译文已清除')
     } catch (error) {
       console.error('保存选项译文失败:', error)
-      ElMessage.error('保存选项译文失败：' + errorMessage(error))
+      ElMessage.error(formatErrorMessage('保存选项译文失败', error))
     } finally {
       choiceTransSaving.value = false
     }

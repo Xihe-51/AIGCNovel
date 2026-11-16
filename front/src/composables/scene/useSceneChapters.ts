@@ -15,6 +15,7 @@ import {
   assignSceneChapter,
 } from '@/api/chapter'
 import type { StoryChapter } from '@/api/chapter'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneChaptersContext {
   projectId: Ref<string | number>
@@ -66,7 +67,7 @@ export function useSceneChapters(ctx: SceneChaptersContext) {
       await fetchChapters()
       ElMessage.success('章节已创建')
     } catch (e: any) {
-      ElMessage.error('创建章节失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('创建章节失败', e))
     }
   }
 
@@ -81,7 +82,7 @@ export function useSceneChapters(ctx: SceneChaptersContext) {
       await updateChapter(Number(ctx.projectId.value), c.chapter_id, { title })
       ElMessage.success('章节已重命名')
     } catch (e: any) {
-      ElMessage.error('重命名失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('重命名失败', e))
       await fetchChapters()
     }
   }
@@ -94,7 +95,7 @@ export function useSceneChapters(ctx: SceneChaptersContext) {
       await updateChapter(Number(ctx.projectId.value), c.chapter_id, { target_words: target })
       ElMessage.success(target ? `目标已设为 ${target} 字` : '已取消目标字数')
     } catch (e: any) {
-      ElMessage.error('保存目标失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存目标失败', e))
       await fetchChapters()
     }
   }
@@ -114,7 +115,7 @@ export function useSceneChapters(ctx: SceneChaptersContext) {
       await fetchChapters()
       ElMessage.success('章节已删除')
     } catch (e: any) {
-      ElMessage.error('删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('删除失败', e))
     }
   }
 
@@ -131,7 +132,7 @@ export function useSceneChapters(ctx: SceneChaptersContext) {
       }
       ElMessage.success('场景归属已更新')
     } catch (err: any) {
-      ElMessage.error('更新失败：' + (err?.response?.data?.message || err?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('更新失败', err))
       await fetchChapters()
     }
   }

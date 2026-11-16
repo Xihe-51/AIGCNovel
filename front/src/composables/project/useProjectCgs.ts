@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createCG, deleteCG, listCGs, updateCG } from '@/api/cg'
 import type { CGPayload, ProjectCG } from '@/api/cg'
+import { extractErrorMessage } from '@/utils/errorMessage'
 
 /** 解锁条件文案：绑定结局时写明结局名，否则初始可见 */
 export function describeCgUnlock(
@@ -62,7 +63,7 @@ export function useProjectCgs(ctx: ProjectCgsContext) {
       cgDialogVisible.value = false
       await fetchCGs()
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || e?.message || '保存 CG 失败')
+      ElMessage.error(extractErrorMessage(e, '保存 CG 失败'))
     } finally {
       cgSaving.value = false
     }

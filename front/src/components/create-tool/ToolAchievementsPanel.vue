@@ -78,6 +78,7 @@ import { listEndings } from '@/api/ending'
 import type { Ending } from '@/api/ending'
 import { listVariables } from '@/api/variable'
 import type { ProjectVariable } from '@/api/variable'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 const props = defineProps<{ projectId: string | number }>()
 
@@ -188,7 +189,7 @@ const submitAchievement = async () => {
 		resetAchForm()
 		await loadAchievements()
 	} catch (e: any) {
-		ElMessage.error('保存成就失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('保存成就失败', e))
 	} finally {
 		savingAch.value = false
 	}
@@ -224,7 +225,7 @@ const removeAchievement = async (a: Achievement) => {
 		await loadAchievements()
 		ElMessage.success('成就已删除')
 	} catch (e: any) {
-		ElMessage.error('删除成就失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('删除成就失败', e))
 	}
 }
 

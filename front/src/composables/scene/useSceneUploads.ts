@@ -7,6 +7,7 @@
 import { ElMessage } from 'element-plus'
 import type { Ref } from 'vue'
 import { uploadSceneFile } from '@/api/scenes'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 /** 组装上传表单：文件 + 项目 + 文件类型。纯函数。 */
 export const buildSceneUploadForm = (
@@ -45,7 +46,7 @@ export function useSceneUploads(ctx: SceneUploadsContext) {
       params?.onSuccess?.(response)
     } catch (err: any) {
       console.error(`${label}上传失败:`, err)
-      ElMessage.error(`${label}上传失败: ` + (err?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage(`${label}上传失败`, err))
       params?.onError?.(err)
     }
   }

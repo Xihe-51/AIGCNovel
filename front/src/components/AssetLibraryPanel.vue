@@ -140,6 +140,7 @@
 	import { checkProjectAssets, replaceProjectAsset, listAiAssetHistory, importAiAsset } from '@/api/asset'
 	import type { AssetItem, AiAssetItem } from '@/api/asset'
 	import { BASE_URL } from '@/utils/request'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -258,7 +259,7 @@
 			brokenUrls.value = brokenUrls.value.filter(u => u !== item.url)
 			await load()
 		} catch (err: any) {
-			ElMessage.error('替换失败：' + (err?.response?.data?.message || err?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('替换失败', err))
 		} finally {
 			replacing.value = false
 		}
@@ -286,7 +287,7 @@
 		try {
 			aiItems.value = await listAiAssetHistory(Number(props.projectId), aiKind.value)
 		} catch (e: any) {
-			ElMessage.error('读取 AI 历史失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('读取 AI 历史失败', e))
 		} finally {
 			aiLoading.value = false
 		}
@@ -302,7 +303,7 @@
 			brokenUrls.value = brokenUrls.value.filter(u => u !== target.url)
 			await load()
 		} catch (e: any) {
-			ElMessage.error('导入失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('导入失败', e))
 		}
 	}
 

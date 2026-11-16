@@ -21,6 +21,7 @@ import {
   hasChoiceCondition as hasChoiceConditionOf,
   jumpTargetOf as jumpTargetOfMap,
 } from '@/utils/scene'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneBranchesContext {
   projectId: Ref<string | number>
@@ -101,7 +102,7 @@ export function useSceneBranches(ctx: SceneBranchesContext) {
       ElMessage.success(targetId ? '已设置自动跳转' : '已取消自动跳转')
     } catch (e: any) {
       console.error('设置自动跳转失败:', e)
-      ElMessage.error('设置跳转失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('设置跳转失败', e))
     }
   }
 
@@ -216,7 +217,7 @@ export function useSceneBranches(ctx: SceneBranchesContext) {
       }
     } catch (err: any) {
       console.error('选项配图上传失败:', err)
-      ElMessage.error('上传失败：' + (err.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('上传失败', err))
       options.onError?.(err)
     }
   }
@@ -312,7 +313,7 @@ export function useSceneBranches(ctx: SceneBranchesContext) {
       createProjectVersion(Number(projectId.value), '保存选项分支').catch(() => {})
     } catch (e: any) {
       console.error('保存分支失败:', e)
-      ElMessage.error('保存分支失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存分支失败', e))
     }
   }
 

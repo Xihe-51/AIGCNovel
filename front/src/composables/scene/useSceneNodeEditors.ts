@@ -14,6 +14,7 @@ import {
   hasNodeCondition as hasNodeConditionOf,
 } from '@/utils/scene'
 import type { NodeConditionItem } from '@/utils/scene'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneNodeEditorsContext {
   projectId: Ref<string | number>
@@ -118,7 +119,7 @@ export function useSceneNodeEditors(ctx: SceneNodeEditorsContext) {
       ElMessage.success(`已保存 ${list.length} 条数值变化`)
     } catch (e: any) {
       console.error('保存数值变化失败:', e)
-      ElMessage.error('保存数值变化失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存数值变化失败', e))
     }
   }
 

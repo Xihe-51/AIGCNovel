@@ -96,7 +96,7 @@ describe('useSceneUploads', () => {
     expect(scene.value.background_url).toBe('')
     expect(onError).toHaveBeenCalledTimes(1)
     expect(onSuccess).not.toHaveBeenCalled()
-    expect(errorMock).toHaveBeenCalledWith('背景图上传失败: 文件过大')
+    expect(errorMock).toHaveBeenCalledWith('背景图上传失败：文件过大')
     expect(successMock).not.toHaveBeenCalled()
   })
 
@@ -108,7 +108,7 @@ describe('useSceneUploads', () => {
     await uploads.handleMusicUpload({ file: new File(['x'], 'bgm.mp3'), onError })
 
     expect(onError).toHaveBeenCalledTimes(1)
-    expect(errorMock).toHaveBeenCalledWith('背景音乐上传失败: 网络中断')
+    expect(errorMock).toHaveBeenCalledWith('背景音乐上传失败：网络中断')
   })
 
   it('未提供 onSuccess / onError 回调时不抛错', async () => {

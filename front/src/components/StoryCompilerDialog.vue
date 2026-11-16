@@ -202,6 +202,7 @@
 		diagnosticLevelLabel,
 		formatCompileTime,
 	} from '@/utils/storyCompiler'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		modelValue: boolean
@@ -309,7 +310,7 @@
 		} catch (e: any) {
 			if (seq !== previewSeq) return
 			preview.value = null
-			ElMessage.error('解析失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('解析失败', e))
 		} finally {
 			if (seq === previewSeq) previewing.value = false
 		}
@@ -344,7 +345,7 @@
 			}
 		} catch (e: any) {
 			if (e === 'cancel' || e === 'close') return
-			ElMessage.error('写入失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('写入失败', e))
 		} finally {
 			applying.value = false
 		}
@@ -388,7 +389,7 @@
 			historyOpen.value = true
 		} catch (e: any) {
 			if (seq !== historySeq) return
-			ElMessage.error('读取历史编译失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('读取历史编译失败', e))
 		}
 	}
 

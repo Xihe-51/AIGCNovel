@@ -104,6 +104,7 @@ import {
 	restoreProjectVersion,
 } from '@/api/version'
 import type { ProjectVersionMeta, VersionDiff } from '@/api/version'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 const props = defineProps<{ projectId: string | number }>()
 const emit = defineEmits<{
@@ -147,7 +148,7 @@ const saveVersionNow = async () => {
 		ElMessage.success(res.created ? '快照已保存' : '内容与上一版一致，已复用上一版')
 		await loadVersions()
 	} catch (e: any) {
-		ElMessage.error('保存快照失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('保存快照失败', e))
 	} finally {
 		savingVersion.value = false
 	}
@@ -163,7 +164,7 @@ const showDiff = async (v: ProjectVersionMeta) => {
 		const res = await getVersionDiff(Number(props.projectId), v.version_id)
 		diffData.value = res.diff
 	} catch (e: any) {
-		ElMessage.error('读取差异失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('读取差异失败', e))
 	} finally {
 		diffLoading.value = false
 		diffLoadingId.value = null
@@ -191,7 +192,7 @@ const restoreVersion = async (v: ProjectVersionMeta) => {
 		await loadVersions()
 		emit('restored')
 	} catch (e: any) {
-		ElMessage.error('恢复失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('恢复失败', e))
 	} finally {
 		restoringId.value = null
 	}

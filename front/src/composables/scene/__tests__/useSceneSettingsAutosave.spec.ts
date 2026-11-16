@@ -300,7 +300,7 @@ describe('useSceneSettingsAutosave / 并发与失败', () => {
 
     await a.persistSceneSettings({ silent: false, version: true })
 
-    expect(ElMessage.error).toHaveBeenCalledWith('保存场景设置失败: boom')
+    expect(ElMessage.error).toHaveBeenCalledWith('保存场景设置失败：boom')
     expect(a.sceneDirty.value).toBe(true)
     expect(createProjectVersion).not.toHaveBeenCalled()
   })
@@ -313,7 +313,7 @@ describe('useSceneSettingsAutosave / 并发与失败', () => {
 
     await a.persistSceneSettings({ silent: false, version: true })
 
-    expect(ElMessage.error).toHaveBeenCalledWith('保存场景设置失败: lock down')
+    expect(ElMessage.error).toHaveBeenCalledWith('保存场景设置失败：lock down')
     expect(a.sceneDirty.value).toBe(true)
   })
 })

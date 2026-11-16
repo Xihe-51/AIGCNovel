@@ -206,7 +206,7 @@ describe('undoAvatar', () => {
 
     await undo.undoAvatar()
 
-    expect(errorMock).toHaveBeenCalledWith('撤销失败: boom')
+    expect(errorMock).toHaveBeenCalledWith('撤销失败：boom')
     expect(undo.stageUndoStack.value).toHaveLength(0)
   })
 })

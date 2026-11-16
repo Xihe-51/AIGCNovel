@@ -13,6 +13,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { checkProjectAssets } from '@/api/asset'
 import type { AssetItem } from '@/api/asset'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export type AssetPickerKind = 'image' | 'audio'
 
@@ -61,7 +62,7 @@ export function useSceneAssetPicker(ctx: SceneAssetPickerContext) {
       const res = await checkProjectAssets(pid)
       assetPickerItems.value = pickAssetItems(res?.items, kind)
     } catch (e: any) {
-      ElMessage.error('读取素材库失败：' + (e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('读取素材库失败', e))
     } finally {
       assetPickerLoading.value = false
     }

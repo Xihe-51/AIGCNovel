@@ -72,6 +72,7 @@ import { ElMessage } from 'element-plus'
 import { uploadSceneFile } from '@/api/scenes'
 import { searchResources, getResourceDetail } from '@/api/market'
 import { BASE_URL } from '@/utils/request'
+import { extractErrorMessage } from '@/utils/errorMessage'
 import type { CGPayload, ProjectCG } from '@/api/cg'
 import type { Ending } from '@/api/ending'
 
@@ -186,7 +187,7 @@ const applyMarket = async () => {
 		marketVisible.value = false
 		ElMessage.success(`已选择素材「${resource.title}」`)
 	} catch (e: any) {
-		ElMessage.error(e?.response?.data?.message || e?.message || '读取素材失败')
+		ElMessage.error(extractErrorMessage(e, '读取素材失败'))
 	}
 }
 

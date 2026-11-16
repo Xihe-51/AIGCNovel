@@ -19,6 +19,7 @@ import {
   clampStagePercent,
   pickFreeStageX,
 } from './stageLayerGeometry'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface StageLayerActionsContext {
   projectId: Ref<string | number>
@@ -89,7 +90,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
     } catch (e: any) {
       ctx.dropStageUndo()
       console.error('切换立绘显隐失败:', e)
-      ElMessage.error('切换显隐失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('切换显隐失败', e))
     }
   }
 
@@ -135,7 +136,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
       ElMessage.success(`图层已${direction === 'up' ? '上移' : '下移'}`)
     } catch (e: any) {
       console.error('调整层级失败:', e)
-      ElMessage.error('调整层级失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('调整层级失败', e))
     }
   }
 
@@ -152,7 +153,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
       ElMessage.success('图层层级已调整')
     } catch (e: any) {
       console.error('图层排序失败:', e)
-      ElMessage.error('图层排序失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('图层排序失败', e))
     }
   }
 
@@ -174,7 +175,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
     } catch (e: any) {
       ctx.dropStageUndo()
       console.error('删除图层失败:', e)
-      ElMessage.error('删除图层失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('删除图层失败', e))
     }
   }
 
@@ -215,7 +216,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
     } catch (e: any) {
       ctx.dropStageUndo()
       console.error('重命名图层失败:', e)
-      ElMessage.error('重命名图层失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('重命名图层失败', e))
     }
   }
 
@@ -241,7 +242,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
     } catch (e: any) {
       ctx.dropStageUndo()
       console.error('切换舞台层显隐失败:', e)
-      ElMessage.error('切换显隐失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('切换显隐失败', e))
     }
   }
 
@@ -313,7 +314,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
     } catch (e: any) {
       ctx.dropStageUndo()
       console.error('保存立绘位置失败:', e)
-      ElMessage.error('保存立绘位置失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存立绘位置失败', e))
     }
   }
 
@@ -393,7 +394,7 @@ export function useStageLayerActions(ctx: StageLayerActionsContext) {
     } catch (e: any) {
       ctx.dropStageUndo()
       console.error('保存立绘属性失败:', e)
-      ElMessage.error('保存立绘属性失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存立绘属性失败', e))
     }
   }
 

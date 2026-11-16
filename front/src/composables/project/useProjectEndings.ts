@@ -4,6 +4,7 @@ import { getStoryGraph } from '@/api/branch'
 import type { StoryNode } from '@/api/branch'
 import { createEnding, deleteEnding, listEndings, updateEnding } from '@/api/ending'
 import type { Ending, EndingCondition, EndingPayload } from '@/api/ending'
+import { extractErrorMessage } from '@/utils/errorMessage'
 
 export interface StoryNodeOption {
   content_id: number
@@ -98,7 +99,7 @@ export function useProjectEndings(ctx: ProjectEndingsContext) {
       endingDialogVisible.value = false
       await fetchEndings()
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || e?.message || '保存结局失败')
+      ElMessage.error(extractErrorMessage(e, '保存结局失败'))
     } finally {
       endingSaving.value = false
     }

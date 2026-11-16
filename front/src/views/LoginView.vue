@@ -132,6 +132,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { login as apiLogin, register as apiRegister, forgotPassword, resetPassword } from '@/api/login'
 import { useRouter } from 'vue-router'
+import { extractErrorMessage } from '@/utils/errorMessage'
 
 const router = useRouter()
 
@@ -231,7 +232,7 @@ const handleForgotNext = async () => {
       }
       forgotStep.value = 2
     } catch (error: any) {
-      ElMessage.error(error?.response?.data?.message || error?.message || '验证码发送失败')
+      ElMessage.error(extractErrorMessage(error, '验证码发送失败'))
     } finally {
       forgotLoading.value = false
     }
@@ -253,7 +254,7 @@ const handleForgotNext = async () => {
       ElMessage.success(res?.message || '密码重置成功')
       forgotStep.value = 3
     } catch (error: any) {
-      ElMessage.error(error?.response?.data?.message || error?.message || '密码重置失败')
+      ElMessage.error(extractErrorMessage(error, '密码重置失败'))
     } finally {
       forgotLoading.value = false
     }

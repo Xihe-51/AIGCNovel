@@ -24,6 +24,7 @@ import {
   stageUndoStorageKey,
 } from './stageUndoStore'
 import type { StageUndoEntry } from './stageUndoStore'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface StageUndoContext {
   projectId: Ref<string | number>
@@ -159,7 +160,7 @@ export function useStageUndo(ctx: StageUndoContext) {
       ElMessage.success('已撤销上一步')
     } catch (e: any) {
       console.error('撤销失败:', e)
-      ElMessage.error('撤销失败: ' + (e.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('撤销失败', e))
     }
   }
 

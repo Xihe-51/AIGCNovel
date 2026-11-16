@@ -147,6 +147,7 @@ import {
 } from '@/api/character'
 import type { Character, CharacterAvatar, AvatarType } from '@/api/character'
 import { BASE_URL } from '@/utils/request'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 const props = defineProps<{ projectId: string | number }>()
 
@@ -185,7 +186,7 @@ const onCharacterVoiceChange = async (c: Character, e: Event) => {
 		c.voice_type = value
 		ElMessage.success(value ? '角色音色已更新' : '已清除角色音色')
 	} catch (err: any) {
-		ElMessage.error('保存音色失败：' + (err?.response?.data?.message || err?.message || '未知错误'))
+		ElMessage.error(formatErrorMessage('保存音色失败', err))
 	}
 }
 

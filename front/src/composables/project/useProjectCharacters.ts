@@ -21,6 +21,7 @@ import type { AvatarType, Character, CharacterAvatar } from '@/api/character'
 import { saveCharacterNameTranslation, TRANSLATION_LANGUAGES } from '@/api/translation'
 import { BASE_URL } from '@/utils/request'
 import defaultAvatarImg from '@/assets/default.jpg'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 /** 立绘表情类型：与后端 avatar_type 取值保持一致 */
 export const avatarTypes: AvatarType[] = ['正常', '高兴', '生气', '悲伤', '惊讶', '其他']
@@ -188,7 +189,7 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
       characterDrawerVisible.value = false
       await fetchCharacters()
     } catch (e: any) {
-      ElMessage.error('角色添加失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('角色添加失败', e))
     }
   }
 
@@ -210,7 +211,7 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
       ElMessage.success('角色更新成功')
       characterDrawerVisible.value = false
     } catch (e: any) {
-      ElMessage.error('角色更新失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('角色更新失败', e))
     }
   }
 
@@ -237,7 +238,7 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
       characterAvatars.value = characterAvatars.value.filter(avatar => avatar.character_id !== characterId)
       ElMessage.success('角色删除成功')
     } catch (e: any) {
-      ElMessage.error('角色删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('角色删除失败', e))
     }
   }
 
@@ -306,7 +307,7 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
       ElMessage.success('默认立绘设置成功')
       await refreshAfterAvatarChange()
     } catch (e: any) {
-      ElMessage.error('设置默认立绘失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('设置默认立绘失败', e))
       await fetchCharacterAvatars()
     }
   }
@@ -328,7 +329,7 @@ export function useProjectCharacters(ctx: ProjectCharactersContext) {
       await refreshAfterAvatarChange()
       ElMessage.success('立绘删除成功')
     } catch (e: any) {
-      ElMessage.error('立绘删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('立绘删除失败', e))
     }
   }
 

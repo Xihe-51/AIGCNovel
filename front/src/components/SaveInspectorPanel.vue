@@ -136,6 +136,7 @@
 		listProjectSaves,
 	} from '@/api/save'
 	import type { ProjectSaveDetail, ProjectSaveItem } from '@/api/save'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -201,7 +202,7 @@
 			players.value = data.players || 0
 		} catch (e: any) {
 			console.error('读取存档检查器失败:', e)
-			error.value = '读取失败：' + (e?.response?.data?.message || e?.message || '未知错误')
+			error.value = formatErrorMessage('读取失败', e)
 		} finally {
 			loading.value = false
 		}
@@ -215,7 +216,7 @@
 			detail.value = await getProjectSave(Number(props.projectId), item.user_id, item.slot)
 		} catch (e: any) {
 			console.error('读取存档详情失败:', e)
-			ElMessage.error('读取存档详情失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('读取存档详情失败', e))
 			detailVisible.value = false
 		} finally {
 			detailLoading.value = false
@@ -244,7 +245,7 @@
 		} catch (e: any) {
 			if (e === 'cancel' || e === 'close') return
 			console.warn('删除玩家存档失败:', e)
-			ElMessage.error('删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('删除失败', e))
 		}
 	}
 

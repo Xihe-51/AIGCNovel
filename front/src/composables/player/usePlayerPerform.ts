@@ -6,6 +6,7 @@
  */
 import { nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 /** 演出表单字段：台词 / 差分立绘 / 场景背景 / 场景 BGM */
 export interface PlayerPerformContext {
@@ -144,7 +145,7 @@ export function usePlayerPerform(ctx: PlayerPerformContext) {
       ElMessage.success('已保存并热更新当前画面')
     } catch (e: any) {
       console.error('演出模式保存失败:', e)
-      ElMessage.error('保存失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('保存失败', e))
     } finally {
       performSaving.value = false
     }

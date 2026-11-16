@@ -9,6 +9,7 @@ import type { Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { autoTagEmotions } from '@/api/dialogue'
 import { EMOTION_OPTIONS } from '@/composables/scene/useSceneVoiceBatch'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 export interface SceneVoiceDirectorContext {
   /** 当前项目 id（字符串形式，可能为空） */
@@ -122,7 +123,7 @@ export function useSceneVoiceDirector(ctx: SceneVoiceDirectorContext) {
       })
     } catch (e: any) {
       console.error('情绪识别失败:', e)
-      ElMessage.error('情绪识别失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+      ElMessage.error(formatErrorMessage('情绪识别失败', e))
     } finally {
       emotionTagRunning.value = false
     }

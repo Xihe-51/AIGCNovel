@@ -5,6 +5,7 @@ import { listNodeDirectives, createDirective, deleteDirective } from '@/api/dire
 import { uploadSceneFile } from '@/api/scenes'
 import { layerIdOf, layerNameOf, layerOrderOf, stageDefaultX } from '@/composables/player/usePlayerStage'
 import { BASE_URL } from '@/utils/request'
+import { formatErrorMessage } from '@/utils/errorMessage'
 
 /** 舞台立绘图层数量上限（前后端一致） */
 export const MAX_AVATAR_LAYERS = 8
@@ -184,7 +185,7 @@ export function useDirectiveEditor(options: {
 			}
 		} catch (err: any) {
 			console.error('演出素材上传失败:', err)
-			ElMessage.error('上传失败: ' + (err.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('上传失败', err))
 			uploadOptions.onError && uploadOptions.onError(err)
 		} finally {
 			uploading.value = false
