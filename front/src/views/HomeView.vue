@@ -379,4 +379,5 @@ onMounted(() => {
 <style scoped lang="scss" src="./home/homeStats.scss"></style>
 <style scoped lang="scss" src="./home/homeProjects.scss"></style>
 <style scoped lang="scss" src="./home/homeDialogs.scss"></style>
+<style lang="scss" src="./home/homeDeleteConfirm.scss"></style>
 <style scoped lang="scss" src="./home/homeResponsive.scss"></style>

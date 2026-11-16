@@ -218,41 +218,4 @@
   }
 }
 
-// ========== 删除确认框 ==========
-.delete-confirm {
-  :deep(.el-message-box) {
-    background: $bg-primary;
-    backdrop-filter: blur(20px);
-    border: 1px solid $border-light;
-    border-radius: 20px;
-  }
-  
-  :deep(.el-message-box__header) {
-    padding: 18px 20px;
-    border-bottom: 1px solid $border-light;
-    
-    .el-message-box__title {
-      color: white;
-      font-weight: 600;
-    }
-    
-    .el-message-box__close {
-      color: #9ca3af;
-    }
-  }
-  
-  :deep(.el-message-box__content) {
-    padding: 24px 20px;
-    color: #e5e7eb;
-  }
-  
-  :deep(.el-message-box__btns) {
-    padding: 16px 20px 20px;
-    border-top: 1px solid $border-light;
-    
-    .el-button {
-      padding: 9px 22px;
-      border-radius: 30px;
-    }
-  }
-}
+
