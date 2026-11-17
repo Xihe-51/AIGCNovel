@@ -195,7 +195,6 @@ export function usePlayerVariables(ctx: PlayerVariablesContext) {
     loadVariableSystem,
     clearVariableNotices,
     pushVariableNotices,
-    behaviorDefOf,
     setBehaviorVariable,
     markHesitationStart,
     commitHesitation,

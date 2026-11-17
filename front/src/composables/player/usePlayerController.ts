@@ -71,30 +71,21 @@ export function usePlayerController(options: PlayerControllerOptions) {
   const debugPanelVisible = ref(false)
 
   // 演出模式：仅作者本人带 ?edit=1 预览时可用；公开发布的玩家端不会渲染编辑入口
+  const ownershipApi = usePlayerOwnership({
+    isReleaseView: () => releaseView.value,
+    isEditQuery: () => query().edit === '1',
+  })
   const {
     currentUserId,
     projectOwnerId,
     isOwner,
     canPerform,
     setProjectOwnerId,
-  } = usePlayerOwnership({
-    isReleaseView: () => releaseView.value,
-    isEditQuery: () => query().edit === '1',
-  })
+  } = ownershipApi;
 
   // ==================== 开局装载：作品 / 场景 / 台词 / 分支 / 角色 ====================
   // 面板域（存档 / 章节 / 更新日志 / 演出编辑）的载入入口通过端口延后调用
-  const {
-    scenes,
-    allDialogues,
-    characters,
-    branches,
-    loading,
-    error,
-    historyDialogues,
-    projectCoverUrl,
-    fetchProjectData,
-  } = usePlayerBootstrap({
+  const bootstrapApi = usePlayerBootstrap({
     projectId: () => resolveProjectId(),
     releaseView: () => releaseView.value,
     debugRequested: () => debugRequested,
@@ -124,8 +115,22 @@ export function usePlayerController(options: PlayerControllerOptions) {
     },
     t: (key, params) => t(key, params),
   });
+  const {
+    scenes,
+    allDialogues,
+    characters,
+    branches,
+    loading,
+    error,
+    historyDialogues,
+    fetchProjectData,
+  } = bootstrapApi;
 
   // 分支覆盖率：本轮试玩走过的节点/分支（仅调试模式记录）由 usePlayerCoverage 自管
+  const coverageApi = usePlayerCoverage({
+    debugMode: () => debugMode.value,
+    getCurrentDialogue: () => currentDialogue.value,
+  });
   const {
     visitedContents,
     visitedEdges,
@@ -137,28 +142,10 @@ export function usePlayerController(options: PlayerControllerOptions) {
     resetCoverage,
     restoreVisited,
     loadStoryGraph,
-  } = usePlayerCoverage({
-    debugMode: () => debugMode.value,
-    getCurrentDialogue: () => currentDialogue.value,
-  });
+  } = coverageApi;
 
   // ===== 条件调试器：变量历史 / 条件断点 / 状态快照 / 热改与跳转 =====
-  const {
-    variableHistory,
-    debugBreakpoint,
-    debugBreakpointHit,
-    debugSnapshots,
-    debugJumpId,
-    pushVariableHistory,
-    checkDebugBreakpoint,
-    loadDebugSnapshots,
-    saveDebugSnapshot,
-    restoreDebugSnapshot,
-    deleteDebugSnapshot,
-    setDebugVar,
-    debugJump,
-    debugJumpTo,
-  } = usePlayerDebugger({
+  const debugApi = usePlayerDebugger({
     projectId: () => resolveProjectId(),
     debugMode: () => debugMode.value,
     getCurrentDialogue: () => currentDialogue.value,
@@ -185,14 +172,10 @@ export function usePlayerController(options: PlayerControllerOptions) {
     setVariableValues: (value) => { variableValues.value = value },
     t: (key, params) => t(key, params),
   });
+  const { pushVariableHistory, checkDebugBreakpoint, loadDebugSnapshots } = debugApi;
 
   // ===== 试玩埋点（调试模式不记录，避免作者自己测试污染数据）=====
-  const {
-    resetTelemetryTracking,
-    logPlayEvent,
-    logStartOnce,
-    logCurrentScene,
-  } = usePlayerTelemetry({
+  const telemetryApi = usePlayerTelemetry({
     getProjectId: () => resolveProjectId(),
     getDebugMode: () => debugMode.value,
     getIsOwner: () => isOwner.value,
@@ -200,6 +183,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
     getError: () => error.value,
     getCurrentSceneId: () => Number(currentScene.value?.scene_id || 0),
   })
+  const { resetTelemetryTracking, logPlayEvent, logStartOnce, logCurrentScene } = telemetryApi;
 
   // 周目：二周目继承上一周目的变量值，方便作者做「二周目解锁」
   const playthroughKey = () => `aigc:playthrough:${options.projectId()}`
@@ -220,62 +204,41 @@ export function usePlayerController(options: PlayerControllerOptions) {
   const sceneHasDialogues = (sceneId: any) => (allDialogues.value[sceneId] || []).length > 0;
 
   // 移动端触控（旋转提示/滑动切回想/滑动吞点击）由 usePlayerTouch 自管
-  const {
-    showRotateHint,
-    onTouchStart,
-    onTouchEnd,
-    onDialogueClick,
-    dismissRotateHint,
-    bindOrientation,
-    unbindOrientation,
-  } = usePlayerTouch({
+  const touchApi = usePlayerTouch({
     getShowHistory: () => showHistoryDialogue.value,
     setShowHistory: (value) => { showHistoryDialogue.value = value },
     getShowDialogueBox: () => showDialogueBox.value,
     setShowDialogueBox: (value) => { showDialogueBox.value = value },
     nextDialogue: () => nextDialogue(),
   });
+  const { bindOrientation, unbindOrientation } = touchApi;
 
   // 变量系统（定义/取值/跨周目持久化/行为变量/变化浮层）由 usePlayerVariables 自管
+  const variablesApi = usePlayerVariables({
+    projectId: () => resolveProjectId(),
+    showNotices: () => playerSettings.value.showVariableNotice,
+  });
   const {
     projectVariables,
     variableEffects,
     variableValues,
-    variableNotices,
     sceneLocks,
-    metaVariables,
     clampVariable,
     initialValueOf,
-    initVariableValues,
-    snapshotPersistVariables,
     syncProjectMeta,
-    loadProjectMeta,
     loadVariableSystem,
     clearVariableNotices,
     pushVariableNotices,
-    behaviorDefOf,
-    setBehaviorVariable,
     markHesitationStart,
     commitHesitation,
     bumpBehaviorReview,
-  } = usePlayerVariables({
-    projectId: () => resolveProjectId(),
-    showNotices: () => playerSettings.value.showVariableNotice,
-  });
+  } = variablesApi;
   const statusDialogVisible = ref(false);
   const lastEffectKey = ref('');
 
   // ==================== 结局 ====================
   // 结局清单 / 已触发集合 / 结局页可见性由 usePlayerEnding 自管
-  const {
-    endings,
-    triggeredEndings,
-    endingDialogVisible,
-    currentEnding,
-    loadEndings,
-    checkEndingForCurrent,
-    resetEndings,
-  } = usePlayerEnding({
+  const endingApi = usePlayerEnding({
     projectId: () => resolveProjectId(),
     getCurrentDialogue: () => currentDialogue.value,
     getCurrentScene: () => currentScene.value,
@@ -285,55 +248,44 @@ export function usePlayerController(options: PlayerControllerOptions) {
     clearTyping: () => clearTyping(),
     clearAutoTimer: () => clearAutoTimer(),
   });
+  const {
+    endings,
+    triggeredEndings,
+    endingDialogVisible,
+    loadEndings,
+    checkEndingForCurrent,
+    resetEndings,
+  } = endingApi;
 
   // 阅读设置（localStorage 持久化）
-  const {
-    playerSettings,
-    settingsVisible,
-    loadSettings,
-    saveSettings,
-    openSettings,
-    resetSettings,
-    toggleFullscreen,
-  } = usePlayerSettings({
+  const settingsApi = usePlayerSettings({
     onSettingsChange: () => applyVolumes(),
     onReset: () => startTyping(),
   });
+  const { playerSettings, loadSettings, saveSettings } = settingsApi;
   const dialogueVoice = ref(null);
 
   // ==================== 界面文案与多语言 ====================
   // 文案挑选与译文回退由 usePlayerLocale 托管
-  const {
-    t,
-    localizedCharacterName,
-    characterNames,
-    localizedText,
-    localizedSceneTitle,
-    sceneTitleById,
-    localizedChoice,
-    choiceTextById,
-    historySceneTitle,
-    historyChoiceText,
-  } = usePlayerLocale({
+  const localeApi = usePlayerLocale({
     getLanguage: () => playerSettings.value.language,
     getCharacters: () => characters.value,
     getScenes: () => scenes.value,
     getBranches: () => branches.value,
   });
+  const {
+    t,
+    localizedCharacterName,
+    localizedText,
+    localizedChoice,
+    historySceneTitle,
+    historyChoiceText,
+  } = localeApi;
 
   // ==================== 叙事位置与派生 ====================
   // 当前场景 / 当前台词 / 富文本 / 回想展示模型，以及场景埋点、曲目解锁、节点覆盖率
   // 三个跟随播放位置的 watch，全部由 usePlayerNarrative 托管
-  const {
-    currentSceneIndex,
-    currentDialogueIndex,
-    currentScene,
-    currentSceneDialogues,
-    currentDialogue,
-    displayedHtml,
-    historyItemViews,
-    initHistoryDialogues,
-  } = usePlayerNarrative({
+  const narrativeApi = usePlayerNarrative({
     projectId: () => resolveProjectId(),
     getScenes: () => scenes.value,
     getAllDialogues: () => allDialogues.value,
@@ -353,16 +305,18 @@ export function usePlayerController(options: PlayerControllerOptions) {
     sceneHasDialogues: (sceneId) => sceneHasDialogues(sceneId),
     unlockMusic: (projectId, url) => unlockMusic(projectId, url),
   });
+  const {
+    currentSceneIndex,
+    currentDialogueIndex,
+    currentScene,
+    currentSceneDialogues,
+    currentDialogue,
+    initHistoryDialogues,
+  } = narrativeApi;
 
   // ==================== 上一句回退 ====================
   // 行快照入栈 / 去重 / 截断与回退还原由 usePlayerRewind 托管
-  const {
-    canRollback,
-    captureLineSnapshot,
-    pushLineSnapshot,
-    clearLineSnapshots,
-    rollbackOneLine,
-  } = usePlayerRewind({
+  const rewindApi = usePlayerRewind({
     getDialogue: () => currentDialogue.value,
     getSceneIndex: () => currentSceneIndex.value,
     setSceneIndex: (value) => { currentSceneIndex.value = value },
@@ -387,10 +341,11 @@ export function usePlayerController(options: PlayerControllerOptions) {
     startTyping: () => startTyping(),
     applyVolumes: () => applyVolumes(),
   });
+  const { captureLineSnapshot, pushLineSnapshot, clearLineSnapshots } = rewindApi;
 
   // ==================== 预览派生状态 ====================
   // 说话人回溯、立绘分层与分支选项由 usePlayerPreview 托管
-  const { previewSpeaker, previewAvatarLayers, previewAvatarSrc, currentChoices } = usePlayerPreview({
+  const previewApi = usePlayerPreview({
     getDialogues: () => currentSceneDialogues.value,
     getCurrentIndex: () => currentDialogueIndex.value,
     getCurrentDialogue: () => currentDialogue.value,
@@ -399,40 +354,29 @@ export function usePlayerController(options: PlayerControllerOptions) {
     defaultAvatarLayersOf: (characterId) => defaultAvatarLayersOf(characterId),
     evalCondition: (conditions) => evalCondition(conditions),
   });
+  const { currentChoices } = previewApi;
 
   // ==================== 音频混音：BGM 淡入 + 语音闪避 ====================
+  const audioApi = usePlayerAudio({
+    backgroundMusic,
+    dialogueVoice,
+    playerSettings,
+    getCurrentScene: () => currentScene.value,
+  })
   const {
     bgmTargetVolume,
     fadeBgmTo,
     playBackgroundMusic,
     stopBackgroundMusic,
     setBgmDucking,
-    onVoicePlay,
-    onVoiceEnded,
     applyVolumes,
-    replayVoice,
-  } = usePlayerAudio({
-    backgroundMusic,
-    dialogueVoice,
-    playerSettings,
-    getCurrentScene: () => currentScene.value,
-  })
+  } = audioApi;
 
   // ==================== 逐字显示 ====================
   // 逐字显示屏、补全与自动前进排期由 usePlayerTypewriter 托管
   const fullText = () => localizedText(currentDialogue.value) || '';
 
-  const {
-    displayedText,
-    isTyping,
-    clearTyping,
-    finishTyping,
-    typeOut,
-    scheduleAutoAdvance,
-    scheduleAutoAdvanceAfter,
-    clearAutoTimer,
-    disposeTypewriter,
-  } = usePlayerTypewriter({
+  const typewriterApi = usePlayerTypewriter({
     getFullText: () => fullText(),
     getSpeed: () => Number(playerSettings.value.textSpeed),
     canAutoAdvance: () => (
@@ -445,12 +389,28 @@ export function usePlayerController(options: PlayerControllerOptions) {
     getAutoDelay: () => Number(playerSettings.value.autoDelay),
     onAdvance: () => nextDialogue(),
   });
+  const {
+    displayedText,
+    isTyping,
+    clearTyping,
+    finishTyping,
+    typeOut,
+    scheduleAutoAdvance,
+    scheduleAutoAdvanceAfter,
+    clearAutoTimer,
+    disposeTypewriter,
+  } = typewriterApi;
 
   // ==================== 已读记录 ====================
+  const readsApi = usePlayerReads({
+    projectId: () => resolveProjectId(),
+    getCurrentDialogue: () => currentDialogue.value,
+    hasChoices: () => currentChoices.value.length > 0,
+    skipReadEnabled: () => !!playerSettings.value.skipRead,
+  });
   const {
     readSet,
     loadReads,
-    hasRead,
     markCurrentRead,
     shouldSkipCurrent,
     allowSkip,
@@ -458,12 +418,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
     markSkipRestoredLine,
     consumeSkipRestoredLine,
     disposeReads,
-  } = usePlayerReads({
-    projectId: () => resolveProjectId(),
-    getCurrentDialogue: () => currentDialogue.value,
-    hasChoices: () => currentChoices.value.length > 0,
-    skipReadEnabled: () => !!playerSettings.value.skipRead,
-  });
+  } = readsApi;
 
   // 调试探针（仅开发环境，便于无头浏览器排查）：挂载与快照结构由 usePlayerDevProbe 自管
   usePlayerDevProbe({
@@ -488,15 +443,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
 
   // ==================== 项目变量 ====================
   // 条件求值（变量比较 / 条件组 / 剧情锁 / 台词级条件）由 usePlayerConditions 自管
-  const {
-    evalSingleCondition,
-    evalCondition,
-    scenePlayable,
-    nodePlayable,
-    firstPlayableNodeIndex,
-    sceneHasPlayableDialogues,
-    conditionText,
-  } = usePlayerConditions({ projectVariables, variableValues, sceneLocks, allDialogues });
+  const conditionsApi = usePlayerConditions({ projectVariables, variableValues, sceneLocks, allDialogues });
 
   // 分支选项的展示模型：文案 / 图片地址 / 锁定提示在这里一次性算好，
   // PlayerDialogueBox 只负责按数组渲染，不再回调任何业务函数。
@@ -508,7 +455,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
 
   // 按台词应用变量效果 / 周目重置由 usePlayerVariableEffects 编排；
   // lastEffectKey 由编排层持有，作为「同节点只结算一次」的共享标记（存档也要读它）。
-  const { applyEffectsForCurrent, resetVariables } = usePlayerVariableEffects({
+  const variableEffectsApi = usePlayerVariableEffects({
     getCurrentDialogue: () => currentDialogue.value,
     getSceneIndex: () => currentSceneIndex.value,
     getDialogueIndex: () => currentDialogueIndex.value,
@@ -526,26 +473,35 @@ export function usePlayerController(options: PlayerControllerOptions) {
     checkDebugBreakpoint: () => checkDebugBreakpoint(),
     scheduleAchievementCheck: () => scheduleAchievementCheck(),
   });
+  const { applyEffectsForCurrent, resetVariables } = variableEffectsApi;
+  const {
+    evalSingleCondition,
+    evalCondition,
+    scenePlayable,
+    nodePlayable,
+    firstPlayableNodeIndex,
+    sceneHasPlayableDialogues,
+    conditionText,
+  } = conditionsApi;
 
   // ==================== 成就 ====================
-  const {
-    achievements,
-    unlockedAchievementCount,
-    loadPlayerAchievements,
-    scheduleAchievementCheck,
-    resetAchievementState,
-  } = usePlayerAchievements({
+  const achievementsApi = usePlayerAchievements({
     projectId: () => resolveProjectId(),
     getDebugMode: () => debugMode.value,
     getVariables: () => variableValues.value,
     getEndings: () => [...triggeredEndings.value],
     t,
   })
+  const {
+    loadPlayerAchievements,
+    scheduleAchievementCheck,
+    resetAchievementState,
+  } = achievementsApi;
 
   // 一句台词开始播放时的固定顺序（结算变量 → 回退标记 → 结局 → 清定时器 → 跳过已读
   // → 记录已读 → 选择计时 → 逐字显示）以及设置变更后的重播监听，全部由
   // usePlayerLineLifecycle 编排；这里只提供各步骤的实现。
-  const { startTyping } = usePlayerLineLifecycle({
+  const lineLifecycleApi = usePlayerLineLifecycle({
     currentDialogue,
     sceneIndex: currentSceneIndex,
     dialogueIndex: currentDialogueIndex,
@@ -568,11 +524,12 @@ export function usePlayerController(options: PlayerControllerOptions) {
     setBgmDucking: (on) => setBgmDucking(on),
     applyVolumes: () => applyVolumes(),
   });
+  const { startTyping } = lineLifecycleApi;
 
   // ==================== 开局与重开 ====================
   // 起点修正（起始场景/台词被剧情锁或条件挡住时向后找）、完整重置、二周目推进、
   // 玩家主动重开四个入口由 usePlayerPlaySession 编排；这里只提供状态引用与各步骤实现。
-  const { startPreview, resetGame, startNextPlaythrough, restartGame } = usePlayerPlaySession({
+  const playSessionApi = usePlayerPlaySession({
     scenes,
     allDialogues,
     sceneIndex: currentSceneIndex,
@@ -599,43 +556,24 @@ export function usePlayerController(options: PlayerControllerOptions) {
     setLastEffectKey: (value) => { lastEffectKey.value = value },
     t: (key, params) => t(key, params),
   });
+  const { startPreview } = playSessionApi;
 
   // ==================== 演出时序 ====================
   // 画面效果与「停顿」的定时器由 usePlayerStageFx 自管
+  const stageFxApi = usePlayerStageFx({
+    scheduleAutoAdvance: () => scheduleAutoAdvance(),
+  });
   const {
-    activeEffect,
     isWaiting,
     triggerEffect,
     clearEffect,
     clearWait,
     scheduleWait,
     disposeStageFx,
-  } = usePlayerStageFx({
-    scheduleAutoAdvance: () => scheduleAutoAdvance(),
-  });
+  } = stageFxApi;
 
   /* ===== 节点演出指令（任意图层 / 背景切换 / 音效）===== */
-  const {
-    stageAvatars,
-    bgFromDirective,
-    bgTransition,
-    bgDuration,
-    fgFromDirective,
-    directivesByContent,
-    stageLayerVisible,
-    stageLayers,
-    hasStageAvatars,
-    avatarLayersOf,
-    defaultAvatarLayersOf,
-    loadDirectiveData,
-    resetStage,
-    clearStageTransitions,
-    bgShown,
-    bgFading,
-    bgBlackout,
-    fgShown,
-    fgFading,
-  } = usePlayerStage({
+  const stageApi = usePlayerStage({
     getProjectId: () => resolveProjectId(),
     getCurrentScene: () => currentScene.value,
     getCharacters: () => characters.value,
@@ -645,10 +583,24 @@ export function usePlayerController(options: PlayerControllerOptions) {
       clearEffect();
     },
   });
+  const {
+    stageAvatars,
+    bgFromDirective,
+    bgTransition,
+    bgDuration,
+    fgFromDirective,
+    directivesByContent,
+    stageLayerVisible,
+    avatarLayersOf,
+    defaultAvatarLayersOf,
+    loadDirectiveData,
+    resetStage,
+    clearStageTransitions,
+  } = stageApi;
 
   // ==================== 演出指令应用 ====================
   // 指令解析以及舞台 / 音频副作用由 usePlayerDirectives 托管
-  const { applyDirectives } = usePlayerDirectives({
+  const directivesApi = usePlayerDirectives({
     getDirectivesByContent: () => directivesByContent.value,
     stageAvatars,
     stageLayerVisible,
@@ -664,13 +616,14 @@ export function usePlayerController(options: PlayerControllerOptions) {
     triggerEffect: (payload) => triggerEffect(payload),
     scheduleWait: (ms) => scheduleWait(ms),
   });
+  const { applyDirectives } = directivesApi;
 
   loadSettings();
   saveSettings();
 
   // ==================== 剧情推进 ====================
   // 节点寻址、下一句 / 下一场景与选项分支跳转由 usePlayerFlow 托管
-  const { jumpToDialogue, nextDialogue, selectBranch, nextScene } = usePlayerFlow({
+  const flowApi = usePlayerFlow({
     getScenes: () => scenes.value,
     getAllDialogues: () => allDialogues.value,
     getBranches: () => branches.value,
@@ -712,17 +665,11 @@ export function usePlayerController(options: PlayerControllerOptions) {
     goHome: () => { options.goHome(); },
     t: (key, params) => t(key, params),
   });
+  const { nextDialogue, selectBranch, nextScene } = flowApi;
 
   // ==================== 播放控制 ====================
   // 自动前进 / 快进下一场景 / 对话框与回想显隐 / 上滑唤回想 / 选项点击由 usePlayerPlayback 托管
-  const {
-    skipToNextScene,
-    toggleDialogueBox,
-    toggleHistoryDialogue,
-    toggleAutoPlay,
-    onWheelUp,
-    handleChoiceSelect,
-  } = usePlayerPlayback({
+  const playbackApi = usePlayerPlayback({
     getAutoPlay: () => autoPlay.value,
     setAutoPlay: (value) => { autoPlay.value = value },
     getShowDialogueBox: () => showDialogueBox.value,
@@ -796,15 +743,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
     projectOwnerId,
     isOwner,
     canPerform,
-    scenes,
-    allDialogues,
-    characters,
-    branches,
-    loading,
-    error,
-    historyDialogues,
-    projectCoverUrl,
-    fetchProjectData,
+    ...bootstrapApi,
     visitedContents,
     visitedEdges,
     coverageStats,
@@ -814,24 +753,8 @@ export function usePlayerController(options: PlayerControllerOptions) {
     markVisitedEdge,
     resetCoverage,
     restoreVisited,
-    variableHistory,
-    debugBreakpoint,
-    debugBreakpointHit,
-    debugSnapshots,
-    debugJumpId,
-    pushVariableHistory,
-    checkDebugBreakpoint,
-    loadDebugSnapshots,
-    saveDebugSnapshot,
-    restoreDebugSnapshot,
-    deleteDebugSnapshot,
-    setDebugVar,
-    debugJump,
-    debugJumpTo,
-    resetTelemetryTracking,
-    logPlayEvent,
-    logStartOnce,
-    logCurrentScene,
+    ...debugApi,
+    ...telemetryApi,
     playthrough,
     playthroughKey,
     isPlaying,
@@ -841,162 +764,31 @@ export function usePlayerController(options: PlayerControllerOptions) {
     showDialogueBox,
     showHistoryDialogue,
     sceneHasDialogues,
-    showRotateHint,
-    onTouchStart,
-    onTouchEnd,
-    onDialogueClick,
-    dismissRotateHint,
-    bindOrientation,
-    unbindOrientation,
-    projectVariables,
-    variableEffects,
-    variableValues,
-    variableNotices,
-    sceneLocks,
-    metaVariables,
-    clampVariable,
-    initialValueOf,
-    initVariableValues,
-    snapshotPersistVariables,
-    syncProjectMeta,
-    loadProjectMeta,
-    loadVariableSystem,
-    clearVariableNotices,
-    pushVariableNotices,
-    behaviorDefOf,
-    setBehaviorVariable,
-    markHesitationStart,
-    commitHesitation,
-    bumpBehaviorReview,
+    ...touchApi,
+    ...variablesApi,
     statusDialogVisible,
     lastEffectKey,
-    endings,
-    triggeredEndings,
-    endingDialogVisible,
-    currentEnding,
-    loadEndings,
-    checkEndingForCurrent,
-    resetEndings,
-    playerSettings,
-    settingsVisible,
-    loadSettings,
-    saveSettings,
-    openSettings,
-    resetSettings,
-    toggleFullscreen,
+    ...endingApi,
+    ...settingsApi,
     dialogueVoice,
-    t,
-    localizedCharacterName,
-    characterNames,
-    localizedText,
-    localizedSceneTitle,
-    sceneTitleById,
-    localizedChoice,
-    choiceTextById,
-    historySceneTitle,
-    historyChoiceText,
-    currentSceneIndex,
-    currentDialogueIndex,
-    currentScene,
-    currentSceneDialogues,
-    currentDialogue,
-    displayedHtml,
-    historyItemViews,
-    initHistoryDialogues,
-    canRollback,
-    captureLineSnapshot,
-    pushLineSnapshot,
-    clearLineSnapshots,
-    rollbackOneLine,
-    previewSpeaker,
-    previewAvatarLayers,
-    previewAvatarSrc,
-    currentChoices,
-    bgmTargetVolume,
-    fadeBgmTo,
-    playBackgroundMusic,
-    stopBackgroundMusic,
-    setBgmDucking,
-    onVoicePlay,
-    onVoiceEnded,
-    applyVolumes,
-    replayVoice,
-    displayedText,
-    isTyping,
-    clearTyping,
-    finishTyping,
-    typeOut,
-    scheduleAutoAdvance,
-    scheduleAutoAdvanceAfter,
-    clearAutoTimer,
-    disposeTypewriter,
-    readSet,
-    loadReads,
-    hasRead,
-    markCurrentRead,
-    shouldSkipCurrent,
-    allowSkip,
-    resetSkipGuard,
-    markSkipRestoredLine,
-    consumeSkipRestoredLine,
-    disposeReads,
-    evalSingleCondition,
-    evalCondition,
-    scenePlayable,
-    nodePlayable,
-    firstPlayableNodeIndex,
-    sceneHasPlayableDialogues,
-    conditionText,
+    ...localeApi,
+    ...narrativeApi,
+    ...rewindApi,
+    ...previewApi,
+    ...audioApi,
+    ...typewriterApi,
+    ...readsApi,
+    ...conditionsApi,
     dialogueChoiceViews,
-    applyEffectsForCurrent,
-    resetVariables,
-    achievements,
-    unlockedAchievementCount,
-    loadPlayerAchievements,
-    scheduleAchievementCheck,
-    resetAchievementState,
-    startTyping,
-    startPreview,
-    resetGame,
-    startNextPlaythrough,
-    restartGame,
-    activeEffect,
-    isWaiting,
-    triggerEffect,
-    clearEffect,
-    clearWait,
-    scheduleWait,
-    disposeStageFx,
-    stageAvatars,
-    bgFromDirective,
-    bgTransition,
-    bgDuration,
-    fgFromDirective,
-    directivesByContent,
-    stageLayerVisible,
-    stageLayers,
-    hasStageAvatars,
-    avatarLayersOf,
-    defaultAvatarLayersOf,
-    loadDirectiveData,
-    resetStage,
-    clearStageTransitions,
-    bgShown,
-    bgFading,
-    bgBlackout,
-    fgShown,
-    fgFading,
-    applyDirectives,
-    jumpToDialogue,
-    nextDialogue,
-    selectBranch,
-    nextScene,
-    skipToNextScene,
-    toggleDialogueBox,
-    toggleHistoryDialogue,
-    toggleAutoPlay,
-    onWheelUp,
-    handleChoiceSelect,
+    ...variableEffectsApi,
+    ...achievementsApi,
+    ...lineLifecycleApi,
+    ...playSessionApi,
+    ...stageFxApi,
+    ...stageApi,
+    ...directivesApi,
+    ...flowApi,
+    ...playbackApi,
     getCharacterName,
     backToHome,
     exitToHome: options.goHome,
