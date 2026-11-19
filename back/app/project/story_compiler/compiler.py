@@ -36,7 +36,7 @@ def compile_to_project(project_id, parsed, report, *, project_title='',
     created_chars = []
     source_map = {'chapters': [], 'scenes': [], 'nodes': [],
                   'branches': [], 'directives': []}
-    diagnostics = report['diagnostics']
+    diagnostics = list(report['diagnostics'])
     compiled_nodes = []
     label_target = {}
     scene_index = 0
@@ -185,9 +185,7 @@ def compile_to_project(project_id, parsed, report, *, project_title='',
                     # 未定义标签已在 report 层给出 unresolved_label 诊断
                     continue
                 if target_id == content_id:
-                    diagnostics.append(_diag(
-                        'warning', 'self_loop_branch',
-                        f'标签「{target}」与分支起点是同一节点，该分支已忽略', line))
+                    # 自环已由 report 层给出 self_loop_branch 诊断，这里只跳过写入
                     continue
                 db.session.add(BranchPath(
                     project_id=project_id,
