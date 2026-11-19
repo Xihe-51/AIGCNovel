@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-用 Chrome DevTools Protocol 截图（本地前端 5173）。
+用 Chrome DevTools Protocol 截图（本地前端 5174）。
 用途：目视检查布局/CSS 问题，不依赖任何第三方浏览器自动化库。
 
 用法：
@@ -109,7 +109,7 @@ def main():
         })
 
         # 先在登录页写入 token（同源 localStorage）
-        cdp.send('Page.navigate', {'url': 'http://127.0.0.1:5173/login'})
+        cdp.send('Page.navigate', {'url': 'http://127.0.0.1:5174/login'})
         wait_ready(cdp, 15)
         cdp.send('Runtime.evaluate', {
             'expression': f'localStorage.setItem("token", {json.dumps(token)}); "ok"',
