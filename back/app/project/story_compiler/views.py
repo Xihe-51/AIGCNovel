@@ -4,6 +4,8 @@
 控制器只负责鉴权、参数校验与响应组装；
 解析、诊断与写库分别由 parser / report / compiler 三层承担。
 """
+from datetime import datetime
+
 from flask import jsonify, request
 
 from ... import db
@@ -35,6 +37,15 @@ def _payload_text():
 def _detect_format(data, filename):
     return str(data.get('format') or (
         'markdown' if filename.lower().endswith(('.md', '.markdown')) else 'txt'))
+
+
+def _source_name(filename, created_at=None):
+    """导入记录的可读名称：纯粘贴没有文件名，用时间戳兜底。"""
+    name = str(filename or '').strip()
+    if name:
+        return name
+    stamp = (created_at or datetime.now()).strftime('%Y-%m-%d %H:%M')
+    return f'粘贴文本 {stamp}'
 
 
 @project.route('/story_compile/<int:project_id>/preview', methods=['POST'])
@@ -78,6 +89,7 @@ def story_compile_apply(project_id):
     if err:
         return err
     text, filename = body
+    filename = _source_name(filename)
     fmt = _detect_format(data, filename)
     create_characters = bool(data.get('create_characters', True))
     create_chapters = bool(data.get('create_chapters', True))
@@ -127,7 +139,7 @@ def story_compile_sources(project_id):
         payload = row.compile_json if isinstance(row.compile_json, dict) else {}
         data.append({
             'source_id': int(row.source_id),
-            'filename': row.filename,
+            'filename': _source_name(row.filename, row.created_at),
             'format': row.source_format,
             'created_at': row.created_at.isoformat() if row.created_at else None,
             'stats': payload.get('stats') or {},
@@ -150,7 +162,7 @@ def story_compile_source_detail(source_id):
         'success': True,
         'data': {
             'source_id': int(row.source_id),
-            'filename': row.filename,
+            'filename': _source_name(row.filename, row.created_at),
             'format': row.source_format,
             'created_at': row.created_at.isoformat() if row.created_at else None,
             'content': row.content,

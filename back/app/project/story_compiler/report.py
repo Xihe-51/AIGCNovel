@@ -7,6 +7,12 @@ MAX_PREVIEW_CHAPTERS = 40
 MAX_PREVIEW_SCENES = 20
 MAX_PREVIEW_NODES = 6
 
+ASSET_DIRECTIVE_LABELS = {
+    'background': '@bg',
+    'music': '@bgm',
+    'sound': '@sound',
+}
+
 VARIABLE_KEYWORDS = [
     (('好感', '喜欢', '爱意', '心动', '恋爱'), '好感度', '文本出现好感/恋爱语义'),
     (('信任', '怀疑', '相信'), '信任', '文本出现信任/怀疑语义'),
@@ -37,6 +43,35 @@ def _node_label_map(parsed):
                 for name in node.get('labels') or []:
                     mapping.setdefault(name, node['line'])
     return mapping
+
+
+def _looks_like_asset(value):
+    """资源地址至少要带路径分隔符，否则播放器拼接阶段会得到无效链接。"""
+    return '/' in value
+
+
+def _directive_asset_diagnostics(parsed):
+    """校验演出指令里的资源地址：写成自然语言描述时给出可定位的提示。"""
+    diagnostics = []
+    for chapter in parsed['chapters']:
+        for scene in chapter['scenes']:
+            for node in scene['nodes']:
+                for directive in node.get('directives') or []:
+                    label = ASSET_DIRECTIVE_LABELS.get(directive.get('type'))
+                    if not label:
+                        continue
+                    payload = directive.get('payload') or {}
+                    url = str(payload.get('url') or '').strip()
+                    if not url or _looks_like_asset(url):
+                        continue
+                    diagnostics.append({
+                        'level': 'warning', 'code': 'directive_asset_suspect',
+                        'message': (
+                            f'{label} 的值「{snippet(url, 20)}」不像资源路径，'
+                            '播放时会加载失败；请填写以 / 开头的资源地址'),
+                        'line': directive.get('line'),
+                    })
+    return diagnostics
 
 
 def _reference_diagnostics(parsed):
@@ -105,6 +140,8 @@ def build_report(parsed, existing_names):
 
     # 标签引用校验：未定义 / 自环
     diagnostics.extend(_reference_diagnostics(parsed))
+    # 指令资源校验：@bg / @bgm / @sound 写成描述文字时提示改路径
+    diagnostics.extend(_directive_asset_diagnostics(parsed))
 
     # 分支建议：优先看每个场景末尾的问句/选择语义
     for chapter, scene in all_scenes:

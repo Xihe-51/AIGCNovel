@@ -233,6 +233,21 @@ class StoryDirectiveTest(unittest.TestCase):
         codes = [d['code'] for d in report['diagnostics']]
         self.assertIn('self_loop_branch', codes)
 
+    def test_directive_asset_suspect_reported(self):
+        source = '''@bg 雨夜街道
+@bgm 悬疑
+@bg /static/bg/rain.png
+
+旁白：雨下了一整夜。
+'''
+        report = build_report(parse_source(source), set())
+        hits = [d for d in report['diagnostics'] if d['code'] == 'directive_asset_suspect']
+        self.assertEqual(len(hits), 2)
+        self.assertTrue(all(d['level'] == 'warning' for d in hits))
+        self.assertIn('雨夜街道', hits[0]['message'])
+        self.assertIn('@bgm', hits[1]['message'])
+        self.assertEqual([d['line'] for d in hits], [1, 2])
+
     def test_content_after_jump_is_warning(self):
         parsed = parse_source('甲：一。\n@jump 尾\n乙：二。\n#尾\n丙：三。\n')
         hit = [e for e in parsed['errors'] if e['code'] == 'content_after_jump']
@@ -242,6 +257,20 @@ class StoryDirectiveTest(unittest.TestCase):
     def test_compiler_module_importable(self):
         from app.project.story_compiler.compiler import compile_to_project
         self.assertTrue(callable(compile_to_project))
+
+
+class SourceNameTest(unittest.TestCase):
+    def test_blank_filename_falls_back_to_timestamp(self):
+        from datetime import datetime
+        from app.project.story_compiler.views import _source_name
+        stamp = datetime(2026, 11, 19, 19, 43)
+        self.assertEqual(_source_name('', stamp), '粘贴文本 2026-11-19 19:43')
+        self.assertEqual(_source_name('   ', stamp), '粘贴文本 2026-11-19 19:43')
+        self.assertEqual(_source_name(None, stamp), '粘贴文本 2026-11-19 19:43')
+
+    def test_uploaded_filename_kept(self):
+        from app.project.story_compiler.views import _source_name
+        self.assertEqual(_source_name(' 雨夜.txt '), '雨夜.txt')
 
 
 if __name__ == '__main__':
