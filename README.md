@@ -96,8 +96,7 @@ AIGCNovel/
 │   ├── player.html                # 静态发布包的独立入口
 │   └── vite.player.config.ts      # 播放器专用构建配置
 ├── docs/_src/                     # 端到端脚本、巡检脚本与设计资料
-├── .github/workflows/ci.yml       # CI 门禁
-└── P0_交接文档.md 等               # 迭代交接与方向规划
+└── .github/workflows/ci.yml       # CI 门禁
 ```
 
 ## 快速开始
@@ -141,7 +140,7 @@ CREATE DATABASE aigc DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 # 服务地址 http://127.0.0.1:8088
 ```
 
-服务启动时会自动执行 `db.create_all()` 补齐**缺失的表**；但它**不会修改已有表结构**，所以升级后新增的列需要手工 `ALTER TABLE`（见 `P0_交接文档.md` 第 2 节）。
+服务启动时会自动执行 `db.create_all()` 补齐**缺失的表**；但它**不会修改已有表结构**，所以升级后新增的列需要手工 `ALTER TABLE`。
 
 > 默认关闭热重载（`watchdog` 会监视整个 `site-packages`，加载 torch 时误触发重载会直接 crash）。改完 Python 代码请手动重启，或临时设置 `FLASK_USE_RELOADER=1`。
 
@@ -277,12 +276,4 @@ npm run build:player   # 播放器静态发布包（dist-player/）
 - `huggingface-hub` 必须 `<1.0`，否则 `transformers` 直接 `ImportError`，本地 SD 整体不可用。
 
 - 上传与生成的素材（`back/app/static/*`）、模型权重、`.env` 均被忽略，克隆后是干净的空环境。
-
-## 相关文档
-
-| 文档                                 | 内容                     |
-| ---------------------------------- | ---------------------- |
-| [P0\_交接文档.md](P0_交接文档.md)          | 一次完整迭代的数据库变更、接口改动与验证记录 |
-| [平台创新方向清单.md](平台创新方向清单.md)         | 能力现状盘点与后续方向取舍          |
-| [开源视觉小说引擎借鉴清单.md](开源视觉小说引擎借鉴清单.md) | 对 Ren'Py 等引擎的能力对照与借鉴点  |
 
