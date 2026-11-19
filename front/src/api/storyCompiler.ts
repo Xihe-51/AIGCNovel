@@ -5,6 +5,10 @@ export interface CompilerStats {
   node_count: number
   dialogue_count: number
   narration_count: number
+  choice_count?: number
+  branch_count?: number
+  directive_count?: number
+  label_count?: number
   chapter_count: number
   scene_count: number
   character_total: number
@@ -29,9 +33,13 @@ export interface CompilerScenePreview {
   node_count: number
   preview: {
     line?: number | null
-    kind: 'dialogue' | 'narration'
+    kind: 'dialogue' | 'narration' | 'choice'
     speaker?: string | null
     text: string
+    choices?: number
+    labels?: string[]
+    has_jump?: boolean
+    directive_count?: number
   }[]
 }
 
@@ -73,6 +81,9 @@ export interface CompileApplied {
     chapters: number
     scenes: number
     nodes: number
+    branches?: number
+    directives?: number
+    labels?: number
     characters: { character_id: number; name: string }[]
   }
   stats: CompilerStats
@@ -83,6 +94,18 @@ export interface CompileApplied {
     chapters: { chapter_id: number; title: string; line?: number | null }[]
     scenes: { scene_id: number; title: string; line?: number | null; chapter_title?: string | null }[]
     nodes: CompileSourceNode[]
+    branches?: {
+      source_content_id: number
+      target_content_id: number
+      choice_text?: string | null
+      label: string
+      line?: number | null
+    }[]
+    directives?: {
+      content_id: number
+      directive_type: string
+      line?: number | null
+    }[]
   }
   first: { scene_id: number; content_id: number } | null
   project_title: string

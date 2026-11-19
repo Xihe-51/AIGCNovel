@@ -119,5 +119,130 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(preview['chapters'][0]['scenes'][0]['node_count'], 1)
 
 
+class StoryDirectiveTest(unittest.TestCase):
+    SOURCE = '''# 第一章 雨夜
+
+## 诊所
+
+@bg rain.png
+@bgm theme.mp3
+@show 李暮尘
+【李暮尘】“王医生，我真的没病。”
+
+@choice 你打算怎么做？
+- 承认病情 -> 承认
+- 继续否认 -> 否认
+
+## 承认线
+
+#承认
+@hide 李暮尘
+@wait 300
+李暮尘：好吧，我承认。
+@jump 结局
+
+## 否认线
+
+#否认
+李暮尘：我没病。
+
+## 结局
+
+@label 结局
+旁白：雨停了。
+'''
+
+    def test_parse_labels_choice_jump_directives(self):
+        parsed = parse_source(self.SOURCE, 'story.story')
+        self.assertEqual(sorted(parsed['labels']), sorted(['承认', '否认', '结局']))
+        self.assertEqual(parsed['errors'], [])
+
+        chapter = parsed['chapters'][0]
+        self.assertEqual([s['title'] for s in chapter['scenes']],
+                         ['诊所', '承认线', '否认线', '结局'])
+
+        opening = chapter['scenes'][0]['nodes']
+        self.assertEqual(opening[0]['kind'], 'dialogue')
+        self.assertEqual([d['type'] for d in opening[0]['directives']],
+                         ['background', 'music', 'avatar'])
+
+        choice = opening[1]
+        self.assertEqual(choice['kind'], 'choice')
+        self.assertEqual(choice['text'], '你打算怎么做？')
+        self.assertEqual([c['text'] for c in choice['choices']], ['承认病情', '继续否认'])
+        self.assertEqual([c['target'] for c in choice['choices']], ['承认', '否认'])
+
+        accepted = chapter['scenes'][1]['nodes'][0]
+        self.assertEqual(accepted['labels'], ['承认'])
+        self.assertEqual([d['type'] for d in accepted['directives']], ['avatar', 'wait'])
+        self.assertEqual(accepted['directives'][0]['payload']['action'], 'hide')
+        self.assertEqual(accepted['jump'], {'target': '结局', 'line': 20})
+
+        ending = chapter['scenes'][3]['nodes'][0]
+        self.assertEqual(ending['labels'], ['结局'])
+
+    def test_report_counts_branches_and_directives(self):
+        parsed = parse_source(self.SOURCE)
+        report = build_report(parsed, set())
+        stats = report['stats']
+        self.assertEqual(stats['node_count'], 5)
+        self.assertEqual(stats['dialogue_count'], 3)
+        self.assertEqual(stats['choice_count'], 1)
+        self.assertEqual(stats['narration_count'], 1)
+        self.assertEqual(stats['branch_count'], 3)
+        self.assertEqual(stats['directive_count'], 5)
+        self.assertEqual(stats['label_count'], 3)
+        codes = [d['code'] for d in report['diagnostics']]
+        self.assertNotIn('unresolved_label', codes)
+        self.assertNotIn('self_loop_branch', codes)
+
+    def test_plain_novel_has_no_directive_noise(self):
+        parsed = parse_source('第一章 开端\n\n甲：你好。\n乙：再见。\n')
+        self.assertEqual(parsed['labels'], {})
+        self.assertEqual(parsed['errors'], [])
+
+    def test_unresolved_label_reported(self):
+        parsed = parse_source('甲：走。\n@jump 不存在\n')
+        report = build_report(parsed, set())
+        hit = [d for d in report['diagnostics'] if d['code'] == 'unresolved_label']
+        self.assertEqual(len(hit), 1)
+        self.assertEqual(hit[0]['level'], 'error')
+        self.assertIn('不存在', hit[0]['message'])
+
+    def test_duplicate_label_reported(self):
+        parsed = parse_source('#开始\n甲：一。\n#开始\n乙：二。\n')
+        codes = [e['code'] for e in parsed['errors']]
+        self.assertIn('duplicate_label', codes)
+        self.assertEqual(parsed['labels']['开始']['line'], 1)
+
+    def test_choice_without_option_reported(self):
+        parsed = parse_source('@choice 选什么？\n旁白：没人回答。\n')
+        codes = [e['code'] for e in parsed['errors']]
+        self.assertIn('choice_without_option', codes)
+        node = parsed['chapters'][0]['scenes'][0]['nodes'][0]
+        self.assertEqual(node['choices'], [])
+
+    def test_jump_on_choice_rejected(self):
+        parsed = parse_source('@choice 选什么？\n- 继续 -> x\n@jump x\n#x\n旁白：好。\n')
+        codes = [e['code'] for e in parsed['errors']]
+        self.assertIn('jump_on_choice', codes)
+
+    def test_self_loop_branch_reported(self):
+        parsed = parse_source('#起点\n@choice 选什么？\n- 继续 -> 起点\n')
+        report = build_report(parsed, set())
+        codes = [d['code'] for d in report['diagnostics']]
+        self.assertIn('self_loop_branch', codes)
+
+    def test_content_after_jump_is_warning(self):
+        parsed = parse_source('甲：一。\n@jump 尾\n乙：二。\n#尾\n丙：三。\n')
+        hit = [e for e in parsed['errors'] if e['code'] == 'content_after_jump']
+        self.assertEqual(len(hit), 1)
+        self.assertEqual(hit[0]['level'], 'warning')
+
+    def test_compiler_module_importable(self):
+        from app.project.story_compiler.compiler import compile_to_project
+        self.assertTrue(callable(compile_to_project))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -161,9 +161,11 @@
 							</span>
 						</div>
 						<div v-for="(node, ni) in scene.preview" :key="ni" class="cp-node">
-							<span class="cp-node-kind">{{ node.kind === 'dialogue' ? '对白' : '旁白' }}</span>
+							<span class="cp-node-kind">{{ compileNodeKindLabel(node.kind) }}</span>
 							<span v-if="node.speaker" class="cp-node-speaker">{{ node.speaker }}</span>
 							<span class="cp-node-text">{{ node.text }}</span>
+							<span v-if="node.labels?.length" class="cp-node-labels">#{{ node.labels.join(' #') }}</span>
+							<span v-if="node.has_jump" class="cp-node-labels">↳ 跳转</span>
 						</div>
 						<div v-if="scene.node_count > scene.preview.length" class="cp-node-more">
 							还有 {{ scene.node_count - scene.preview.length }} 条未展示…
@@ -199,6 +201,7 @@
 	import { decodeTextBuffer } from '@/utils/textEncoding'
 	import {
 		buildCompileStatCards,
+		compileNodeKindLabel,
 		detectCompileFormat,
 		diagnosticLevelLabel,
 		formatCompileTime,

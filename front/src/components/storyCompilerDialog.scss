@@ -367,9 +367,20 @@
 	}
 
 	.cp-node-text {
+		flex: 1 1 auto;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.cp-node-labels {
+		flex-shrink: 0;
+		font-size: 10px;
+		color: #2563eb;
+		background: #eff6ff;
+		padding: 0 4px;
+		border-radius: 3px;
 	}
 
 	.cp-node-more,

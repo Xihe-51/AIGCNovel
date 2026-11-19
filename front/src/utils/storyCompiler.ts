@@ -9,6 +9,7 @@ export interface CompileStatsLike {
   node_count: number
   dialogue_count: number
   narration_count: number
+  choice_count?: number
   character_unknown: number
   source_preserved_pct: number
 }
@@ -21,9 +22,17 @@ export const buildCompileStatCards = (stats?: CompileStatsLike | null): CompileS
     { label: '场景', value: stats.scene_count },
     { label: '内容', value: stats.node_count },
     { label: '对白 / 旁白', value: `${stats.dialogue_count} / ${stats.narration_count}` },
+    ...(stats.choice_count ? [{ label: '选项', value: stats.choice_count }] : []),
     { label: '未绑定角色', value: stats.character_unknown },
     { label: '原文保真', value: `${stats.source_preserved_pct}%` },
   ]
+}
+
+/** 结构预览节点类型 -> 中文标签 */
+export const compileNodeKindLabel = (kind?: string | null) => {
+  if (kind === 'dialogue') return '对白'
+  if (kind === 'choice') return '选项'
+  return '旁白'
 }
 
 /** 诊断级别 -> 中文标签 */

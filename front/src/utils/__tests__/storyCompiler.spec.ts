@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCompileStatCards,
+  compileNodeKindLabel,
   detectCompileFormat,
   diagnosticLevelLabel,
   formatCompileTime,
@@ -32,6 +33,34 @@ describe('buildCompileStatCards', () => {
     expect(cards[3].value).toBe('180 / 60')
     expect(cards[4].value).toBe(2)
     expect(cards[5].value).toBe('97.5%')
+  })
+
+  it('有选项时在「对白 / 旁白」之后插入选项卡', () => {
+    const cards = buildCompileStatCards({ ...stats, choice_count: 4 })
+    expect(cards.map(c => c.label)).toEqual([
+      '章节', '场景', '内容', '对白 / 旁白', '选项', '未绑定角色', '原文保真',
+    ])
+    expect(cards[4].value).toBe(4)
+  })
+
+  it('选项数为 0 时不插入选项卡', () => {
+    const cards = buildCompileStatCards({ ...stats, choice_count: 0 })
+    expect(cards.map(c => c.label)).not.toContain('选项')
+  })
+})
+
+describe('compileNodeKindLabel', () => {
+  it('映射已知节点类型', () => {
+    expect(compileNodeKindLabel('dialogue')).toBe('对白')
+    expect(compileNodeKindLabel('choice')).toBe('选项')
+    expect(compileNodeKindLabel('narration')).toBe('旁白')
+  })
+
+  it('未知或空值兜底为旁白', () => {
+    expect(compileNodeKindLabel('')).toBe('旁白')
+    expect(compileNodeKindLabel(null)).toBe('旁白')
+    expect(compileNodeKindLabel(undefined)).toBe('旁白')
+    expect(compileNodeKindLabel('unknown')).toBe('旁白')
   })
 })
 

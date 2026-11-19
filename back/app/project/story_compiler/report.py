@@ -28,13 +28,55 @@ def _branch_like(text):
     return any(k in t for k in ('选择', '是否', '要不要', '该不该', '如果', '难道'))
 
 
+def _node_label_map(parsed):
+    """标签名 → 实际承载该标签的节点行号（重复标签只认首个）。"""
+    mapping = {}
+    for chapter in parsed['chapters']:
+        for scene in chapter['scenes']:
+            for node in scene['nodes']:
+                for name in node.get('labels') or []:
+                    mapping.setdefault(name, node['line'])
+    return mapping
+
+
+def _reference_diagnostics(parsed):
+    """校验跳转/选项指向的标签：未定义会丢边，指向自身会被播放器忽略。"""
+    defined = parsed.get('labels') or {}
+    node_line = _node_label_map(parsed)
+    diagnostics = []
+    for chapter in parsed['chapters']:
+        for scene in chapter['scenes']:
+            for node in scene['nodes']:
+                refs = []
+                if node.get('jump'):
+                    refs.append((node['jump']['target'], node['jump']['line'], '@jump'))
+                for item in node.get('choices') or []:
+                    refs.append((item['target'], item['line'], '选项'))
+                for target, line, label in refs:
+                    if target not in defined:
+                        diagnostics.append({
+                            'level': 'error', 'code': 'unresolved_label',
+                            'message': f'{label}指向的标签「{target}」未定义，该分支不会生成',
+                            'line': line,
+                        })
+                    elif node_line.get(target) == node['line']:
+                        diagnostics.append({
+                            'level': 'warning', 'code': 'self_loop_branch',
+                            'message': f'{label}指向当前节点自身（标签「{target}」），该分支会被忽略',
+                            'line': line,
+                        })
+    return diagnostics
+
+
 def build_report(parsed, existing_names):
     """根据 AST 与项目已有角色名，生成统计、诊断与建议。"""
-    node_total = dialogue_total = narration_total = 0
+    node_total = dialogue_total = narration_total = choice_total = 0
+    branch_total = directive_total = 0
     unknown = {}
     branch_suggestions = []
     variable_suggestions = []
-    diagnostics = []
+    # parser 层已产出的语法诊断优先展示
+    diagnostics = list(parsed.get('errors') or [])
     all_scenes = []
 
     for chapter in parsed['chapters']:
@@ -42,11 +84,15 @@ def build_report(parsed, existing_names):
             all_scenes.append((chapter, scene))
             for node in scene['nodes']:
                 node_total += 1
+                branch_total += len(node.get('choices') or []) + (1 if node.get('jump') else 0)
+                directive_total += len(node.get('directives') or [])
                 if node['kind'] == 'dialogue':
                     dialogue_total += 1
                     name = node['speaker'] or ''
                     if name and name not in existing_names:
                         unknown.setdefault(name, node['line'])
+                elif node['kind'] == 'choice':
+                    choice_total += 1
                 else:
                     narration_total += 1
 
@@ -57,11 +103,17 @@ def build_report(parsed, existing_names):
             'line': line,
         })
 
+    # 标签引用校验：未定义 / 自环
+    diagnostics.extend(_reference_diagnostics(parsed))
+
     # 分支建议：优先看每个场景末尾的问句/选择语义
     for chapter, scene in all_scenes:
         if len(branch_suggestions) >= 3:
             break
         for node in scene['nodes'][-2:]:
+            # 已有显式选项的节点不再重复建议
+            if node['kind'] == 'choice':
+                continue
             if _branch_like(node['text']):
                 branch_suggestions.append({
                     'line': node['line'],
@@ -125,6 +177,10 @@ def build_report(parsed, existing_names):
             'node_count': node_total,
             'dialogue_count': dialogue_total,
             'narration_count': narration_total,
+            'choice_count': choice_total,
+            'branch_count': branch_total,
+            'directive_count': directive_total,
+            'label_count': len(parsed.get('labels') or {}),
             'chapter_count': len(parsed['chapters']),
             'scene_count': scene_total,
             'character_total': len(existing_names) + len(unknown),
@@ -158,6 +214,10 @@ def structure_preview(parsed):
                         'kind': n['kind'],
                         'speaker': n['speaker'],
                         'text': snippet(n['text'], 80),
+                        'choices': len(n.get('choices') or []),
+                        'labels': list(n.get('labels') or []),
+                        'has_jump': bool(n.get('jump')),
+                        'directive_count': len(n.get('directives') or []),
                     }
                     for n in scene['nodes'][:MAX_PREVIEW_NODES]
                 ],
