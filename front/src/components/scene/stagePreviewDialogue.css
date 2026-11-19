@@ -1,0 +1,63 @@
+	.dialogue-display { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; z-index: 3; }
+
+	.dialogue-box {
+		background: rgba(255, 252, 254, 0.94);
+		border-radius: 12px;
+		padding: 20px;
+		max-width: 800px;
+		margin: 0 auto;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+		cursor: pointer;
+		transition: transform 0.25s, box-shadow 0.25s;
+		position: relative;
+		border: 1px solid rgba(255, 192, 208, 0.3);
+		backdrop-filter: blur(6px);
+	}
+
+	.dialogue-box:hover { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(0, 0, 0, 0.18); }
+
+	.character-name {
+		font-weight: 700;
+		color: #c81f4a;
+		font-size: 16px;
+		margin-bottom: 10px;
+		display: inline-block;
+		padding-bottom: 4px;
+		border-bottom: 2px solid #ffc0d0;
+	}
+
+	.dialogue-text {
+		font-size: 18px;
+		line-height: 1.7;
+		color: #2c2c2c;
+		margin-bottom: 15px;
+		min-height: 100px;
+		font-weight: 400;
+	}
+
+	.dialogue-audio { display: none; }
+
+	.continue-indicator {
+		position: absolute;
+		bottom: 18px;
+		right: 28px;
+		color: #ff7b9c;
+		animation: bounce 1.6s infinite ease-in-out;
+		font-weight: bold;
+	}
+
+	@keyframes bounce {
+		0%, 100% { transform: translateY(0); }
+		50% { transform: translateY(6px); }
+	}
+
+	.dialogue-end, .no-dialogues-preview {
+		text-align: center;
+		background: rgba(255, 252, 254, 0.94);
+		padding: 28px;
+		border-radius: 20px;
+		max-width: 520px;
+		margin: 0 auto;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+		border: 1px solid rgba(255, 192, 208, 0.3);
+	}

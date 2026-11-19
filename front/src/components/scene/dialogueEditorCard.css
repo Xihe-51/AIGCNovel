@@ -1,0 +1,160 @@
+/* 对话卡片：随 DialogueEditorCard 走，scoped（卡片内无 append-to-body 弹窗） */
+.dialogue-editor-item {
+  border: 1px solid #f5e4ea;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.25s ease;
+  background: #ffffff;
+}
+
+.dialogue-editor-item:hover {
+  box-shadow: 0 4px 15px rgba(232, 70, 124, 0.08);
+  border-color: #f3b9cc;
+}
+
+/* 全项目搜索定位后的短暂高亮 */
+.dialogue-editor-item.is-focused {
+  border-color: #ff8fb0;
+  box-shadow: 0 0 0 3px rgba(255, 123, 156, 0.18);
+}
+
+/* 卡片内表单：纯 CSS 把标签移到上方，不依赖模板里的 label-position */
+.dialogue-form {
+  padding: 18px;
+}
+
+.dialogue-form :deep(.el-form-item) {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.dialogue-form :deep(.el-form-item__label) {
+  display: block !important;
+  width: auto !important;
+  padding: 0 0 2px !important;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #8a6a76;
+  text-align: left !important;
+  justify-content: flex-start;
+}
+
+.dialogue-form :deep(.el-form-item__content) {
+  margin-left: 0 !important;
+}
+
+/* 卡片最后一项是「保存」：铺满整行，和场景设置的保存按钮呼应 */
+.dialogue-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.dialogue-form :deep(.el-form-item:last-child .el-form-item__content) {
+  width: 100%;
+}
+
+.dialogue-form :deep(.el-form-item:last-child .el-button) {
+  width: 100%;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* 第一个字段（类型）与角色/立绘并排；用 inline-block 让内容换行后仍占满宽 */
+.dialogue-form :deep(.el-form-item:first-child) {
+  display: inline-block;
+  width: 32%;
+  margin-right: 1%;
+  vertical-align: top;
+}
+
+.dialogue-form :deep(.el-form-item.dlg-inline) {
+  display: inline-block;
+  width: 32%;
+  margin-right: 1%;
+  vertical-align: top;
+}
+
+.dialogue-form :deep(.el-input__wrapper),
+.dialogue-form :deep(.el-textarea__inner) {
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #f2e3e9 inset;
+  background: #fffdfe;
+}
+
+.dialogue-form :deep(.el-input__wrapper.is-focus),
+.dialogue-form :deep(.el-textarea__inner:focus) {
+  box-shadow: 0 0 0 1px #e8467c inset;
+  background: #ffffff;
+}
+
+.dialogue-form :deep(.el-textarea__inner) {
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+}
+
+.rich-markup-tip {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #b99aa5;
+  line-height: 1.5;
+}
+
+/* 逐句译文（场景设置的场景译文沿用同名样式，见 sceneSettingsPanel.css） */
+.dlg-translation-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.dlg-translation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff8fab;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.dlg-translation-tag {
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: #fff0f5;
+  border: 1px solid #ffd3e0;
+  color: #c2185b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dlg-translation-hint {
+  font-size: 11px;
+  color: #b99aa5;
+}
+
+/* 非「选择」节点的自动跳转 */
+.jump-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.jump-select {
+  width: 280px;
+}
+
+.condition-tip {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* AI 入口按钮（弹窗本体样式随 AiAssistDialog 走） */
+.ai-button { display: flex; align-items: center; gap: 5px; }

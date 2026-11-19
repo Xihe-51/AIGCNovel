@@ -127,11 +127,13 @@
 
 <script setup lang="ts">
 	import { computed, ref } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
+	import { ElMessage } from 'element-plus'
+	import { confirmAction } from '@/utils/confirm'
 	import { checkProjectPublish, updateProjectPublish } from '@/api/publish'
 	import type { PublishCheck } from '@/api/publish'
 	import { createProjectRelease, listProjectReleases, rollbackProjectRelease } from '@/api/release'
 	import type { ProjectRelease } from '@/api/release'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -168,7 +170,7 @@
 			check.value = await checkProjectPublish(Number(props.projectId))
 		} catch (e: any) {
 			check.value = null
-			ElMessage.error('发布检查失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('发布检查失败', e))
 		} finally {
 			loading.value = false
 		}
@@ -212,15 +214,11 @@
 		const warn = check.value.ready
 			? ''
 			: `当前还有 ${check.value.error_count} 个错误，发布后玩家可能遇到问题。`
-		try {
-			await ElMessageBox.confirm(
-				`${warn}将保存当前剧本快照并作为新版本发布，是否继续？`,
-				'发布新版本',
-				{ type: 'warning', confirmButtonText: '发布', cancelButtonText: '取消' }
-			)
-		} catch {
-			return
-		}
+		const confirmed = await confirmAction(
+			`${warn}将保存当前剧本快照并作为新版本发布，是否继续？`,
+			{ title: '发布新版本', confirmButtonText: '发布' }
+		)
+		if (!confirmed) return
 		saving.value = true
 		try {
 			const release = await recordRelease(releaseNotes.value)
@@ -228,22 +226,18 @@
 			emit('published', true)
 			ElMessage.success(`已发布 v${release.release_no}`)
 		} catch (e: any) {
-			ElMessage.error('发布失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('发布失败', e))
 		} finally {
 			saving.value = false
 		}
 	}
 
 	const rollbackRelease = async (release: ProjectRelease) => {
-		try {
-			await ElMessageBox.confirm(
-				`回滚会用 v${release.release_no} 的剧本快照覆盖当前剧本（${release.stats.scene_count} 场景 / ${release.stats.content_count} 节点），回滚前会自动备份当前版本。是否继续？`,
-				'回滚版本',
-				{ type: 'warning', confirmButtonText: '回滚', cancelButtonText: '取消' }
-			)
-		} catch {
-			return
-		}
+		const confirmed = await confirmAction(
+			`回滚会用 v${release.release_no} 的剧本快照覆盖当前剧本（${release.stats.scene_count} 场景 / ${release.stats.content_count} 节点），回滚前会自动备份当前版本。是否继续？`,
+			{ title: '回滚版本', confirmButtonText: '回滚' }
+		)
+		if (!confirmed) return
 		saving.value = true
 		try {
 			await rollbackProjectRelease(Number(props.projectId), release.release_id)
@@ -251,7 +245,7 @@
 			emit('rolledback')
 			await Promise.all([loadCheck(), loadReleases()])
 		} catch (e: any) {
-			ElMessage.error('回滚失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('回滚失败', e))
 		} finally {
 			saving.value = false
 		}
@@ -261,15 +255,11 @@
 		if (!check.value) return
 		let force = false
 		if (!check.value.ready) {
-			try {
-				await ElMessageBox.confirm(
-					`还有 ${check.value.error_count} 个错误（可能是缺失素材或剧情断点）。强制发布后玩家仍可能遇到问题，是否继续？`,
-					'强制发布',
-					{ type: 'warning', confirmButtonText: '仍然发布', cancelButtonText: '返回修复' }
-				)
-			} catch {
-				return
-			}
+			const confirmed = await confirmAction(
+				`还有 ${check.value.error_count} 个错误（可能是缺失素材或剧情断点）。强制发布后玩家仍可能遇到问题，是否继续？`,
+				{ title: '强制发布', confirmButtonText: '仍然发布', cancelButtonText: '返回修复' }
+			)
+			if (!confirmed) return
 			force = true
 		}
 		saving.value = true
@@ -290,7 +280,7 @@
 				check.value = data.data
 				ElMessage.warning(data.message || '请先修复发布检查中的错误')
 			} else {
-				ElMessage.error('发布失败：' + (data?.message || e?.message || '未知错误'))
+				ElMessage.error(formatErrorMessage('发布失败', e))
 			}
 		} finally {
 			saving.value = false
@@ -298,15 +288,12 @@
 	}
 
 	const unpublish = async () => {
-		try {
-			await ElMessageBox.confirm('取消公开后，分享链接将无法访问，作品会从广场下架。', '取消公开', {
-				type: 'warning',
-				confirmButtonText: '取消公开',
-				cancelButtonText: '保持发布',
-			})
-		} catch {
-			return
-		}
+		const confirmed = await confirmAction('取消公开后，分享链接将无法访问，作品会从广场下架。', {
+			title: '取消公开',
+			confirmButtonText: '取消公开',
+			cancelButtonText: '保持发布',
+		})
+		if (!confirmed) return
 		saving.value = true
 		try {
 			await updateProjectPublish(Number(props.projectId), false)
@@ -314,7 +301,7 @@
 			emit('published', false)
 			ElMessage.success('已取消公开')
 		} catch (e: any) {
-			ElMessage.error('操作失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('操作失败', e))
 		} finally {
 			saving.value = false
 		}
@@ -346,343 +333,4 @@
 	}
 </script>
 
-<style scoped>
-	.pw-state {
-		padding: 28px;
-		text-align: center;
-		font-size: 13px;
-		color: #b37d8f;
-	}
-
-	.pw-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 10px;
-		margin-bottom: 10px;
-	}
-
-	.pw-title {
-		font-size: 16px;
-		font-weight: 600;
-		color: #3d2b32;
-	}
-
-	.pw-badge {
-		font-size: 11px;
-		border-radius: 8px;
-		padding: 2px 8px;
-	}
-
-	.pw-badge.is-public {
-		color: #1f9d76;
-		background: #eefaf4;
-		border: 1px solid #cdeeda;
-	}
-
-	.pw-badge.is-private {
-		color: #8a6a76;
-		background: #fdf3f7;
-		border: 1px solid #f6d6e2;
-	}
-
-	.pw-stats {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-bottom: 10px;
-		font-size: 11px;
-		color: #8a6a76;
-	}
-
-	.pw-stats span {
-		background: #fdf3f7;
-		border: 1px solid #f6d6e2;
-		border-radius: 7px;
-		padding: 2px 8px;
-	}
-
-	.pw-stats span.is-danger {
-		color: #c0392b;
-		background: #fff5f7;
-		border-color: #f3c9d3;
-	}
-
-	.pw-verdict {
-		font-size: 12px;
-		border-radius: 8px;
-		padding: 8px 10px;
-		margin-bottom: 10px;
-	}
-
-	.pw-verdict.is-ok {
-		color: #1f9d76;
-		background: #eefaf4;
-		border: 1px solid #cdeeda;
-	}
-
-	.pw-verdict.is-blocked {
-		color: #a8562a;
-		background: #fff8f0;
-		border: 1px solid #f6dfc8;
-	}
-
-	.pw-issues {
-		max-height: 230px;
-		overflow-y: auto;
-		border: 1px solid #f5e4ea;
-		border-radius: 9px;
-		padding: 6px;
-		background: #fffafc;
-	}
-
-	.pw-issue {
-		display: flex;
-		align-items: baseline;
-		gap: 7px;
-		padding: 4px 5px;
-		border-bottom: 1px dashed #f7e3ea;
-	}
-
-	.pw-issue:last-child {
-		border-bottom: none;
-	}
-
-	.pw-issue-tag {
-		flex-shrink: 0;
-		font-size: 10px;
-		border-radius: 5px;
-		padding: 1px 5px;
-	}
-
-	.pw-issue.error .pw-issue-tag {
-		color: #c0392b;
-		background: #fff0f2;
-	}
-
-	.pw-issue.warning .pw-issue-tag {
-		color: #a8562a;
-		background: #fff6ec;
-	}
-
-	.pw-issue-text {
-		font-size: 12px;
-		color: #475569;
-		line-height: 1.55;
-	}
-
-	.pw-issues-empty {
-		font-size: 12px;
-		color: #94a3b8;
-		padding: 6px 2px 10px;
-	}
-
-	.pw-share {
-		margin-top: 12px;
-		padding-top: 10px;
-		border-top: 1px solid #f5e4ea;
-	}
-
-	.pw-share-label {
-		font-size: 12px;
-		color: #8a6a76;
-		margin-bottom: 5px;
-	}
-
-	.pw-share-row {
-		display: flex;
-		gap: 6px;
-	}
-
-	.pw-share-input {
-		flex: 1;
-		min-width: 0;
-		border: 1px solid #f0d6df;
-		border-radius: 7px;
-		padding: 6px 8px;
-		font-size: 12px;
-		color: #3d2b32;
-		background: #fff;
-		outline: none;
-	}
-
-	.pw-share-btn {
-		border: 1px solid #e8467c;
-		background: #e8467c;
-		color: #fff;
-		border-radius: 7px;
-		padding: 5px 10px;
-		font-size: 12px;
-		cursor: pointer;
-	}
-
-	.pw-share-btn.ghost {
-		background: #fff;
-		color: #c81f4a;
-		border-color: #f0c8d6;
-	}
-
-	.pw-share-tip {
-		margin-top: 5px;
-		font-size: 10px;
-		color: #b99aa5;
-	}
-
-	.pw-release {
-		margin-top: 12px;
-		padding-top: 10px;
-		border-top: 1px solid #f5e4ea;
-	}
-
-	.pw-release-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 7px;
-	}
-
-	.pw-release-title {
-		font-size: 13px;
-		font-weight: 600;
-		color: #3d2b32;
-	}
-
-	.pw-release-count {
-		font-size: 11px;
-		color: #b37d8f;
-	}
-
-	.pw-release-form {
-		display: flex;
-		gap: 6px;
-		margin-bottom: 8px;
-	}
-
-	.pw-release-input {
-		flex: 1;
-		min-width: 0;
-		border: 1px solid #f0d6df;
-		border-radius: 7px;
-		padding: 6px 8px;
-		font-size: 12px;
-		color: #3d2b32;
-		background: #fff;
-		outline: none;
-	}
-
-	.pw-release-input:focus {
-		border-color: #f0a7c2;
-	}
-
-	.pw-release-list {
-		max-height: 190px;
-		overflow-y: auto;
-		border: 1px solid #f5e4ea;
-		border-radius: 9px;
-		padding: 4px 6px;
-		background: #fffafc;
-	}
-
-	.pw-release-item {
-		padding: 6px 4px;
-		border-bottom: 1px dashed #f7e3ea;
-	}
-
-	.pw-release-item:last-child {
-		border-bottom: none;
-	}
-
-	.pw-release-row {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 7px;
-	}
-
-	.pw-release-no {
-		font-size: 12px;
-		font-weight: 600;
-		color: #c81f4a;
-	}
-
-	.pw-release-latest {
-		font-size: 10px;
-		color: #1f9d76;
-		background: #eefaf4;
-		border: 1px solid #cdeeda;
-		border-radius: 5px;
-		padding: 0 5px;
-	}
-
-	.pw-release-time,
-	.pw-release-stats {
-		font-size: 10px;
-		color: #b99aa5;
-	}
-
-	.pw-release-rollback {
-		margin-left: auto;
-		border: 1px solid #f0cfdc;
-		background: #fff;
-		color: #a84463;
-		border-radius: 6px;
-		padding: 2px 9px;
-		font-size: 11px;
-		cursor: pointer;
-	}
-
-	.pw-release-rollback:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.pw-release-notes {
-		margin-top: 3px;
-		font-size: 11px;
-		color: #6b7280;
-		line-height: 1.5;
-		word-break: break-all;
-	}
-
-	.pw-release-empty {
-		font-size: 11px;
-		color: #b99aa5;
-		padding: 6px 2px;
-	}
-
-	.pw-footer-spacer {
-		flex: 1;
-	}
-
-	.pw-btn {
-		border: 1px solid #f0cfdc;
-		background: #fff;
-		color: #a84463;
-		border-radius: 7px;
-		padding: 6px 12px;
-		font-size: 12px;
-		cursor: pointer;
-		margin-left: 6px;
-	}
-
-	.pw-btn.primary {
-		border-color: #e8467c;
-		background: #e8467c;
-		color: #fff;
-	}
-
-	.pw-btn.danger {
-		border-color: #f3c9d3;
-		background: #fff5f7;
-		color: #c0392b;
-	}
-
-	.pw-btn.ghost {
-		background: transparent;
-	}
-
-	.pw-btn:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-</style>
+<style scoped lang="scss" src="./publishWizard.scss"></style>

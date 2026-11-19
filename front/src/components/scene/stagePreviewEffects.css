@@ -1,0 +1,109 @@
+	.fx-flash {
+		position: absolute;
+		inset: 0;
+		z-index: 9;
+		pointer-events: none;
+		animation-name: fxFlashFade;
+		animation-timing-function: ease-out;
+		animation-fill-mode: forwards;
+	}
+
+	@keyframes fxFlashFade {
+		0% { opacity: 0; }
+		12% { opacity: 0.92; }
+		100% { opacity: 0; }
+	}
+
+	.preview-container.fx-shake {
+		animation: fxShake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+	}
+
+	@keyframes fxShake {
+		10%, 90% { transform: translate3d(calc(var(--fx-amp) * -0.5), 0, 0); }
+		20%, 80% { transform: translate3d(var(--fx-amp), 0, 0); }
+		30%, 50%, 70% { transform: translate3d(calc(var(--fx-amp) * -1), 0, 0); }
+		40%, 60% { transform: translate3d(var(--fx-amp), 0, 0); }
+	}
+
+	.fx-weather {
+		position: absolute;
+		inset: 0;
+		z-index: 4;
+		pointer-events: none;
+		overflow: hidden;
+	}
+
+	.fx-weather.fx-rain {
+		background-image: repeating-linear-gradient(
+			105deg,
+			rgba(174, 214, 241, 0) 0 7px,
+			rgba(174, 214, 241, 0.5) 7px 9px
+		);
+		animation: fxRainFall 0.55s linear infinite;
+		opacity: 0.75;
+	}
+
+	@keyframes fxRainFall {
+		from { background-position: 0 0; }
+		to { background-position: 0 240px; }
+	}
+
+	.fx-weather.fx-snow {
+		background-image:
+			radial-gradient(circle, rgba(255, 255, 255, 0.95) 1.6px, transparent 2px),
+			radial-gradient(circle, rgba(255, 255, 255, 0.7) 1.2px, transparent 1.8px);
+		background-size: 120px 160px, 90px 120px;
+		animation: fxSnowFall 3s linear infinite;
+	}
+
+	@keyframes fxSnowFall {
+		from { background-position: 0 0, 40px 60px; }
+		to { background-position: 40px 200px, -20px 260px; }
+	}
+
+	.fx-weather.fx-wind {
+		background-image: repeating-linear-gradient(
+			90deg,
+			rgba(255, 255, 255, 0) 0 36px,
+			rgba(255, 255, 255, 0.35) 36px 72px
+		);
+		animation: fxWindBlow 0.9s linear infinite;
+		opacity: 0.35;
+	}
+
+	@keyframes fxWindBlow {
+		from { background-position: -20% 0; }
+		to { background-position: 120% 0; }
+	}
+
+	.loading-indicator {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		text-align: center;
+		background: rgba(255, 255, 255, 0.88);
+		padding: 24px 32px;
+		border-radius: 16px;
+		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+		z-index: 10;
+		backdrop-filter: blur(4px);
+	}
+
+	.error-message {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		text-align: center;
+		background: rgba(247, 91, 91, 0.9);
+		color: white;
+		padding: 24px 32px;
+		border-radius: 16px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+		z-index: 10;
+		backdrop-filter: blur(4px);
+	}

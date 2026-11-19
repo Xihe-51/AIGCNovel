@@ -1,0 +1,36 @@
+@use './marketDialogShared' as *;
+
+// 引用 / 入库到项目对话框
+.reference-container {
+  .reference-tip {
+    color: $text-secondary;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0 0 16px;
+  }
+  
+  .reference-select {
+    width: 100%;
+    
+    :deep(.el-input__wrapper) {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid $border-light;
+      border-radius: 12px;
+      box-shadow: none;
+      
+      &:hover, &.is-focus {
+        border-color: $pink;
+      }
+      
+      .el-input__inner {
+        color: $text-primary;
+      }
+    }
+  }
+  
+  .reference-empty {
+    margin: 12px 0 0;
+    color: $text-secondary;
+    font-size: 13px;
+  }
+}

@@ -8,11 +8,10 @@
  */
 import { createApp, defineComponent, h } from 'vue'
 import { RouterView, createRouter, createWebHashHistory } from 'vue-router'
-import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import './assets/main.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import ExportProject from './views/ExportProject.vue'
+import { registerPlayerElementPlus } from './player/registerElementPlus'
 import { enableStaticMode } from './utils/request'
 import { installStaticAdapter } from './static/staticAdapter'
 import type { StaticStory } from './static/staticAdapter'
@@ -95,7 +94,7 @@ loadStory()
           path: `/view/${pid}`,
           name: 'static-player',
           component: ExportProject,
-          props: { projectId: pid },
+          props: { projectId: pid, releaseMode: true },
         },
         { path: '/home', name: 'static-home', component: StaticHome },
         { path: '/:pathMatch(.*)*', redirect: `/view/${pid}` },
@@ -105,10 +104,7 @@ loadStory()
     const app = createApp({
       render: () => h(RouterView),
     })
-    for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-      app.component(key, component)
-    }
-    app.use(ElementPlus)
+    registerPlayerElementPlus(app)
     app.use(router)
     app.mount('#app')
   })

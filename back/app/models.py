@@ -181,6 +181,21 @@ class BranchPathTranslation(db.Model):
     __table_args__ = (UniqueConstraint('path_id', 'language', name='uq_branch_path_translation'),)
 
 
+class CharacterNameTranslation(db.Model):
+    """角色名译文：characters.name 的多语言文本；主语言直接使用原字段。"""
+    __tablename__ = 'character_name_translations'
+
+    translation_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    character_id = Column(BigInteger, ForeignKey('characters.character_id'),
+                          nullable=False, index=True)
+    language = Column(String(16), nullable=False)
+    name = Column(String(100), nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=func.current_timestamp(),
+                        onupdate=func.current_timestamp())
+    __table_args__ = (UniqueConstraint('character_id', 'language',
+                                       name='uq_character_name_translation'),)
+
+
 class BranchPath(db.Model):
     __tablename__ = 'branch_paths'
 

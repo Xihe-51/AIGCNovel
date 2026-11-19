@@ -1,0 +1,80 @@
+/* 基础样式 */
+.export-project-container {
+  /* 作品皮肤变量：作者在创作页「外观」切换，下面是「经典粉白」默认值 */
+  --ui-page-bg: #fff5f7;
+  --ui-dialog-bg: rgba(255, 255, 255, 0.9);
+  --ui-dialog-text: #333333;
+  --ui-name: #d81f37;
+  --ui-name-bg: rgba(255, 255, 255, 0.92);
+  --ui-bubble-bg: rgba(255, 255, 255, 0.94);
+  --ui-choice-bg: linear-gradient(135deg, #fff0f4 0%, #ffe4ec 100%);
+  --ui-choice-border: #ffb6c1;
+  --ui-choice-text: #b3244a;
+  --ui-accent: #ff6b8b;
+
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--ui-page-bg);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 隐藏的音频播放器（BGM / 角色语音只负责播放，不进画面） */
+.hidden-audio {
+  display: none;
+}
+
+/* ---- 播放器皮肤预设 ---- */
+.export-project-container.theme-sakura {
+  --ui-page-bg: #fff1f4;
+  --ui-dialog-bg: rgba(255, 250, 247, 0.92);
+  --ui-dialog-text: #4a3036;
+  --ui-name: #d95f86;
+  --ui-name-bg: #fffaf7;
+  --ui-bubble-bg: #fffaf7;
+  --ui-choice-bg: linear-gradient(135deg, #fff5f7 0%, #ffe7ee 100%);
+  --ui-choice-border: #f2b3c8;
+  --ui-choice-text: #b3446b;
+  --ui-accent: #e58aa8;
+}
+
+.export-project-container.theme-ink {
+  --ui-page-bg: #f3efe6;
+  --ui-dialog-bg: rgba(250, 247, 240, 0.94);
+  --ui-dialog-text: #3d3a33;
+  --ui-name: #3d3a33;
+  --ui-name-bg: #f7f2e7;
+  --ui-bubble-bg: #faf7f0;
+  --ui-choice-bg: linear-gradient(135deg, #f7f2e7 0%, #ece5d6 100%);
+  --ui-choice-border: #c9bfa8;
+  --ui-choice-text: #4a4438;
+  --ui-accent: #8a7a5c;
+}
+
+.export-project-container.theme-midnight {
+  --ui-page-bg: #101623;
+  --ui-dialog-bg: rgba(23, 30, 46, 0.92);
+  --ui-dialog-text: #dbe6f7;
+  --ui-name: #8ab4ff;
+  --ui-name-bg: #1b2438;
+  --ui-bubble-bg: #1b2438;
+  --ui-choice-bg: linear-gradient(135deg, #1b2438 0%, #22304a 100%);
+  --ui-choice-border: #3f5a86;
+  --ui-choice-text: #bcd2f5;
+  --ui-accent: #8ab4ff;
+}
+
+.export-project-container.theme-mint {
+  --ui-page-bg: #eefaf3;
+  --ui-dialog-bg: rgba(255, 255, 255, 0.94);
+  --ui-dialog-text: #234438;
+  --ui-name: #1f8f6a;
+  --ui-name-bg: #f4fdf8;
+  --ui-bubble-bg: #f4fdf8;
+  --ui-choice-bg: linear-gradient(135deg, #f0fdf7 0%, #ddf5e9 100%);
+  --ui-choice-border: #9fd8bf;
+  --ui-choice-text: #1f7a5b;
+  --ui-accent: #2aa37b;
+}

@@ -32,15 +32,12 @@ export const register = async (
   phone?: string // phone 是可选参数
 ): Promise<void> => {
   try {
-    const response = await request.post('/user/register', {
+    await request.post('/user/register', {
       email,
       password,
       username,
       phone
     });
-
-    // 注册成功后的处理
-    console.log('注册成功:', response.data.message);
   } catch (error: any) {
     if (error.response) {
       // 处理服务器返回的错误

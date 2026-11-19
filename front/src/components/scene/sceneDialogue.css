@@ -1,0 +1,67 @@
+.dialogue-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #1f9d76;
+  background: #eefaf4;
+  border: 1px solid #cdeeda;
+  border-radius: 8px;
+  padding: 2px 7px;
+  line-height: 1.4;
+}
+
+.save-state.is-dirty {
+  color: #b4446a;
+  background: #fdeef3;
+  border-color: #f6d6e2;
+}
+
+.save-state::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #67c23a;
+}
+
+.save-state.is-dirty::before {
+  background: #e8467c;
+}
+
+/* 多选批量操作 */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #fdeef3;
+  border: 1px solid #f6d6e2;
+  border-radius: 9px;
+}
+
+.batch-count {
+  font-size: 12px;
+  color: #a84463;
+}
+
+.dialogues-editor { display: flex; flex-direction: column; gap: 18px; }
+
+.no-dialogues {
+  text-align: center;
+  padding: 28px;
+  color: #b899a2;
+  background: #fffafc;
+  border-radius: 12px;
+  border: 1px dashed #f8e1e8;
+}

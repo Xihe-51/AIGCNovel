@@ -1,0 +1,339 @@
+/* ===== 场景设置：字段块 ===== */
+.field-block { margin-bottom: 16px; }
+
+.field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #8a6a76;
+  margin-bottom: 7px;
+}
+
+.field-asset-btn {
+  border: 1px solid #f0cfdc;
+  background: #fff;
+  color: #a84463;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.field-asset-btn:hover {
+  border-color: #ffafc3;
+  color: #c81f4a;
+}
+
+/* 场景标题 / 描述译文 */
+.dlg-translation-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.dlg-translation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff8fab;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.dlg-translation-tag {
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: #fff0f5;
+  border: 1px solid #ffd3e0;
+  color: #c2185b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* 场景播放条件（剧情锁） */
+.scene-lock {
+  border: 1px dashed #f0d6df;
+  border-radius: 10px;
+  padding: 8px;
+  background: #fffbfd;
+}
+
+.scene-lock-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.scene-lock-mode-label {
+  font-size: 11px;
+  color: #8a6a76;
+}
+
+.scene-lock-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.scene-lock-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.condition-var { flex: 1 1 160px; min-width: 130px; }
+
+.condition-op { flex: 0 0 76px; }
+
+.condition-value { flex: 0 0 110px; }
+
+.condition-tip { font-size: 12px; color: #94a3b8; }
+
+/* 输入框统一成卡片风格 */
+.scene-form :deep(.el-input__wrapper),
+.scene-form :deep(.el-textarea__inner) {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px #f2e3e9 inset;
+  background: #fffafc;
+}
+
+.scene-form :deep(.el-input__wrapper) {
+  padding: 5px 11px;
+}
+
+.scene-form :deep(.el-textarea__inner) {
+  padding: 8px 11px;
+  line-height: 1.65;
+  font-family: inherit;
+}
+
+.scene-form :deep(.el-input__wrapper:hover),
+.scene-form :deep(.el-textarea__inner:hover) {
+  box-shadow: 0 0 0 1px #f0bfd0 inset;
+}
+
+.scene-form :deep(.el-input__wrapper.is-focus),
+.scene-form :deep(.el-textarea__inner:focus) {
+  box-shadow: 0 0 0 1px #e8467c inset;
+  background: #ffffff;
+}
+
+.scene-form :deep(.el-input__inner),
+.scene-form :deep(.el-textarea__inner) {
+  font-size: 13px;
+  color: #3d2b32;
+}
+
+.scene-form :deep(.el-input__inner::placeholder),
+.scene-form :deep(.el-textarea__inner::placeholder) {
+  color: #c9aeb9;
+}
+
+.scene-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+/* 背景图卡片 */
+.bg-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #f2e3e9;
+  background: #fdf6f9;
+  line-height: 0;
+}
+
+.bg-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.bg-card-missing {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #b37d8f;
+  background: repeating-linear-gradient(45deg, #fdf3f7, #fdf3f7 8px, #f8e6ee 8px, #f8e6ee 16px);
+  line-height: 1.4;
+}
+
+
+.bg-card-upload {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+.bg-card-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #c81f4a;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.15s;
+}
+
+.bg-card-btn:hover { background: #fff; color: #a3163c; }
+
+/* 空态上传（背景图 / 音乐共用） */
+.bg-empty-upload { width: 100%; }
+
+.bg-empty-upload :deep(.el-upload) { width: 100%; }
+
+.bg-empty {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 12px;
+  border: 1px dashed #f0c9d8;
+  border-radius: 12px;
+  background: #fffafc;
+  color: #b3788e;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bg-empty:hover { border-color: #e8467c; color: #c81f4a; background: #fdeef3; }
+
+.bg-empty-icon { font-size: 15px; line-height: 1; }
+
+/* 音乐迷你播放器 */
+.music-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f2e3e9;
+  border-radius: 12px;
+  background: #fffafc;
+}
+
+.music-play {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: #e8467c;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.music-play:hover { background: #d33a6c; }
+
+.music-main { flex: 1; min-width: 0; }
+
+.music-progress {
+  width: 100%;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #f2d9e3;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.music-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e8467c;
+  cursor: pointer;
+}
+
+.music-progress::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 50%;
+  background: #e8467c;
+  cursor: pointer;
+}
+
+.music-time {
+  font-size: 10px;
+  color: #b99aa5;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.music-link {
+  border: none;
+  background: transparent;
+  color: #c81f4a;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+
+.music-link:hover { text-decoration: underline; }
+
+/* 保存按钮 */
+.save-scene-btn {
+  width: 100%;
+  padding: 9px 0;
+  margin-top: 4px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e8467c, #c81f4a);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 3px 10px rgba(200, 31, 74, 0.2);
+}
+
+.save-scene-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(200, 31, 74, 0.28);
+}
+
+.save-scene-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
+}
+
+.scene-save-state {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: #1f9d76;
+}
+
+.scene-save-state.is-dirty {
+  color: #b4446a;
+}

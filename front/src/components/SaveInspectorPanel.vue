@@ -129,13 +129,15 @@
 
 <script setup lang="ts">
 	import { computed, onMounted, ref } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
+	import { ElMessage } from 'element-plus'
+	import { confirmAction } from '@/utils/confirm'
 	import {
 		deleteProjectSave,
 		getProjectSave,
 		listProjectSaves,
 	} from '@/api/save'
 	import type { ProjectSaveDetail, ProjectSaveItem } from '@/api/save'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -201,7 +203,7 @@
 			players.value = data.players || 0
 		} catch (e: any) {
 			console.error('读取存档检查器失败:', e)
-			error.value = '读取失败：' + (e?.response?.data?.message || e?.message || '未知错误')
+			error.value = formatErrorMessage('读取失败', e)
 		} finally {
 			loading.value = false
 		}
@@ -215,7 +217,7 @@
 			detail.value = await getProjectSave(Number(props.projectId), item.user_id, item.slot)
 		} catch (e: any) {
 			console.error('读取存档详情失败:', e)
-			ElMessage.error('读取存档详情失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('读取存档详情失败', e))
 			detailVisible.value = false
 		} finally {
 			detailLoading.value = false
@@ -229,12 +231,12 @@
 	}
 
 	const remove = async (item: ProjectSaveItem) => {
+		const confirmed = await confirmAction(
+			`确定删除「${item.username} · ${item.slot_label}」的存档吗？删除后玩家无法恢复。`,
+			{ title: '删除玩家存档', confirmButtonText: '删除' }
+		)
+		if (!confirmed) return
 		try {
-			await ElMessageBox.confirm(
-				`确定删除「${item.username} · ${item.slot_label}」的存档吗？删除后玩家无法恢复。`,
-				'删除玩家存档',
-				{ confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-			)
 			await deleteProjectSave(Number(props.projectId), item.user_id, item.slot)
 			items.value = items.value.filter(it => !(it.user_id === item.user_id && it.slot === item.slot))
 			total.value = Math.max(0, total.value - 1)
@@ -242,260 +244,12 @@
 			detailVisible.value = false
 			ElMessage.success('存档已删除')
 		} catch (e: any) {
-			if (e === 'cancel' || e === 'close') return
 			console.warn('删除玩家存档失败:', e)
-			ElMessage.error('删除失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('删除失败', e))
 		}
 	}
 
 	onMounted(load)
 </script>
 
-<style scoped>
-	.sv-root {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.sv-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
-	.sv-title {
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--el-text-color-primary, #303133);
-	}
-
-	.sv-sub {
-		margin-top: 2px;
-		font-size: 11px;
-		color: var(--el-text-color-secondary, #909399);
-	}
-
-	.sv-refresh {
-		padding: 4px 10px;
-		font-size: 12px;
-		color: var(--el-color-primary, #409eff);
-		background: transparent;
-		border: 1px solid var(--el-color-primary-light-7, #a0cfff);
-		border-radius: 6px;
-		cursor: pointer;
-	}
-
-	.sv-refresh:disabled {
-		opacity: .5;
-		cursor: not-allowed;
-	}
-
-	.sv-search :deep(.el-input__wrapper) {
-		border-radius: 6px;
-	}
-
-	.sv-error,
-	.sv-state {
-		padding: 10px;
-		font-size: 12px;
-		color: var(--el-text-color-secondary, #909399);
-		text-align: center;
-	}
-
-	.sv-error {
-		color: var(--el-color-danger, #f56c6c);
-	}
-
-	.sv-list {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		max-height: 48vh;
-		overflow-y: auto;
-		overflow-x: hidden;
-		padding-right: 2px;
-	}
-
-	.sv-item {
-		padding: 8px 10px;
-		background: var(--el-fill-color-blank, #fff);
-		border: 1px solid var(--el-border-color-lighter, #ebeef5);
-		border-radius: 8px;
-	}
-
-	.sv-item-head {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 11px;
-	}
-
-	.sv-user {
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--el-text-color-primary, #303133);
-		max-width: 110px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.sv-slot {
-		padding: 1px 6px;
-		border-radius: 999px;
-		color: var(--el-color-primary, #409eff);
-		background: var(--el-color-primary-light-9, #ecf5ff);
-		white-space: nowrap;
-	}
-
-	.sv-slot.is-auto {
-		color: var(--el-color-warning-dark-2, #b88230);
-		background: var(--el-color-warning-light-9, #fdf6ec);
-	}
-
-	.sv-time {
-		margin-left: auto;
-		color: var(--el-text-color-secondary, #909399);
-		white-space: nowrap;
-	}
-
-	.sv-item-scene {
-		margin-top: 4px;
-		font-size: 12px;
-		color: var(--el-text-color-primary, #303133);
-	}
-
-	.sv-scene-order {
-		margin-left: 6px;
-		font-size: 11px;
-		color: var(--el-text-color-secondary, #909399);
-	}
-
-	.sv-item-text {
-		margin-top: 3px;
-		font-size: 11px;
-		color: var(--el-text-color-regular, #606266);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-	}
-
-	.sv-item-meta {
-		display: flex;
-		gap: 10px;
-		margin-top: 5px;
-		font-size: 11px;
-		color: var(--el-text-color-secondary, #909399);
-	}
-
-	.sv-item-acts {
-		display: flex;
-		justify-content: flex-end;
-		gap: 6px;
-		margin-top: 6px;
-	}
-
-	.sv-act {
-		padding: 2px 9px;
-		font-size: 11px;
-		color: var(--el-text-color-regular, #606266);
-		background: var(--el-fill-color-light, #f5f7fa);
-		border: 1px solid var(--el-border-color-lighter, #ebeef5);
-		border-radius: 5px;
-		cursor: pointer;
-	}
-
-	.sv-act:hover {
-		color: var(--el-color-primary, #409eff);
-		border-color: var(--el-color-primary-light-7, #a0cfff);
-	}
-
-	.sv-act:disabled {
-		opacity: .45;
-		cursor: not-allowed;
-	}
-
-	.sv-act.is-danger {
-		color: var(--el-color-danger, #f56c6c);
-	}
-
-	.sv-detail-grid {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.sv-detail-row {
-		display: flex;
-		gap: 10px;
-		font-size: 12px;
-		color: var(--el-text-color-regular, #606266);
-	}
-
-	.sv-detail-label {
-		width: 64px;
-		flex: none;
-		color: var(--el-text-color-secondary, #909399);
-	}
-
-	.sv-detail-section {
-		margin-top: 14px;
-	}
-
-	.sv-detail-title {
-		margin-bottom: 6px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--el-text-color-primary, #303133);
-	}
-
-	.sv-vars {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-	}
-
-	.sv-var {
-		padding: 2px 8px;
-		font-size: 11px;
-		color: var(--el-text-color-regular, #606266);
-		background: var(--el-fill-color-light, #f5f7fa);
-		border-radius: 4px;
-	}
-
-	.sv-history {
-		display: flex;
-		gap: 6px;
-		padding: 4px 0;
-		font-size: 11px;
-		border-bottom: 1px dashed var(--el-border-color-lighter, #ebeef5);
-	}
-
-	.sv-history-where {
-		flex: none;
-		max-width: 110px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		color: var(--el-text-color-secondary, #909399);
-	}
-
-	.sv-history-text {
-		color: var(--el-text-color-regular, #606266);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-	}
-
-	.sv-detail-note {
-		margin-top: 14px;
-		font-size: 11px;
-		color: var(--el-text-color-secondary, #909399);
-	}
-</style>
+<style scoped src="./saveInspectorPanel.css"></style>

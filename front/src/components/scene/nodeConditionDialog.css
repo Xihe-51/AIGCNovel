@@ -1,0 +1,62 @@
+/* 台词显示条件弹窗：随 NodeConditionDialog 走，非 scoped（弹窗 append-to-body） */
+.node-cond-target {
+  font-size: 12px;
+  color: #8a6a76;
+  background: #fffafc;
+  border: 1px solid #f5e4ea;
+  border-radius: 7px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.node-cond-hint {
+  font-size: 11px;
+  color: #b99aa5;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+/*
+ * 下面三组与 sceneSettingsPanel.css / sceneDialogue.css 中的同名规则保持一致：
+ * 弹窗内容由子组件渲染，拿不到父组件的 scoped 作用域，只能自带一份。
+ */
+.scene-lock-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.scene-lock-mode-label {
+  font-size: 11px;
+  color: #8a6a76;
+}
+
+.scene-lock-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.scene-lock-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.condition-var {
+  flex: 1 1 160px;
+  min-width: 130px;
+}
+
+.condition-op {
+  flex: 0 0 76px;
+}
+
+.condition-value {
+  flex: 0 0 110px;
+}

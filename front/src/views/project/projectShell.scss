@@ -1,0 +1,85 @@
+@use './projectVars' as *;
+
+.project-studio {
+  min-height: 100vh;
+  background: $cg-bg;
+  padding: 80px 24px 40px;
+}
+
+.studio-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.studio-header {
+  margin-bottom: 24px;
+  
+  .header-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    
+    .project-title {
+      margin: 0;
+      font-size: 32px;
+      font-weight: 700;
+      color: #d65a99;
+    }
+    
+    .genre-tag {
+      padding: 6px 18px;
+      border-radius: 30px;
+      font-size: 14px;
+      font-weight: 500;
+      color: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+  }
+}
+
+.studio-main {
+  background: $cg-card;
+  border: 1px solid $cg-border;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(255, 143, 171, 0.08);
+}
+
+.custom-tabs {
+  :deep(.el-tabs__header) {
+    margin: 0 0 24px;
+  }
+  
+  :deep(.el-tabs__nav-wrap::after) {
+    background-color: $cg-border;
+    height: 1px;
+  }
+  
+  :deep(.el-tabs__item) {
+    color: $cg-text-light;
+    font-size: 16px;
+    font-weight: 500;
+    padding: 0 24px;
+    height: 44px;
+    line-height: 44px;
+    
+    &:hover {
+      color: $cg-pink;
+    }
+    
+    &.is-active {
+      color: $cg-pink;
+      font-weight: 600;
+    }
+  }
+  
+  :deep(.el-tabs__active-bar) {
+    background: $cg-pink;
+    height: 3px;
+    border-radius: 3px;
+  }
+  
+  :deep(.el-tab-pane) {
+    color: $cg-text;
+  }
+}

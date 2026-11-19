@@ -17,7 +17,7 @@
 			<button type="button" class="cp-file-btn is-ghost" :disabled="applying" @click="toggleHistory">
 				历史导入{{ historyList.length ? '（' + historyList.length + '）' : '' }}
 			</button>
-			<span class="cp-filename">{{ filename || '未选择文件，可直接粘贴文本' }}</span>
+			<span class="cp-filename">{{ filename || '未选择文件，可直接粘贴文本' }}<template v-if="filename && detectedEncoding"> · {{ detectedEncoding.toUpperCase() }}</template></span>
 			<span class="cp-count">{{ text.length }} 字</span>
 		</div>
 
@@ -161,9 +161,11 @@
 							</span>
 						</div>
 						<div v-for="(node, ni) in scene.preview" :key="ni" class="cp-node">
-							<span class="cp-node-kind">{{ node.kind === 'dialogue' ? '对白' : '旁白' }}</span>
+							<span class="cp-node-kind">{{ compileNodeKindLabel(node.kind) }}</span>
 							<span v-if="node.speaker" class="cp-node-speaker">{{ node.speaker }}</span>
 							<span class="cp-node-text">{{ node.text }}</span>
+							<span v-if="node.labels?.length" class="cp-node-labels">#{{ node.labels.join(' #') }}</span>
+							<span v-if="node.has_jump" class="cp-node-labels">↳ 跳转</span>
 						</div>
 						<div v-if="scene.node_count > scene.preview.length" class="cp-node-more">
 							还有 {{ scene.node_count - scene.preview.length }} 条未展示…
@@ -183,7 +185,8 @@
 
 <script setup lang="ts">
 	import { computed, ref, watch } from 'vue'
-	import { ElMessage, ElMessageBox } from 'element-plus'
+	import { ElMessage } from 'element-plus'
+	import { confirmAction } from '@/utils/confirm'
 	import {
 		applyStoryCompile,
 		getCompileSource,
@@ -195,6 +198,15 @@
 		type CompileSourceSummary,
 	} from '@/api/storyCompiler'
 	import { getStoryRegression, type RegressionSummary } from '@/api/patrol'
+	import { decodeTextBuffer } from '@/utils/textEncoding'
+	import {
+		buildCompileStatCards,
+		compileNodeKindLabel,
+		detectCompileFormat,
+		diagnosticLevelLabel,
+		formatCompileTime,
+	} from '@/utils/storyCompiler'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		modelValue: boolean
@@ -214,6 +226,7 @@
 
 	const fileInput = ref<HTMLInputElement | null>(null)
 	const filename = ref('')
+	const detectedEncoding = ref('')
 	const text = ref('')
 	const createChapters = ref(true)
 	const createCharacters = ref(true)
@@ -239,24 +252,9 @@
 	const chapters = computed(() => preview.value?.structure.chapters ?? [])
 	const structureTruncated = computed(() => preview.value?.structure.truncated ?? false)
 
-	const statCards = computed(() => {
-		const stats = current.value?.stats
-		if (!stats) return []
-		return [
-			{ label: '章节', value: stats.chapter_count },
-			{ label: '场景', value: stats.scene_count },
-			{ label: '内容', value: stats.node_count },
-			{ label: '对白 / 旁白', value: `${stats.dialogue_count} / ${stats.narration_count}` },
-			{ label: '未绑定角色', value: stats.character_unknown },
-			{ label: '原文保真', value: `${stats.source_preserved_pct}%` },
-		]
-	})
+	const statCards = computed(() => buildCompileStatCards(current.value?.stats))
 
-	const levelLabel = (level: string) => {
-		if (level === 'error') return '错误'
-		if (level === 'warning') return '警告'
-		return '建议'
-	}
+	const levelLabel = diagnosticLevelLabel
 
 	const pickFile = () => fileInput.value?.click()
 
@@ -269,11 +267,17 @@
 			return
 		}
 		try {
-			text.value = await file.text()
+			const buffer = await file.arrayBuffer()
+			const decoded = decodeTextBuffer(buffer)
+			text.value = decoded.text
+			detectedEncoding.value = decoded.encoding
 			filename.value = file.name
 			preview.value = null
 			applied.value = null
 			regressionSummary.value = null
+			if (decoded.encoding !== 'utf-8') {
+				ElMessage.info(`检测到 ${decoded.encoding.toUpperCase()} 编码，已自动转换`)
+			}
 		} catch (e) {
 			ElMessage.error('读取文件失败')
 		}
@@ -291,7 +295,7 @@
 	const buildPayload = () => ({
 		text: text.value,
 		filename: filename.value || undefined,
-		format: /\.(md|markdown)$/i.test(filename.value) ? 'markdown' : 'txt',
+		format: detectCompileFormat(filename.value),
 		create_characters: createCharacters.value,
 		create_chapters: createChapters.value,
 	})
@@ -310,7 +314,7 @@
 		} catch (e: any) {
 			if (seq !== previewSeq) return
 			preview.value = null
-			ElMessage.error('解析失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('解析失败', e))
 		} finally {
 			if (seq === previewSeq) previewing.value = false
 		}
@@ -323,15 +327,15 @@
 			ElMessage.warning('请先解析预览，确认结构后再写入')
 			return
 		}
+		const confirmed = await confirmAction(
+			`将向项目追加 ${stats.scene_count} 个场景、${stats.node_count} 条内容` +
+			(createCharacters.value && stats.character_unknown ? `，并创建 ${stats.character_unknown} 个角色占位` : '') +
+			'。写入后可在创作页继续编辑。',
+			{ title: '写入项目', confirmButtonText: '写入' }
+		)
+		if (!confirmed) return
 		applying.value = true
 		try {
-			await ElMessageBox.confirm(
-				`将向项目追加 ${stats.scene_count} 个场景、${stats.node_count} 条内容` +
-				(createCharacters.value && stats.character_unknown ? `，并创建 ${stats.character_unknown} 个角色占位` : '') +
-				'。写入后可在创作页继续编辑。',
-				'写入项目',
-				{ type: 'warning', confirmButtonText: '写入', cancelButtonText: '取消' }
-			)
 			const result = await applyStoryCompile(Number(props.projectId), buildPayload())
 			// 即使弹窗在写入期间被关闭，也要通知父级刷新场景列表
 			emit('applied', {
@@ -345,7 +349,7 @@
 			}
 		} catch (e: any) {
 			if (e === 'cancel' || e === 'close') return
-			ElMessage.error('写入失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('写入失败', e))
 		} finally {
 			applying.value = false
 		}
@@ -361,11 +365,7 @@
 	}
 
 	// ---- 历史导入 ----
-	const formatTime = (value?: string | null) => {
-		if (!value) return ''
-		const date = new Date(value)
-		return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
-	}
+	const formatTime = formatCompileTime
 
 	const loadHistoryList = async () => {
 		if (!props.projectId || historyLoading.value) return
@@ -393,7 +393,7 @@
 			historyOpen.value = true
 		} catch (e: any) {
 			if (seq !== historySeq) return
-			ElMessage.error('读取历史编译失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('读取历史编译失败', e))
 		}
 	}
 
@@ -458,391 +458,4 @@
 	}
 </script>
 
-<style scoped>
-	:global(.compiler-dialog .el-dialog__body) {
-		padding-top: 8px;
-	}
-
-	.cp-intro {
-		font-size: 12px;
-		line-height: 1.7;
-		color: #7a6470;
-		margin-bottom: 10px;
-	}
-
-	.cp-toolbar {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		margin-bottom: 8px;
-	}
-
-	.cp-file-btn {
-		border: 1px solid #f0d0dc;
-		background: #fff;
-		color: #c81f4a;
-		font-size: 12px;
-		padding: 5px 12px;
-		border-radius: 8px;
-		cursor: pointer;
-	}
-
-	.cp-file-btn.is-ghost {
-		border-color: #e5e7eb;
-		color: #6b7280;
-	}
-
-	.cp-file-btn:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.cp-file-input {
-		display: none;
-	}
-
-	.cp-filename {
-		flex: 1;
-		font-size: 12px;
-		color: #6b7280;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.cp-count {
-		font-size: 11px;
-		color: #9ca3af;
-	}
-
-	.cp-options {
-		display: flex;
-		align-items: center;
-		gap: 14px;
-		margin-top: 10px;
-		flex-wrap: wrap;
-	}
-
-	.cp-option-note {
-		font-size: 11px;
-		color: #9ca3af;
-	}
-
-	.cp-actions {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		margin-top: 10px;
-	}
-
-	.cp-applied {
-		font-size: 12px;
-		color: #15803d;
-	}
-
-	.cp-history {
-		margin-top: 10px;
-		border: 1px solid #eef0f4;
-		border-radius: 9px;
-		padding: 8px 10px;
-		background: #fafbfc;
-	}
-
-	.cp-history-head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 12px;
-		font-weight: 600;
-		color: #4b5563;
-		margin-bottom: 6px;
-	}
-
-	.cp-history-loading {
-		font-size: 10px;
-		font-weight: 400;
-		color: #9ca3af;
-	}
-
-	.cp-history-item {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 10px;
-		padding: 4px 6px;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 11px;
-	}
-
-	.cp-history-item:hover,
-	.cp-history-item.is-active {
-		background: #fff2f6;
-	}
-
-	.cp-history-name {
-		color: #374151;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.cp-history-meta {
-		flex-shrink: 0;
-		font-size: 10px;
-		color: #9ca3af;
-	}
-
-	.cp-history-detail {
-		margin-top: 8px;
-		border-top: 1px dashed #e5e7eb;
-		padding-top: 8px;
-	}
-
-	.cp-history-detail-head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 10px;
-	}
-
-	.cp-history-detail-title {
-		font-size: 12px;
-		font-weight: 600;
-		color: #c81f4a;
-	}
-
-	.cp-history-actions {
-		display: flex;
-		gap: 8px;
-		margin-top: 6px;
-	}
-
-	.cp-history-node {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		font-size: 11px;
-		color: #4b5563;
-		padding: 2px 4px;
-		border-radius: 4px;
-		cursor: pointer;
-	}
-
-	.cp-history-node:hover {
-		background: #fff2f6;
-	}
-
-	.cp-history-node .cp-node-text {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.cp-result {
-		margin-top: 14px;
-		border-top: 1px dashed #f0d0dc;
-		padding-top: 12px;
-		max-height: 46vh;
-		overflow-y: auto;
-	}
-
-	.cp-stats {
-		display: grid;
-		grid-template-columns: repeat(6, 1fr);
-		gap: 6px;
-	}
-
-	.cp-stat {
-		background: #fff7fa;
-		border: 1px solid #f6dbe4;
-		border-radius: 8px;
-		padding: 7px 4px;
-		text-align: center;
-	}
-
-	.cp-stat-num {
-		display: block;
-		font-size: 15px;
-		font-weight: 700;
-		color: #c81f4a;
-	}
-
-	.cp-stat-label {
-		display: block;
-		font-size: 10px;
-		color: #8b6b78;
-		margin-top: 2px;
-	}
-
-	.cp-regression {
-		margin-top: 8px;
-		font-size: 12px;
-		color: #15803d;
-		background: #f0fdf4;
-		border: 1px solid #bbf7d0;
-		border-radius: 8px;
-		padding: 6px 10px;
-	}
-
-	.cp-section {
-		margin-top: 14px;
-	}
-
-	.cp-section-title {
-		font-size: 12px;
-		font-weight: 600;
-		color: #4b5563;
-		margin: 0 0 6px;
-	}
-
-	.cp-diagnostic {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		font-size: 12px;
-		padding: 4px 8px;
-		border-radius: 6px;
-		margin-bottom: 4px;
-	}
-
-	.cp-diagnostic.is-error {
-		background: #fef2f2;
-		color: #b91c1c;
-	}
-
-	.cp-diagnostic.is-warning {
-		background: #fffbeb;
-		color: #b45309;
-	}
-
-	.cp-diagnostic.is-info {
-		background: #f5f7fa;
-		color: #6b7280;
-	}
-
-	.cp-diag-tag {
-		flex-shrink: 0;
-		font-size: 10px;
-		padding: 0 4px;
-		border-radius: 4px;
-		background: rgba(255, 255, 255, 0.7);
-	}
-
-	.cp-diag-line {
-		flex-shrink: 0;
-		font-size: 10px;
-		color: #9ca3af;
-		font-family: ui-monospace, monospace;
-	}
-
-	.cp-suggestion {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		font-size: 12px;
-		color: #475569;
-		padding: 3px 0;
-	}
-
-	.cp-sug-tag {
-		font-size: 10px;
-		padding: 1px 5px;
-		border-radius: 4px;
-		background: #eef2ff;
-		color: #4338ca;
-	}
-
-	.cp-sug-tag.is-var {
-		background: #f0fdf4;
-		color: #15803d;
-	}
-
-	.cp-chapter {
-		margin-bottom: 10px;
-	}
-
-	.cp-chapter-head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		padding: 5px 8px;
-		background: #fdf2f7;
-		border-radius: 6px;
-	}
-
-	.cp-chapter-title {
-		font-size: 12px;
-		font-weight: 600;
-		color: #c81f4a;
-	}
-
-	.cp-chapter-meta {
-		font-size: 10px;
-		color: #9ca3af;
-	}
-
-	.cp-scene {
-		margin: 6px 0 0 10px;
-		border-left: 2px solid #f3d6e1;
-		padding-left: 9px;
-	}
-
-	.cp-scene-head {
-		display: flex;
-		justify-content: space-between;
-		font-size: 11px;
-	}
-
-	.cp-scene-title {
-		color: #374151;
-		font-weight: 600;
-	}
-
-	.cp-scene-meta {
-		color: #9ca3af;
-	}
-
-	.cp-node {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		font-size: 11px;
-		padding: 2px 0;
-		color: #4b5563;
-	}
-
-	.cp-node-kind {
-		flex-shrink: 0;
-		font-size: 10px;
-		color: #c81f4a;
-		background: #fff0f5;
-		padding: 0 4px;
-		border-radius: 3px;
-	}
-
-	.cp-node-speaker {
-		flex-shrink: 0;
-		font-weight: 600;
-		color: #374151;
-	}
-
-	.cp-node-text {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.cp-node-more,
-	.cp-note {
-		font-size: 10px;
-		color: #9ca3af;
-		padding: 3px 0 0;
-	}
-
-	@media (max-width: 760px) {
-		.cp-stats {
-			grid-template-columns: repeat(3, 1fr);
-		}
-	}
-</style>
+<style scoped lang="scss" src="./storyCompilerDialog.scss"></style>

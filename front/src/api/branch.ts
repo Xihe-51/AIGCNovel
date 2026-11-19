@@ -104,7 +104,7 @@ export async function listBranches(projectId: number): Promise<BranchPath[]> {
 /** 新建一条分支 */
 export async function createBranch(
   projectId: number,
-  data: { source_content_id: number; target_content_id: number; choice_text?: string; conditions?: any }
+  data: { source_content_id: number; target_content_id: number; choice_text?: string; image_url?: string; conditions?: any }
 ): Promise<BranchPath> {
   const response = await request.post(`/project/branches/${projectId}`, data);
   return (response.data as any).data as BranchPath;

@@ -246,7 +246,7 @@ try {
 } catch (e) {}
 """})
 
-        cdp.send('Page.navigate', {'url': 'http://127.0.0.1:5173/login'})
+        cdp.send('Page.navigate', {'url': 'http://127.0.0.1:5174/login'})
         wait_ready(cdp, 15)
         cdp.send('Runtime.evaluate', {
             'expression': f'localStorage.setItem("token", {json.dumps(token)}); "ok"',

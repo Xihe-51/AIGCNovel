@@ -1,0 +1,106 @@
+/* 主容器 */
+.scene-editor-container {
+  position: relative;
+  /* 不能写 100vw：100vw 会比父容器宽 98px，导致横向滚动/裁切 */
+  width: 100%;
+  /* 创作工作台里由中栏容器给定高度，不再写死 85vh */
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #fdf2f8 0%, #fef7ff 100%);
+}
+
+/* 编辑面板 */
+.editor-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  box-shadow: 3px 0 20px rgba(0, 0, 0, 0.08);
+  transition: transform 0.32s cubic-bezier(0.25, 0.8, 0.25, 1);
+  overflow-y: auto;
+  z-index: 100;
+  transform: translateX(-100%);
+}
+
+.panel-open { transform: translateX(0); }
+.panel-closed { transform: translateX(-100%); }
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 18px;
+  background: #ffffff;
+  border-bottom: 1px solid #f2e3e9;
+  position: sticky;
+  top: 0;
+  z-index: 101;
+}
+
+.panel-title {
+  margin: 0;
+  color: #3d2b32;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+  background: #fdeef3;
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.panel-tab {
+  border: none;
+  background: transparent;
+  color: #a84463;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.panel-tab.is-active {
+  background: #fff;
+  color: #c81f4a;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(200, 31, 74, 0.12);
+}
+
+.toggle-btn {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: #c81f4a;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(1.08);
+}
+
+.panel-section { padding: 16px 18px; border-bottom: 1px solid #f7e6ec; }
+
+.section-title {
+  margin-top: 0;
+  color: #3d2b32;
+  font-size: 14px;
+  border-left: 3px solid #e8467c;
+  padding-left: 9px;
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+

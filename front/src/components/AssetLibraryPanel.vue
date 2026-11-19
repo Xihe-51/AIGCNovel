@@ -140,6 +140,7 @@
 	import { checkProjectAssets, replaceProjectAsset, listAiAssetHistory, importAiAsset } from '@/api/asset'
 	import type { AssetItem, AiAssetItem } from '@/api/asset'
 	import { BASE_URL } from '@/utils/request'
+	import { formatErrorMessage } from '@/utils/errorMessage'
 
 	const props = defineProps<{
 		projectId: string | number
@@ -258,7 +259,7 @@
 			brokenUrls.value = brokenUrls.value.filter(u => u !== item.url)
 			await load()
 		} catch (err: any) {
-			ElMessage.error('替换失败：' + (err?.response?.data?.message || err?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('替换失败', err))
 		} finally {
 			replacing.value = false
 		}
@@ -286,7 +287,7 @@
 		try {
 			aiItems.value = await listAiAssetHistory(Number(props.projectId), aiKind.value)
 		} catch (e: any) {
-			ElMessage.error('读取 AI 历史失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('读取 AI 历史失败', e))
 		} finally {
 			aiLoading.value = false
 		}
@@ -302,7 +303,7 @@
 			brokenUrls.value = brokenUrls.value.filter(u => u !== target.url)
 			await load()
 		} catch (e: any) {
-			ElMessage.error('导入失败：' + (e?.response?.data?.message || e?.message || '未知错误'))
+			ElMessage.error(formatErrorMessage('导入失败', e))
 		}
 	}
 
@@ -388,296 +389,4 @@
 	watch(() => props.projectId, load)
 </script>
 
-<style scoped>
-	.al-file { display: none; }
-
-	.al-root {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
-		min-height: 0;
-	}
-
-	.al-head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 2px 2px 8px;
-	}
-
-	.al-title {
-		font-size: 12px;
-		font-weight: 600;
-		color: #c81f4a;
-	}
-
-	.al-stats {
-		flex: 1;
-		display: flex;
-		gap: 6px;
-		font-size: 10px;
-	}
-
-	.al-ok { color: #1f9d76; }
-	.al-missing { color: #d9534f; }
-
-	.al-refresh {
-		border: 1px solid #f0cfdc;
-		background: #fff;
-		color: #a84463;
-		font-size: 11px;
-		padding: 2px 7px;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-
-	.al-refresh:hover { background: #fdeef3; }
-
-	.al-search {
-		margin-bottom: 8px;
-	}
-
-	.al-cats {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		margin-bottom: 8px;
-	}
-
-	.al-cat {
-		border: 1px solid #f2dce5;
-		background: #fff;
-		color: #a6828f;
-		font-size: 11px;
-		padding: 3px 7px;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-
-	.al-cat.is-active {
-		background: #fdeef3;
-		border-color: #e8467c;
-		color: #c81f4a;
-	}
-
-	.al-cat-count {
-		margin-left: 3px;
-		color: #c98aa0;
-		font-size: 9px;
-	}
-
-	.al-state {
-		padding: 20px 8px;
-		text-align: center;
-		font-size: 12px;
-		color: #b99aa5;
-	}
-
-	.al-list {
-		flex: 1;
-		overflow-y: auto;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.al-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 7px;
-		border: 1px solid #f5e4ea;
-		border-radius: 9px;
-		background: #fff;
-	}
-
-	.al-thumb {
-		width: 40px;
-		height: 40px;
-		flex-shrink: 0;
-		border-radius: 6px;
-		background: #f7edf1;
-		overflow: hidden;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.al-thumb img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-	}
-
-	.al-thumb-text {
-		font-size: 10px;
-		color: #c98aa0;
-	}
-
-	.al-thumb.is-clickable {
-		cursor: zoom-in;
-	}
-
-	.al-preview-img {
-		display: block;
-		width: 100%;
-		max-height: 70vh;
-		object-fit: contain;
-		background: #faf5f7;
-		border-radius: 8px;
-	}
-
-	.al-meta {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.al-where {
-		font-size: 12px;
-		color: #3d2b32;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.al-url {
-		font-size: 10px;
-		color: #b99aa5;
-		font-family: Consolas, Monaco, monospace;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		margin-top: 1px;
-	}
-
-	.al-tags {
-		display: flex;
-		gap: 5px;
-		margin-top: 3px;
-	}
-
-	.al-status {
-		font-size: 9px;
-		padding: 0 5px;
-		border-radius: 5px;
-		background: #eafaf3;
-		color: #1f9d76;
-		border: 1px solid #c6f0e0;
-	}
-
-	.al-status.missing {
-		background: #fdeaea;
-		color: #d9534f;
-		border-color: #f5c6c6;
-	}
-
-	.al-status.external {
-		background: #f7edf1;
-		color: #a6828f;
-		border-color: #ead6de;
-	}
-
-	.al-kind {
-		font-size: 9px;
-		color: #b99aa5;
-	}
-
-	.al-usage {
-		font-size: 9px;
-		color: #1f9d76;
-		background: #eefaf4;
-		border: 1px solid #cdeeda;
-		border-radius: 5px;
-		padding: 0 4px;
-	}
-
-	.al-acts {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-		flex-shrink: 0;
-	}
-
-	.al-act {
-		border: 1px solid #f0cfdc;
-		background: #fff;
-		color: #a84463;
-		font-size: 10px;
-		padding: 2px 6px;
-		border-radius: 5px;
-		cursor: pointer;
-	}
-
-	.al-act:hover { background: #fdeef3; }
-
-	.al-act.is-primary {
-		border-color: #e8467c;
-		color: #c81f4a;
-	}
-
-	/* AI 历史导入弹窗 */
-	.ai-dialog-hint {
-		font-size: 12px;
-		color: #8a6a76;
-		margin-bottom: 10px;
-	}
-
-	.ai-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
-		max-height: 50vh;
-		overflow-y: auto;
-	}
-
-	.ai-card {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 4px;
-		border: 1px solid #f2dde5;
-		border-radius: 8px;
-		background: #fff;
-		padding: 6px;
-		cursor: pointer;
-		text-align: left;
-	}
-
-	.ai-card:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.ai-card img {
-		width: 100%;
-		height: 90px;
-		object-fit: cover;
-		border-radius: 5px;
-		background: #fdf1f5;
-	}
-
-	.ai-card-icon {
-		height: 90px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: #fdf1f5;
-		color: #b07a8c;
-		border-radius: 5px;
-		font-size: 12px;
-	}
-
-	.ai-card-prompt {
-		font-size: 10px;
-		color: #64748b;
-		line-height: 1.35;
-		max-height: 28px;
-		overflow: hidden;
-	}
-
-	.ai-card-status {
-		font-size: 10px;
-		color: #c81f4a;
-	}
-</style>
+<style scoped lang="scss" src="./assetLibraryPanel.scss"></style>

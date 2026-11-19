@@ -1,0 +1,7 @@
+@media (max-width: 1200px) {
+  .editor-panel { width: 60%; }
+}
+
+@media (max-width: 768px) {
+  .editor-panel { width: 100%; }
+}

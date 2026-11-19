@@ -1,0 +1,243 @@
+/* 项目页弹窗通用外观：组件内弹窗被 teleport 到 body，父页面的 scoped 样式不再命中，
+   这些类改成全局样式，供 ProjectView 与拆分后的编辑弹窗共用。 */
+
+.custom-dialog.el-dialog,
+.custom-dialog .el-dialog {
+  background: #ffffff;
+  border: 1px solid #f5d6e6;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(255, 143, 171, 0.15);
+}
+
+.custom-dialog .el-dialog__header,
+.custom-dialog.el-dialog .el-dialog__header {
+  padding: 20px 24px 0;
+  border-bottom: none;
+}
+
+.custom-dialog .el-dialog__title,
+.custom-dialog.el-dialog .el-dialog__title {
+  color: #d65a99;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.custom-dialog .el-dialog__headerbtn .el-dialog__close,
+.custom-dialog.el-dialog .el-dialog__headerbtn .el-dialog__close {
+  color: #999999;
+}
+
+.custom-dialog .el-dialog__headerbtn .el-dialog__close:hover,
+.custom-dialog.el-dialog .el-dialog__headerbtn .el-dialog__close:hover {
+  color: #ff8fab;
+}
+
+.custom-dialog .el-dialog__body,
+.custom-dialog.el-dialog .el-dialog__body {
+  padding: 24px;
+}
+
+.custom-dialog .el-dialog__footer,
+.custom-dialog.el-dialog .el-dialog__footer {
+  padding: 0 24px 24px;
+}
+
+.custom-dialog .el-form-item__label,
+.custom-dialog.el-dialog .el-form-item__label {
+  color: #999999;
+}
+
+.custom-dialog .el-input__wrapper,
+.custom-dialog.el-dialog .el-input__wrapper {
+  background: #fff;
+  border: 1px solid #f5d6e6;
+  border-radius: 12px;
+}
+
+.custom-dialog .el-input__wrapper .el-input__inner,
+.custom-dialog.el-dialog .el-input__wrapper .el-input__inner {
+  color: #555555;
+}
+
+/* 弹窗底部按钮 */
+.dialog-btn {
+  padding: 10px 24px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: none;
+}
+
+.dialog-btn.cancel {
+  background: transparent;
+  border: 1px solid #f5d6e6;
+  color: #999999;
+}
+
+.dialog-btn.cancel:hover {
+  background: #fff5f8;
+  color: #555555;
+}
+
+.dialog-btn.confirm {
+  background: #ff8fab;
+  color: white;
+  margin-left: 12px;
+}
+
+.dialog-btn.confirm:hover {
+  background: #ff7ba0;
+  box-shadow: 0 4px 15px rgba(255, 143, 171, 0.3);
+}
+
+.dialog-btn.confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 行内小按钮（弹窗内） */
+.action-btn {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  margin-right: 8px;
+  background: rgba(255, 143, 171, 0.1);
+  color: #ff8fab;
+}
+
+.action-btn:hover {
+  background: rgba(255, 143, 171, 0.2);
+}
+
+.action-btn.delete {
+  background: rgba(255, 107, 107, 0.1);
+  color: #ff6b6b;
+}
+
+.action-btn.delete:hover {
+  background: rgba(255, 107, 107, 0.2);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 变量弹窗 */
+.variable-range {
+  display: flex;
+  gap: 12px;
+}
+
+.variable-range .el-form-item {
+  flex: 1;
+}
+
+.variable-persist-tip {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #8a7f92;
+}
+
+/* 结局条件 */
+.ending-conditions {
+  width: 100%;
+}
+
+.ending-condition-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ending-condition-row .condition-var {
+  flex: 1 1 160px;
+  min-width: 130px;
+}
+
+.ending-condition-row .condition-op {
+  flex: 0 0 80px;
+}
+
+.ending-condition-row .condition-value {
+  flex: 0 0 120px;
+}
+
+/* CG 弹窗 */
+.cg-image-picker {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.cg-thumb-lg {
+  width: 150px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px dashed #f0d5e2;
+  background: #fffafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 150px;
+}
+
+.cg-thumb-lg.cg-thumb-empty {
+  font-size: 12px;
+  color: #bbb;
+}
+
+.cg-image-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 上传按钮用 label 承载文件输入：输入铺满按钮保留真实点击区域与键盘可达性 */
+.cg-upload-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.cg-upload-btn.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.cg-file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* 近乎全透明：原生控件不可见，但仍留在可访问性树中，可被键盘与自动化命中 */
+  opacity: 0.01;
+  cursor: pointer;
+}
+
+/* 空态与提示 */
+.variables-tip {
+  margin: 0;
+  color: #888;
+  font-size: 13px;
+}
+
+.variables-empty {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+  background: #fff8fa;
+  border-radius: 12px;
+}

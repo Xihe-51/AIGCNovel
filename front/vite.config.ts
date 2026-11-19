@@ -13,7 +13,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0', // 允许从任何内网 IP访问
-    port: 5173,      // 设置端口为 5173
+    port: 5174,      // 5173 已被 NocoBase 的开发服务器占用，改用 5174
     strictPort: true // 如果端口被占用，则不使用其他端口
   },
   build: {

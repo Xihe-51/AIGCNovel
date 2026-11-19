@@ -1,0 +1,124 @@
+/* 选择项编辑器：随 DialogueChoiceEditor 走，scoped */
+.choice-editor {
+  width: 100%;
+}
+
+.choice-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.choice-item {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #f3d6df;
+}
+
+.choice-condition {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* 多条件组：关系选择 + 条件行 + 添加按钮 */
+.choice-conditions {
+  margin-top: 4px;
+}
+
+.choice-cond-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.choice-cond-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.choice-cond-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.condition-var {
+  flex: 1 1 160px;
+  min-width: 130px;
+}
+
+.condition-op {
+  flex: 0 0 76px;
+}
+
+.condition-value {
+  flex: 0 0 110px;
+}
+
+.condition-tip {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.choice-text-input { flex: 1 1 160px; min-width: 120px; }
+
+/* 图片选项：缩略图 + 上传按钮 */
+.choice-image-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.choice-image-thumb {
+  width: 54px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #f2d7e2;
+}
+
+/* 目标节点文案包含「场景 · #序号 角色：内容」，160px 会被截断，放宽并允许省略号 */
+.choice-target-select { flex: 1 1 240px; min-width: 180px; }
+
+:deep(.choice-target-select .el-select__placeholder),
+:deep(.choice-target-select .el-select__selected-item) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.choice-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+/* 译文条数角标（与卡片正文的译文按钮同款，scoped 各自隔离） */
+.dlg-translation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff8fab;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}

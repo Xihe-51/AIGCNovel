@@ -1,0 +1,66 @@
+@use './marketVars' as *;
+
+// 资源网格
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+// 空状态
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  
+  .empty-illustration {
+    width: 200px;
+    margin: 0 auto 24px;
+    opacity: 0.7;
+  }
+  
+  .empty-text {
+    color: $text-secondary;
+    font-size: 16px;
+  }
+}
+
+// 分页
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  
+  :deep(.el-pagination) {
+    --el-pagination-bg-color: transparent;
+    --el-pagination-button-bg-color: rgba(255, 255, 255, 0.05);
+    --el-pagination-text-color: #{$text-secondary};
+    --el-pagination-hover-color: #{$pink};
+    
+    .el-pager li {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid $border-light;
+      border-radius: 12px;
+      
+      &:hover {
+        color: $pink;
+      }
+      
+      &.is-active {
+        background: linear-gradient(135deg, $pink, $purple);
+        border-color: transparent;
+        color: white;
+      }
+    }
+    
+    .btn-prev, .btn-next {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid $border-light;
+      border-radius: 12px;
+      color: $text-secondary;
+      
+      &:hover {
+        color: $pink;
+      }
+    }
+  }
+}

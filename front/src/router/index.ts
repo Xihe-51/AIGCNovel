@@ -37,7 +37,8 @@ const router = createRouter({
 	    path: '/project/:projectId',
 	    name: 'ProjectView',
 	    component: () => import('../views/ProjectView.vue'),
-	    props: true // 允许将路由参数作为组件的 props 传递
+	    // 路由参数天然是字符串，这里转成数字，和组件声明的 Number 对齐
+	    props: (route) => ({ projectId: Number(route.params.projectId) || 0 })
 	},
 	{
 	    path: '/view/:projectId',

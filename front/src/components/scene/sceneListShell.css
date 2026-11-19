@@ -1,0 +1,57 @@
+	.slp-root {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		background: #fffafc;
+		border-right: 1px solid #f5dbe4;
+	}
+
+	.slp-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 14px 14px 10px;
+		border-bottom: 1px solid #f7e3ea;
+		flex-shrink: 0;
+	}
+
+	.slp-head-title {
+		font-size: 13px;
+		font-weight: 600;
+		color: #c81f4a;
+		letter-spacing: 0.5px;
+	}
+
+	.slp-head-right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.slp-saving {
+		font-size: 10px;
+		color: #c98aa0;
+	}
+
+	.slp-head-count {
+		font-size: 11px;
+		color: #b37d8f;
+		background: #fdeef3;
+		padding: 1px 7px;
+		border-radius: 9px;
+	}
+
+	.slp-chapter-btn {
+		height: 22px;
+		padding: 0 8px;
+		border-radius: 7px;
+		border: 1px solid #f0d0dc;
+		background: #fff;
+		color: #c81f4a;
+		font-size: 11px;
+		cursor: pointer;
+	}
+
+	.slp-chapter-btn:hover {
+		background: #fff5f8;
+	}

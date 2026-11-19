@@ -193,3 +193,32 @@ export const reorderDialoguesApi = async (sceneId: number, orderedContentIds: nu
   });
   return response.data;
 };
+
+/** 配音导演：情绪自动识别建议（只给建议，不落库） */
+export interface EmotionSuggestion {
+  index: number;
+  content_id?: number | null;
+  emotion: string | null;
+  reason: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface EmotionTagItem {
+  index: number;
+  content_id?: number | null;
+  text: string;
+}
+
+/**
+ * 按台词文本规则推断情绪，返回逐条建议，由作者确认后再保存。
+ */
+export async function autoTagEmotions(
+  projectId: number,
+  items: EmotionTagItem[]
+): Promise<EmotionSuggestion[]> {
+  const response = await request.post('/project/emotions/auto_tag', {
+    project_id: projectId,
+    items
+  });
+  return response.data.data;
+}

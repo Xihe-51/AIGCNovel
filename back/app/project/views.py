@@ -14,7 +14,7 @@ from .services import get_user_projects, get_project_by_id, create_project, upda
     update_scene, reorder_dialogues, get_characterAvatar_by_id, export_project, get_public_projects, \
     TEMPLATE_TYPES, UI_THEMES, get_templates, build_project_bundle, render_project_script_text, \
     import_project_bundle, duplicate_scene, avatar_to_dict, add_character_avatar_layer, \
-    update_character_avatar_layer, delete_character_avatar_layer
+    update_character_avatar_layer, delete_character_avatar_layer, detect_dialogue_emotion
 from .. import db, STATIC_ROOT
 from ..models import Project, CharacterAvatar, CharacterAvatarLayer, Scene, ScriptContent, Character, BranchPath
 from ..security import current_user_id
@@ -22,7 +22,8 @@ from .services import _UNSET
 from .save_views import _owned_project
 from .story_path import load_graph, walk_route
 from .story_export import build_audio_script_docx, build_novel_docx, build_storyboard_docx
-from .translation_views import _branch_translations_of, _scene_translations_of, _translations_of
+from .translation_views import _branch_translations_of, _scene_translations_of, _translations_of, \
+    _character_name_translations_of
 
 
 def _iso(dt):
@@ -615,12 +616,14 @@ def get_characters(project_id):
             # 没有头像时不设置键，后续使用get方法会返回None
 
         # 构造响应数据，保持原有格式
+        name_translations = _character_name_translations_of(character_ids)
         return jsonify({
             'success': True,
             'data': [{
                 'project_id': c.project_id,
                 'character_id': c.character_id,
                 'name': c.name,
+                'name_translations': name_translations.get(int(c.character_id), {}),
                 'age': c.age,
                 'description': c.description,
                 'settings': c.settings,
@@ -657,6 +660,8 @@ def character_detail(character_id):
             'character_id': character.character_id,
             'project_id': character.project_id,
             'name': character.name,
+            'name_translations': _character_name_translations_of(
+                [character.character_id]).get(int(character.character_id), {}),
             'age': character.age,
             'description': character.description,
             'settings': character.settings,
@@ -1390,6 +1395,39 @@ def get_dialogues(scene_id):
             'order_num': d.order_num,
         } for d in dialogues]
     })
+
+
+@project.route('/emotions/auto_tag', methods=['POST'])
+def auto_tag_emotions():
+    """
+    配音导演：按台词文本规则推断情绪。
+
+    入参：{ project_id, items: [{ index?, content_id?, text }] }
+    返回：{ success, data: [{ index, content_id, emotion, reason, confidence }] }
+    只给建议，不写库，由作者确认后再保存。
+    """
+    data = request.json if isinstance(request.json, dict) else {}
+    _, err = _require_owned_project(data.get('project_id'))
+    if err:
+        return err
+    items = data.get('items')
+    if not isinstance(items, list) or not items:
+        return jsonify({'success': False, 'message': '缺少待标注的台词'}), 400
+    if len(items) > 500:
+        return jsonify({'success': False, 'message': '单次最多标注 500 条台词'}), 400
+
+    suggestions = []
+    for i, item in enumerate(items):
+        item = item if isinstance(item, dict) else {}
+        emotion, reason, confidence = detect_dialogue_emotion(item.get('text'))
+        suggestions.append({
+            'index': item.get('index', i),
+            'content_id': item.get('content_id'),
+            'emotion': emotion,
+            'reason': reason,
+            'confidence': confidence,
+        })
+    return jsonify({'success': True, 'data': suggestions})
 
 
 @project.route('/dialogues', methods=['POST'])

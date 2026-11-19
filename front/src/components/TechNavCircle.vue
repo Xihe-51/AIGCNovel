@@ -76,7 +76,6 @@ export default defineComponent({
     }))
 
     const navigateTo = (path: string) => {
-		console.log(path)
 	  if(path==="/login")
 	  {
 		localStorage.removeItem('token');

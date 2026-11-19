@@ -1,0 +1,362 @@
+.sge-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 520px;
+  background: #fbfbfd;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sge-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border-bottom: 1px solid #eef0f4;
+  flex-wrap: wrap;
+}
+
+.sge-info {
+  font-size: 13px;
+  color: #475569;
+}
+.sge-info b {
+  color: #c81f4a;
+}
+.sge-dirty {
+  color: #e6a23c;
+}
+.sge-filter-total {
+  color: #94a3b8;
+}
+.sge-scene-filter {
+  width: 130px;
+}
+
+.sge-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sge-zoom {
+  font-size: 12px;
+  color: #64748b;
+  min-width: 40px;
+  text-align: center;
+}
+
+.sge-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sge-btn:hover {
+  border-color: #ff8fab;
+  color: #c81f4a;
+}
+.sge-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.sge-btn.primary {
+  background: #ff8fab;
+  border-color: #ff8fab;
+  color: #fff;
+}
+.sge-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sge-btn.danger {
+  color: #f56c6c;
+  border-color: #fbc4c4;
+}
+.sge-btn.danger:hover {
+  background: #f56c6c;
+  color: #fff;
+}
+
+.sge-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sge-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 480px;
+  overflow: hidden;
+  cursor: grab;
+  background-image: radial-gradient(#e6e9f0 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.sge-canvas:active {
+  cursor: grabbing;
+}
+
+.sge-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 14px;
+  text-align: center;
+  padding: 0 30px;
+}
+
+.sge-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.sge-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.sge-svg .sge-edge-hit {
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.sge-svg .sge-edge {
+  pointer-events: none;
+}
+.sge-svg .sge-edge.branch {
+  stroke: #ff8fab;
+  stroke-width: 2.5;
+}
+.sge-svg .sge-edge.sequence {
+  stroke: #cbd5e1;
+  stroke-width: 1.5;
+}
+.sge-svg .sge-edge.connect-temp {
+  stroke: #c81f4a;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.sge-node {
+  position: absolute;
+  box-sizing: border-box;
+  height: 70px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: #fff;
+  border: 1.5px solid #dbe1ea;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+  cursor: move;
+  user-select: none;
+  overflow: visible;
+}
+.sge-node.is-choice {
+  border-color: #ffcc80;
+  background: #fff8ee;
+}
+.sge-node.is-narration {
+  border-color: #c8d6e5;
+  background: #f4f8fc;
+}
+.sge-node.selected {
+  border-color: #c81f4a;
+  box-shadow: 0 0 0 2px rgba(200, 31, 74, 0.18);
+}
+.sge-node.primary {
+  border-color: #c81f4a;
+  box-shadow: 0 0 0 3px rgba(200, 31, 74, 0.3);
+}
+.sge-node.hovered {
+  border-color: #ff8fab;
+  box-shadow: 0 0 0 3px rgba(255, 143, 171, 0.35);
+}
+.sge-node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.sge-node-type {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+}
+.sge-node-id {
+  color: #b0b7c3;
+}
+.sge-node-text {
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sge-node-meta {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #a0a8b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sge-handle {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  margin-top: -6.5px;
+  border-radius: 50%;
+  background: #ff8fab;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #ff8fab;
+  cursor: crosshair;
+}
+.sge-handle:hover {
+  background: #c81f4a;
+}
+
+.sge-panel {
+  width: 288px;
+  flex: 0 0 288px;
+  padding: 14px;
+  background: #fff;
+  border-left: 1px solid #eef0f4;
+  overflow-y: auto;
+}
+.sge-panel-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #1f2937;
+}
+.sge-field {
+  margin-bottom: 12px;
+}
+.sge-field label {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+.sge-read {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.45;
+}
+.sge-read-text {
+  max-height: 96px;
+  overflow-y: auto;
+  background: #f8fafc;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.sge-muted {
+  color: #b0b7c3;
+}
+.sge-cond-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.sge-cond-tip {
+  font-size: 11px;
+  color: #94a3b8;
+  width: 100%;
+}
+.sge-warn {
+  font-size: 12px;
+  color: #b88230;
+  background: #fdf6ec;
+  border-radius: 6px;
+  padding: 7px 9px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+.sge-panel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sge-help p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.55;
+}
+.sge-stats {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.sge-stats > div {
+  flex: 1;
+  text-align: center;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 0;
+}
+.sge-stats span {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.sge-stats b {
+  font-size: 16px;
+  color: #c81f4a;
+}
+.sge-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.sge-edge-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #eef0f4;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #475569;
+}
+.sge-edge-item:hover {
+  border-color: #ff8fab;
+  background: #fff6f8;
+}
+.sge-edge-arrow {
+  color: #ff8fab;
+}
+.sge-edge-target {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sge-edge-cond {
+  color: #e6a23c;
+  font-size: 11px;
+}
+.sge-edge-note {
+  color: #b0b7c3;
+  font-size: 11px;
+}

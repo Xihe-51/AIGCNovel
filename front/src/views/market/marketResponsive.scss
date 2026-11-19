@@ -1,0 +1,49 @@
+@use './marketVars' as *;
+
+// 响应式
+@media (max-width: 768px) {
+  .orange-market {
+    padding: 70px 16px 30px;
+  }
+  
+  .market-header {
+    flex-direction: column;
+    gap: 20px;
+    
+    .header-left .market-title {
+      .title-main {
+        font-size: 32px;
+      }
+      
+      .title-sub {
+        font-size: 16px;
+      }
+    }
+    
+    .upload-work-btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+  
+  .search-section {
+    border-radius: 30px;
+    padding: 16px;
+    
+    .search-wrapper {
+      flex-direction: column;
+      
+      .filter-group {
+        width: 100%;
+        
+        .type-select {
+          flex: 1;
+        }
+      }
+    }
+  }
+  
+  .resource-grid {
+    grid-template-columns: 1fr;
+  }
+}

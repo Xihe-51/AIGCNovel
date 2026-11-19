@@ -1,0 +1,70 @@
+@use './projectVars' as *;
+
+/* 项目变量 */
+.variables-panel {
+  padding: 8px 4px;
+}
+
+.variables-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.variables-header h3 {
+  margin: 0 0 6px;
+  color: #c81f4a;
+}
+
+.variables-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: none;
+}
+
+.behavior-btn {
+  background: #2aa37b;
+}
+
+.behavior-tag {
+  margin-left: 6px;
+}
+
+.variables-tip {
+  margin: 0;
+  color: #888;
+  font-size: 13px;
+}
+
+.variables-table {
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.variables-empty {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+  background: #fff8fa;
+  border-radius: 12px;
+}
+
+/* CG 图鉴 */
+.cg-thumb {
+  display: block;
+  width: 96px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #f0d5e2;
+  background: #fff;
+}
+
+.cg-thumb-empty {
+  color: #bbb;
+  font-size: 12px;
+}

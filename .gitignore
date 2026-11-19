@@ -65,3 +65,4 @@ front/.VSCodeCounter/
 
 # ===== 本地开发笔记（内部约定/踩坑记录，含环境细节，不入公开库）=====
 .workbuddy-ai/
+.trae/

@@ -1,0 +1,519 @@
+@use '../../views/project/projectVars' as *;
+
+// 角色管理
+
+.characters-panel {
+  .panel-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    
+    .primary-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: $cg-pink;
+      border: none;
+      border-radius: 30px;
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 2px 10px rgba(255, 143, 171, 0.3);
+      
+      &:hover {
+        transform: translateY(-2px);
+        background: #ff7ba0;
+        box-shadow: 0 4px 15px rgba(255, 143, 171, 0.4);
+      }
+    }
+    
+    .search-box {
+      width: 280px;
+      
+      :deep(.el-input__wrapper) {
+        background: #fff;
+        border: 1px solid $cg-border;
+        border-radius: 30px;
+        box-shadow: none;
+        padding: 4px 16px;
+        
+        .el-input__inner {
+          color: $cg-text;
+          
+          &::placeholder {
+            color: $cg-text-light;
+          }
+        }
+        
+        .el-input__prefix {
+          color: $cg-pink;
+        }
+        
+        &:hover, &.is-focus {
+          border-color: $cg-pink;
+        }
+      }
+    }
+  }
+  
+  .custom-table {
+    --el-table-row-hover-bg-color: #fff5f8;
+    
+    :deep(.el-table__header) {
+      th {
+        background: #fef8ff !important;
+        border-bottom: 1px solid $cg-border !important;
+        color: $cg-text-light;
+        font-weight: 500;
+        font-size: 14px;
+      }
+    }
+    
+    :deep(.el-table__body) {
+      tr {
+        background: transparent !important;
+        
+        td {
+          border-bottom: 1px solid $cg-border !important;
+          color: $cg-text;
+        }
+      }
+    }
+    
+    .avatar-cell img {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      object-fit: cover;
+      border: 2px solid $cg-border;
+    }
+    
+    .status-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      background: #f5f5f5;
+      color: $cg-text-light;
+      
+      &.main {
+        background: rgba(255, 143, 171, 0.1);
+        color: $cg-pink;
+      }
+    }
+    
+    .action-btn {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      margin-right: 8px;
+      
+      &.edit {
+        background: rgba(255, 143, 171, 0.1);
+        color: $cg-pink;
+        
+        &:hover { 
+          background: rgba(255, 143, 171, 0.2); 
+        }
+      }
+      
+      &.delete {
+        background: rgba(255, 107, 107, 0.1);
+        color: #ff6b6b;
+        
+        &:hover { 
+          background: rgba(255, 107, 107, 0.2); 
+        }
+      }
+
+      &.settings {
+        background: rgba(126, 211, 255, 0.12);
+        color: #5bb8e8;
+
+        &:hover {
+          background: rgba(126, 211, 255, 0.24);
+        }
+      }
+    }
+  }
+}
+
+// 抽屉
+.custom-drawer {
+  :deep(.el-drawer) {
+    background: $cg-bg;
+    border-left: 1px solid $cg-border;
+  }
+  
+  :deep(.el-drawer__header) {
+    padding: 20px 24px;
+    border-bottom: 1px solid $cg-border;
+    color: $cg-text;
+    margin-bottom: 0;
+    
+    .el-drawer__title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #d65a99;
+    }
+    
+    .el-drawer__close-btn {
+      color: $cg-text-light;
+      
+      &:hover {
+        color: $cg-pink;
+      }
+    }
+  }
+  
+  :deep(.el-drawer__body) {
+    padding: 24px;
+  }
+  
+  :deep(.el-form-item__label) {
+    color: $cg-text-light;
+    font-weight: 500;
+  }
+  
+  :deep(.el-input__wrapper) {
+    background: #fff;
+    border: 1px solid $cg-border;
+    border-radius: 12px;
+    box-shadow: none;
+    
+    .el-input__inner {
+      color: $cg-text;
+    }
+    
+    &:hover, &.is-focus {
+      border-color: $cg-pink;
+    }
+  }
+  
+  :deep(.el-textarea__inner) {
+    background: #fff;
+    border: 1px solid $cg-border;
+    border-radius: 12px;
+    color: $cg-text;
+    
+    &:hover, &:focus {
+      border-color: $cg-pink;
+    }
+  }
+  
+  :deep(.el-input-number) {
+    .el-input__wrapper {
+      background: #fff;
+    }
+  }
+  
+  :deep(.el-divider) {
+    border-color: $cg-border;
+    margin: 24px 0;
+  }
+  
+  .drawer-content {
+    .character-name-translations {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .character-name-translation-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .character-name-translation-label {
+      flex: 0 0 72px;
+      font-size: 12px;
+      color: #8a7a86;
+    }
+
+    .character-name-translation-tip {
+      font-size: 11px;
+      line-height: 1.5;
+      color: #9b8b96;
+    }
+
+    .avatar-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 16px;
+      margin-bottom: 4px;
+    }
+
+    .avatar-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: $cg-text;
+    }
+
+    .avatar-section-head .avatar-btn {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      background: rgba(110, 160, 255, 0.1);
+      border: 1px solid rgba(110, 160, 255, 0.35);
+      color: #5b8def;
+      transition: all 0.2s;
+
+      &:hover:not(:disabled) {
+        background: rgba(110, 160, 255, 0.2);
+      }
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+    }
+
+    .avatar-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-top: 16px;
+      
+      .avatar-card {
+        background: #fff;
+        border: 1px solid $cg-border;
+        border-radius: 16px;
+        padding: 16px;
+        cursor: pointer;
+        transition: all 0.3s;
+        
+        &:hover, &.selected {
+          border-color: $cg-pink;
+          background: #fff5f8;
+          transform: translateY(-2px);
+        }
+        
+        .avatar-image {
+          width: 100%;
+          aspect-ratio: 1;
+          border-radius: 12px;
+          overflow: hidden;
+          margin-bottom: 12px;
+          background: #f9f9f9;
+          
+          img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+        }
+        
+        .avatar-info {
+          text-align: center;
+          margin-bottom: 12px;
+          
+          .avatar-type {
+            display: block;
+            color: $cg-text;
+            font-weight: 500;
+            margin-bottom: 4px;
+          }
+          
+          .avatar-costume {
+            color: $cg-text-light;
+            font-size: 12px;
+          }
+        }
+        
+        .avatar-actions {
+          display: flex;
+          gap: 8px;
+          
+          .avatar-btn {
+            flex: 1;
+            padding: 6px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            background: #f9f9f9;
+            border: 1px solid $cg-border;
+            color: $cg-text-light;
+            transition: all 0.2s;
+            
+            &:hover {
+              background: #f0f0f0;
+            }
+            
+            &.cutout {
+              background: rgba(110, 160, 255, 0.1);
+              border-color: rgba(110, 160, 255, 0.35);
+              color: #5b8def;
+
+              &:disabled {
+                opacity: 0.6;
+                cursor: wait;
+              }
+            }
+
+            &.default {
+              background: rgba(103, 210, 176, 0.1);
+              border-color: rgba(103, 210, 176, 0.3);
+              color: #67d2b0;
+            }
+            
+            &.delete {
+              background: rgba(255, 107, 107, 0.1);
+              border-color: rgba(255, 107, 107, 0.3);
+              color: #ff6b6b;
+            }
+          }
+        }
+      }
+      
+      .add-avatar-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 30px;
+        background: #fef8ff;
+        border: 2px dashed $cg-border;
+        border-radius: 16px;
+        color: $cg-text-light;
+        cursor: pointer;
+        transition: all 0.3s;
+        
+        &:hover {
+          border-color: $cg-pink;
+          color: $cg-pink;
+          background: #fff5f8;
+        }
+        
+        .el-icon {
+          font-size: 32px;
+        }
+        
+        span {
+          font-size: 14px;
+        }
+      }
+    }
+    
+    .drawer-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid $cg-border;
+    }
+  }
+  
+  .primary-btn {
+    padding: 10px 24px;
+    background: $cg-pink;
+    border: none;
+    border-radius: 30px;
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    
+    &:hover {
+      background: #ff7ba0;
+      box-shadow: 0 4px 15px rgba(255, 143, 171, 0.3);
+    }
+  }
+  
+  .secondary-btn {
+    padding: 10px 24px;
+    background: transparent;
+    border: 1px solid $cg-border;
+    border-radius: 30px;
+    color: $cg-text-light;
+    cursor: pointer;
+    transition: all 0.2s;
+    
+    &:hover {
+      background: #fff5f8;
+      color: $cg-text;
+    }
+  }
+}
+
+/* ===== 角色抠图进度对话框 ===== */
+.cutout-dialog {
+  .el-dialog__body {
+    padding: 8px 24px 4px;
+  }
+}
+
+.cutout-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cutout-target {
+  font-size: 12px;
+  color: #8a6a76;
+  background: #fdf3f7;
+  border: 1px solid #f6d6e2;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.cutout-stage {
+  font-size: 13px;
+  color: #3d2b32;
+  min-height: 18px;
+}
+
+.cutout-error {
+  font-size: 12px;
+  color: #c0392b;
+  background: #fdeeee;
+  border: 1px solid #f5c6c6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.cutout-hint {
+  font-size: 11px;
+  color: #b99aa5;
+  line-height: 1.6;
+}
+
+.cutout-dialog .el-progress-bar__outer {
+  background-color: #f5e4ea;
+}
+
+.cutout-dialog .el-progress__text {
+  font-size: 12px !important;
+  color: #8a6a76;
+}
+
+@media (max-width: 768px) {
+  .characters-panel {
+    .panel-toolbar {
+      flex-direction: column;
+      gap: 16px;
+
+      .search-box {
+        width: 100% !important;
+      }
+    }
+
+    .avatar-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+}
