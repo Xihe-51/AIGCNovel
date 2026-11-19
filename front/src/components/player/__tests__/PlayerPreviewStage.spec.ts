@@ -75,6 +75,29 @@ describe('PlayerPreviewStage', () => {
     expect(wrapper.find('.character-stand').exists()).toBe(false)
   })
 
+  it('无立绘素材的角色渲染占位剪影与名字牌，不产生空 img', () => {
+    const wrapper = mountStage({
+      hasStageAvatars: true,
+      stageLayers: [
+        { layer_id: 'character-219', placeholder: true, name: '李牧尘', boxStyle: { left: '50%' }, style: { opacity: '1' } },
+      ],
+    })
+    expect(wrapper.find('.stage-layer').exists()).toBe(true)
+    expect(wrapper.findAll('.stage-avatar')).toHaveLength(1)
+    expect(wrapper.find('.stage-avatar-placeholder').exists()).toBe(true)
+    expect(wrapper.find('.placeholder-name').text()).toBe('李牧尘')
+    expect(wrapper.findAll('.stage-avatar img')).toHaveLength(0)
+  })
+
+  it('占位角色无名字时只渲染剪影', () => {
+    const wrapper = mountStage({
+      hasStageAvatars: true,
+      stageLayers: [{ layer_id: 'character-219', placeholder: true, name: '' }],
+    })
+    expect(wrapper.find('.placeholder-silhouette').exists()).toBe(true)
+    expect(wrapper.find('.placeholder-name').exists()).toBe(false)
+  })
+
   it('无演出立绘时回退到当前角色立绘，加载/报错时不显示', () => {
     const wrapper = mountStage({ previewAvatarLayers: ['/stand.png', '/stand_fx.png'] })
     expect(wrapper.find('.stage-layer').exists()).toBe(false)

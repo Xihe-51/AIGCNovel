@@ -34,14 +34,22 @@
 						:style="layer.style"
 						:class="{ 'sprite-motion': spriteMotion }"
 					>
-						<img
-							v-for="(src, si) in (layer.sources && layer.sources.length ? layer.sources : [layer.src])"
-							:key="si"
-							:src="src"
-							:class="{ 'sprite-overlay': si > 0 }"
-							alt=""
-							decoding="async"
-						/>
+						<template v-if="layer.placeholder">
+							<div class="stage-avatar-placeholder">
+								<span class="placeholder-silhouette"></span>
+								<span v-if="layer.name" class="placeholder-name">{{ layer.name }}</span>
+							</div>
+						</template>
+						<template v-else>
+							<img
+								v-for="(src, si) in (layer.sources && layer.sources.length ? layer.sources : [layer.src])"
+								:key="si"
+								:src="src"
+								:class="{ 'sprite-overlay': si > 0 }"
+								alt=""
+								decoding="async"
+							/>
+						</template>
 					</div>
 				</div>
 			</div>
@@ -122,6 +130,8 @@ export interface StageLayerView {
 	style?: Record<string, string>
 	src?: string
 	sources?: string[]
+	placeholder?: boolean
+	name?: string
 }
 
 export interface StageEffectView {

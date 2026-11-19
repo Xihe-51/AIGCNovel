@@ -103,7 +103,7 @@ describe('usePlayerDirectives', () => {
     vi.clearAllMocks()
   })
 
-  const createDirectives = () => {
+  const createDirectives = (names: Record<number, string> = {}) => {
     const stageAvatars = ref<any>({ old: { layer_id: 'old', order: 0 } })
     const stageLayerVisible = ref<any>({ background: true, foreground: true, dialogue: true })
     const fgFromDirective = ref('')
@@ -117,6 +117,7 @@ describe('usePlayerDirectives', () => {
     const scheduleWait = vi.fn()
     const avatarLayersOf = vi.fn(() => [])
     const defaultAvatarLayersOf = vi.fn(() => [])
+    const characterNameOf = vi.fn((characterId: number) => names[characterId] || '')
     const { applyDirectives } = usePlayerDirectives({
       getDirectivesByContent: () => directivesByContent.value,
       stageAvatars,
@@ -130,6 +131,7 @@ describe('usePlayerDirectives', () => {
       getBgmTargetVolume: () => 0.6,
       avatarLayersOf,
       defaultAvatarLayersOf,
+      characterNameOf,
       triggerEffect,
       scheduleWait,
     })
@@ -152,6 +154,7 @@ describe('usePlayerDirectives', () => {
       scheduleWait,
       avatarLayersOf,
       defaultAvatarLayersOf,
+      characterNameOf,
     }
   }
 
@@ -196,11 +199,36 @@ describe('usePlayerDirectives', () => {
     expect(ctx.stageAvatars.value.a.src).toBe('/default.png')
   })
 
-  it('没有可用素材时保留原图层', () => {
-    const ctx = createDirectives()
+  it('没有可用素材但指定角色时生成占位图层', () => {
+    const ctx = createDirectives({ 9: '李牧尘' })
     ctx.setDirectives([{ directive_type: 'avatar', payload: { layer_id: 'old', character_id: 9 } }])
     ctx.apply()
+    const layer = ctx.stageAvatars.value.old
+    expect(layer.placeholder).toBe(true)
+    expect(layer.name).toBe('李牧尘')
+    expect(layer.src).toBe('')
+    expect(layer.sources).toEqual([])
+    expect(layer.boxStyle.left).toBe('50%')
+    expect(ctx.characterNameOf).toHaveBeenCalledWith(9)
+  })
+
+  it('没有角色信息时保留原图层', () => {
+    const ctx = createDirectives()
+    ctx.setDirectives([{ directive_type: 'avatar', payload: { layer_id: 'old' } }])
+    ctx.apply()
     expect(ctx.stageAvatars.value.old).toEqual({ layer_id: 'old', order: 0 })
+  })
+
+  it('已有真实素材的图层不被占位覆盖', () => {
+    const ctx = createDirectives({ 9: '李牧尘' })
+    ctx.stageAvatars.value = {
+      old: { layer_id: 'old', order: 0, src: '/real.png', sources: ['/real.png'] },
+    }
+    ctx.setDirectives([{ directive_type: 'avatar', payload: { layer_id: 'old', character_id: 9 } }])
+    ctx.apply()
+    const layer = ctx.stageAvatars.value.old
+    expect(layer.placeholder).toBeUndefined()
+    expect(layer.src).toBe('/real.png')
   })
 
   it('background 区分前景与背景', () => {

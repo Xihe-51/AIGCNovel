@@ -25,6 +25,8 @@ export interface PlayerDirectivesContext {
   avatarLayersOf: (avatarId: number) => string[]
   /** 角色默认立绘来源 */
   defaultAvatarLayersOf: (characterId: number) => string[]
+  /** 角色显示名：无立绘素材时用于占位名字牌 */
+  characterNameOf?: (characterId: number) => string
   triggerEffect: (payload: any) => void
   scheduleWait: (ms: number) => void
 }
@@ -71,6 +73,41 @@ export const buildAvatarLayer = (payload: any, sources: string[]): Record<string
   }
 }
 
+/**
+ * 占位图层：角色还没有任何立绘素材（例如编译器建的占位角色）时使用。
+ * 不画图，只给舞台留出位置与名字牌，避免「指令生效但画面空白」被误判成没执行。
+ */
+export const buildAvatarPlaceholder = (payload: any, name: string): Record<string, any> => {
+  const layerId = layerIdOf(payload)
+  const scale = Number(payload.scale) || 1
+  const rotate = Number(payload.rotate) || 0
+  const opacity = payload.opacity === undefined || payload.opacity === null
+    ? 1
+    : Number(payload.opacity)
+  return {
+    layer_id: layerId,
+    layer_name: layerNameOf(payload),
+    order: layerOrderOf(payload),
+    visible: payload.visible !== false,
+    placeholder: true,
+    name: name || '',
+    src: '',
+    sources: [],
+    style: {
+      transform: `scale(${scale}) rotate(${rotate}deg)`,
+      opacity,
+    },
+    boxStyle: buildAvatarBoxStyle(layerId, payload),
+  }
+}
+
+/** 已有真实素材的图层：占位层不得覆盖它 */
+export const hasAvatarArt = (layer: any) => (
+  !!layer
+  && layer.placeholder !== true
+  && (!!layer.src || (Array.isArray(layer.sources) && layer.sources.length > 0))
+)
+
 /** 节点级舞台显隐：只接受布尔值，未提供则保留原状态 */
 export const applyStageVisibility = (current: any, payload: any): any => {
   const next = { ...(current || {}) }
@@ -103,7 +140,11 @@ export function usePlayerDirectives(ctx: PlayerDirectivesContext) {
             ? assetSources
             : (avatarSources.length ? avatarSources : ctx.defaultAvatarLayersOf(p.character_id))
           const layer = buildAvatarLayer(p, fallbackSources)
-          if (layer) next[layerId] = layer
+          if (layer) {
+            next[layerId] = layer
+          } else if (p.character_id && !hasAvatarArt(next[layerId])) {
+            next[layerId] = buildAvatarPlaceholder(p, ctx.characterNameOf?.(p.character_id) || '')
+          }
         }
       } else if (d.directive_type === 'background') {
         if (p.layer === 'foreground') {

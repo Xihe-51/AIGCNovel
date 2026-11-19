@@ -573,6 +573,12 @@ export function usePlayerController(options: PlayerControllerOptions) {
   } = stageFxApi;
 
   /* ===== 节点演出指令（任意图层 / 背景切换 / 音效）===== */
+  // 获取角色名称（按当前阅读语言显示译名）
+  const getCharacterName = (characterId: any) => {
+    const char = characters.value.find(c => c.character_id === characterId);
+    return char ? localizedCharacterName(char) : '';
+  };
+
   const stageApi = usePlayerStage({
     getProjectId: () => resolveProjectId(),
     getCurrentScene: () => currentScene.value,
@@ -613,6 +619,7 @@ export function usePlayerController(options: PlayerControllerOptions) {
     getBgmTargetVolume: () => bgmTargetVolume(),
     avatarLayersOf: (avatarId) => avatarLayersOf(avatarId),
     defaultAvatarLayersOf: (characterId) => defaultAvatarLayersOf(characterId),
+    characterNameOf: (characterId) => getCharacterName(characterId),
     triggerEffect: (payload) => triggerEffect(payload),
     scheduleWait: (ms) => scheduleWait(ms),
   });
@@ -702,12 +709,6 @@ export function usePlayerController(options: PlayerControllerOptions) {
     applyDirectives: (dialogue) => applyDirectives(dialogue),
     playBackgroundMusic: () => playBackgroundMusic(),
   });
-
-  // 获取角色名称（按当前阅读语言显示译名）
-  const getCharacterName = (characterId: any) => {
-    const char = characters.value.find(c => c.character_id === characterId);
-    return char ? localizedCharacterName(char) : '';
-  };
 
   // 组件挂载时获取数据并设置事件监听
   // 键盘 / 手柄 / 音频解锁监听由 usePlayerInput 在自身生命周期内注册

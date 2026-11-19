@@ -240,6 +240,43 @@
   filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.18));
 }
 
+/* 角色尚无立绘素材时的占位：剪影 + 名字牌，避免「指令生效但画面空白」 */
+.stage-avatar-placeholder {
+  height: 100%;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.placeholder-silhouette {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border-radius: 50% 50% 44% 44% / 32% 32% 14% 14%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(176, 194, 218, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.2), 0 8px 24px rgba(0, 0, 0, 0.12);
+  -webkit-mask-image: linear-gradient(180deg, #000 66%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 66%, transparent 100%);
+}
+
+.placeholder-name {
+  margin-top: 10px;
+  padding: 2px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(30, 34, 48, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
 /* 演出效果：闪光 / 震动 / 天气 */
 .fx-flash {
   position: absolute;
